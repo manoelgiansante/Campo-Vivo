@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Platform, Alert } from 'react-native';
 import Mapbox, { Camera, MapView, LocationPuck, RasterSource, RasterLayer } from '@rnmapbox/maps';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 
 // Configure Mapbox access token
 Mapbox.setAccessToken('pk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtYXVvMG1lMTBkcG4ya3B6anM5a2VoOW0ifQ.zN4Ra2gAVOJ8Hf1tuYfyQA');
@@ -23,16 +24,60 @@ export default function MapboxMapComponent({
   const { colors } = useTheme();
   const cameraRef = useRef<Camera>(null);
   const [mapStyle, setMapStyle] = useState<'satellite' | 'streets'>('satellite');
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const defaultCenter = initialLocation || { latitude: -12.9714, longitude: -38.5014 };
 
-  const centerOnUser = () => {
-    // This will center on user location
-    cameraRef.current?.setCamera({
-      centerCoordinate: [defaultCenter.longitude, defaultCenter.latitude],
-      zoomLevel: 14,
-      animationDuration: 1000,
-    });
+  // Request location permission and get initial location
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setUserLocation({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+      }
+    })();
+  }, []);
+
+  const centerOnUser = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão negada',
+          'Precisamos de acesso à sua localização para centralizar o mapa.'
+        );
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const { latitude, longitude } = location.coords;
+      setUserLocation({ latitude, longitude });
+
+      cameraRef.current?.setCamera({
+        centerCoordinate: [longitude, latitude],
+        zoomLevel: 16,
+        animationDuration: 1000,
+      });
+
+      if (onLocationChange) {
+        onLocationChange({ latitude, longitude });
+      }
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert(
+        'Erro',
+        'Não foi possível obter sua localização. Verifique se o GPS está ativado.'
+      );
+    }
   };
 
   const styleUrl = mapStyle === 'satellite' 

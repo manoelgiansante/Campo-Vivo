@@ -20,6 +20,25 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ==================== FARMS (Fazendas/Grupos de Campos) ====================
+export const farms = mysqlTable("farms", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  address: text("address"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }).default("Brasil"),
+  totalAreaHectares: int("totalAreaHectares"),
+  color: varchar("color", { length: 7 }).default("#22C55E"), // Hex color for UI
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Farm = typeof farms.$inferSelect;
+export type InsertFarm = typeof farms.$inferInsert;
+
 // ==================== FIELDS (Campos Agrícolas) ====================
 export const fields = mysqlTable("fields", {
   id: int("id").autoincrement().primaryKey(),
