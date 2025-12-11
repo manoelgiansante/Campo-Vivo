@@ -5,6 +5,29 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
+import { ENV } from "./_core/env";
+
+// Helper function to generate mock weather forecast
+function generateMockForecast() {
+  const forecast = [];
+  const today = new Date();
+  for (let i = 0; i < 5; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() + i);
+    forecast.push({
+      date: date.toISOString().split('T')[0],
+      temperature: 22 + Math.floor(Math.random() * 10),
+      tempMin: 18 + Math.floor(Math.random() * 5),
+      tempMax: 28 + Math.floor(Math.random() * 8),
+      humidity: 60 + Math.floor(Math.random() * 30),
+      precipitation: Math.random() > 0.7 ? Math.floor(Math.random() * 30) : 0,
+      windSpeed: 5 + Math.floor(Math.random() * 20),
+      description: ['Ensolarado', 'Parcialmente nublado', 'Nublado', 'Chuva leve'][Math.floor(Math.random() * 4)],
+      icon: ['01d', '02d', '03d', '10d'][Math.floor(Math.random() * 4)],
+    });
+  }
+  return forecast;
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -264,9 +287,95 @@ export const appRouter = router({
         if (!field || field.userId !== ctx.user.id) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
         }
-        // TODO: Integrate with weather API (OpenWeatherMap, etc.)
-        // For now, return mock data
-        return { success: true, message: "Previsão atualizada" };
+        
+        // Get field center coordinates from boundaries
+        let lat = -23.5505; // Default São Paulo
+        let lon = -46.6333;
+        
+        if (field.boundaries) {
+          try {
+            const coords = typeof field.boundaries === 'string' 
+              ? JSON.parse(field.boundaries) 
+              : field.boundaries;
+            if (Array.isArray(coords) && coords.length > 0) {
+              // Calculate centroid
+              const sumLat = coords.reduce((sum: number, c: any) => sum + (c.lat || c[1] || 0), 0);
+              const sumLon = coords.reduce((sum: number, c: any) => sum + (c.lng || c.lon || c[0] || 0), 0);
+              lat = sumLat / coords.length;
+              lon = sumLon / coords.length;
+            }
+          } catch (e) {
+            console.error("Error parsing boundaries:", e);
+          }
+        }
+        
+        const apiKey = ENV.openWeatherApiKey;
+        if (!apiKey) {
+          // Return mock data if no API key configured
+          return { 
+            success: true, 
+            message: "Previsão atualizada (modo demo)",
+            forecast: generateMockForecast()
+          };
+        }
+        
+        try {
+          // Fetch 5-day forecast from OpenWeatherMap
+          const response = await fetch(
+            `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=pt_br`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`OpenWeatherMap API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          // Process and save weather data
+          const forecasts = data.list.slice(0, 8).map((item: any) => ({
+            fieldId: input.fieldId,
+            date: new Date(item.dt * 1000).toISOString().split('T')[0],
+            temperature: Math.round(item.main.temp),
+            tempMin: Math.round(item.main.temp_min),
+            tempMax: Math.round(item.main.temp_max),
+            humidity: item.main.humidity,
+            precipitation: item.rain?.["3h"] || 0,
+            windSpeed: Math.round(item.wind.speed * 3.6), // m/s to km/h
+            description: item.weather[0].description,
+            icon: item.weather[0].icon,
+          }));
+          
+          // Save to database (implementation depends on db schema)
+          // await db.saveWeatherForecast(input.fieldId, forecasts);
+          
+          // Check for weather alerts
+          const alerts = [];
+          for (const forecast of forecasts) {
+            if (forecast.tempMax > 35) {
+              alerts.push({ type: 'heat', message: `Alerta de calor: ${forecast.tempMax}°C`, severity: 'high' });
+            }
+            if (forecast.tempMin < 5) {
+              alerts.push({ type: 'frost', message: `Risco de geada: ${forecast.tempMin}°C`, severity: 'critical' });
+            }
+            if (forecast.precipitation > 50) {
+              alerts.push({ type: 'rain', message: `Chuva intensa: ${forecast.precipitation}mm`, severity: 'medium' });
+            }
+          }
+          
+          return { 
+            success: true, 
+            message: "Previsão atualizada",
+            forecast: forecasts,
+            alerts
+          };
+        } catch (error) {
+          console.error("Weather API error:", error);
+          return { 
+            success: false, 
+            message: "Erro ao buscar previsão",
+            forecast: generateMockForecast()
+          };
+        }
       }),
   }),
 
@@ -461,6 +570,95 @@ export const appRouter = router({
         recentNotes: recentNotes.slice(0, 5),
       };
     }),
+  }),
+
+  // ==================== GEOCODING ====================
+  geocoding: router({
+    search: protectedProcedure
+      .input(z.object({ query: z.string().min(2) }))
+      .query(async ({ input }) => {
+        const mapboxToken = ENV.mapboxToken;
+        if (!mapboxToken) {
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Mapbox token não configurado" 
+          });
+        }
+        
+        try {
+          const response = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(input.query)}.json?` +
+            `access_token=${mapboxToken}&country=br&language=pt&limit=5&types=place,locality,address,poi`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Geocoding API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          return data.features.map((feature: any) => ({
+            id: feature.id,
+            name: feature.place_name,
+            center: feature.center, // [lng, lat]
+            bbox: feature.bbox,
+            type: feature.place_type[0],
+          }));
+        } catch (error) {
+          console.error("Geocoding error:", error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Erro ao buscar localização" 
+          });
+        }
+      }),
+    reverse: protectedProcedure
+      .input(z.object({ 
+        lat: z.number(), 
+        lng: z.number() 
+      }))
+      .query(async ({ input }) => {
+        const mapboxToken = ENV.mapboxToken;
+        if (!mapboxToken) {
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Mapbox token não configurado" 
+          });
+        }
+        
+        try {
+          const response = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${input.lng},${input.lat}.json?` +
+            `access_token=${mapboxToken}&language=pt&limit=1`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Reverse geocoding API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const feature = data.features[0];
+          
+          if (!feature) {
+            return null;
+          }
+          
+          return {
+            id: feature.id,
+            name: feature.place_name,
+            address: feature.place_name,
+            city: feature.context?.find((c: any) => c.id.startsWith('place'))?.text,
+            state: feature.context?.find((c: any) => c.id.startsWith('region'))?.text,
+            country: feature.context?.find((c: any) => c.id.startsWith('country'))?.text,
+          };
+        } catch (error) {
+          console.error("Reverse geocoding error:", error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Erro ao buscar endereço" 
+          });
+        }
+      }),
   }),
 });
 

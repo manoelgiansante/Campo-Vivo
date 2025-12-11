@@ -10,6 +10,7 @@ import MapViewNew from "./pages/MapViewNew";
 import FieldsListNew from "./pages/FieldsListNew";
 import FieldDetailOneSoil from "./pages/FieldDetailOneSoil";
 import FieldDrawOneSoil from "./pages/FieldDrawOneSoil";
+import FieldDrawPro from "./pages/FieldDrawPro";
 import NotesOneSoil from "./pages/NotesOneSoil";
 import ProfileOneSoil from "./pages/ProfileOneSoil";
 
@@ -44,6 +45,13 @@ function Router() {
         {() => (
           <MobileLayout hideNav fullScreen>
             <FieldDrawOneSoil />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/fields/draw">
+        {() => (
+          <MobileLayout hideNav fullScreen>
+            <FieldDrawPro />
           </MobileLayout>
         )}
       </Route>

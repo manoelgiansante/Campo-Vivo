@@ -19,24 +19,14 @@ import {
   MoreVertical,
   Leaf,
   Satellite,
-  Wheat
+  Wheat,
+  Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
-
-// Mock data
-const mockFields = [
-  {
-    id: 1,
-    name: "pasto 1",
-    areaHectares: 1770,
-    ndviValue: 0.74,
-    thumbnail: null,
-    lastUpdate: "22 de nov."
-  }
-];
 
 // NDVI Gradient Component
 function NdviGradient({ value, className = "" }: { value: number; className?: string }) {
@@ -64,9 +54,11 @@ function NdviGradient({ value, className = "" }: { value: number; className?: st
 // Field Card Component
 function FieldCard({
   field,
+  ndviValue,
   onClick
 }: {
-  field: typeof mockFields[0];
+  field: { id: number; name: string; areaHectares?: number | null };
+  ndviValue: number;
   onClick: () => void;
 }) {
   return (
@@ -76,23 +68,19 @@ function FieldCard({
     >
       {/* Thumbnail */}
       <div className="w-16 h-16 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0">
-        {field.thumbnail ? (
-          <img src={field.thumbnail} alt={field.name} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-green-600 to-green-800 flex items-center justify-center">
-            <Leaf className="h-6 w-6 text-white/60" />
-          </div>
-        )}
+        <div className="w-full h-full bg-gradient-to-br from-green-600 to-green-800 flex items-center justify-center">
+          <Leaf className="h-6 w-6 text-white/60" />
+        </div>
       </div>
       
       {/* Info */}
       <div className="flex-1 text-left">
         <h3 className="font-semibold text-gray-900">{field.name}</h3>
-        <p className="text-sm text-gray-500">{(field.areaHectares / 100).toFixed(1)} ha</p>
+        <p className="text-sm text-gray-500">{(field.areaHectares ?? 0).toFixed(1)} ha</p>
       </div>
       
       {/* NDVI */}
-      <NdviGradient value={field.ndviValue} />
+      <NdviGradient value={ndviValue} />
     </button>
   );
 }
@@ -102,8 +90,30 @@ export default function FieldsListNew() {
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
 
-  const fields = mockFields;
-  const totalArea = fields.reduce((sum, f) => sum + (f.areaHectares || 0), 0);
+  // Fetch real data from API
+  const { data: fieldsData, isLoading: loadingFields } = trpc.fields.list.useQuery();
+  
+  // Fetch NDVI for each field
+  const fields = fieldsData ?? [];
+  const fieldIds = fields.map(f => f.id);
+  
+  // Fetch latest NDVI for all fields
+  const ndviQueries = fieldIds.map(id => 
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    trpc.ndvi.getLatest.useQuery({ fieldId: id }, { enabled: !!id })
+  );
+  
+  // Map NDVI values by field ID
+  const ndviByFieldId = useMemo(() => {
+    const map: Record<number, number> = {};
+    fieldIds.forEach((id, index) => {
+      const ndviData = ndviQueries[index]?.data;
+      map[id] = ndviData?.ndviAverage ?? 0.5; // Default to 0.5 if no data
+    });
+    return map;
+  }, [fieldIds, ndviQueries]);
+  
+  const totalArea = fields.reduce((sum, f) => sum + (f.areaHectares ?? 0), 0);
 
   const getLayerLabel = () => {
     switch (mapLayer) {
@@ -157,39 +167,47 @@ export default function FieldsListNew() {
       <div className="px-4 pb-32">
         {/* Group Header */}
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-          <span className="font-medium text-gray-700">No groups</span>
-          <span>{(totalArea / 100).toFixed(1)} ha</span>
+          <span className="font-medium text-gray-700">Sem grupos</span>
+          <span>{totalArea.toFixed(1)} ha</span>
         </div>
 
+        {/* Loading State */}
+        {loadingFields && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+          </div>
+        )}
+
         {/* Fields List */}
-        {fields.length > 0 ? (
+        {!loadingFields && fields.length > 0 ? (
           <div className="space-y-2">
             {fields.map((field) => (
               <FieldCard
                 key={field.id}
                 field={field}
+                ndviValue={ndviByFieldId[field.id] ?? 0.5}
                 onClick={() => setLocation(`/fields/${field.id}`)}
               />
             ))}
           </div>
-        ) : (
+        ) : !loadingFields && fields.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center">
             <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
               <Leaf className="h-8 w-8 text-gray-400" />
             </div>
-            <h3 className="font-semibold text-gray-900 mb-1">No fields yet</h3>
+            <h3 className="font-semibold text-gray-900 mb-1">Nenhum campo ainda</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Add your first field to start monitoring
+              Adicione seu primeiro campo para começar o monitoramento
             </p>
             <Button
               onClick={() => setLocation("/fields/new")}
               className="bg-green-600 hover:bg-green-700"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add field
+              Adicionar campo
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Layer Button (floating) */}

@@ -23,38 +23,16 @@ import {
   Satellite,
   Wheat,
   Pencil,
-  Info
+  Info,
+  Loader2
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useLocation, useRoute } from "wouter";
 import mapboxgl from "mapbox-gl";
+import { trpc } from "@/lib/trpc";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
-
-// Mock field data
-const mockField = {
-  id: 1,
-  name: "pasto 1",
-  areaHectares: 1770,
-  ndviValue: 0.74,
-  cropType: "Pasture",
-  cropColor: "#ef4444",
-  plantingDate: null,
-  harvestDate: null,
-  boundaries: JSON.stringify([
-    { lat: -20.4697, lng: -54.6131 },
-    { lat: -20.4697, lng: -54.6031 },
-    { lat: -20.4797, lng: -54.6031 },
-    { lat: -20.4797, lng: -54.6131 },
-  ]),
-  history: [
-    { date: "7 de nov.", ndvi: 0.68, hasImage: true, cloudy: false },
-    { date: "12 de nov.", ndvi: 0.71, hasImage: true, cloudy: false },
-    { date: "17 de nov.", ndvi: null, hasImage: false, cloudy: true },
-    { date: "22 de nov.", ndvi: 0.74, hasImage: true, cloudy: false },
-  ]
-};
 
 // NDVI color scale
 const getNdviColor = (value: number): string => {
@@ -70,29 +48,80 @@ const getNdviColor = (value: number): string => {
 export default function FieldDetailOneSoil() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/fields/:id");
+  const fieldId = params?.id ? parseInt(params.id) : null;
+  
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
   const [ndviType, setNdviType] = useState<NdviType>("basic");
-  const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(3);
+  const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(0);
   const [hideCloudyDays, setHideCloudyDays] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
+  
+  // Fetch real data from API
+  const { data: field, isLoading: loadingField } = trpc.fields.getById.useQuery(
+    { id: fieldId! },
+    { enabled: !!fieldId }
+  );
+  
+  const { data: ndviHistory } = trpc.ndvi.getByField.useQuery(
+    { fieldId: fieldId!, limit: 10 },
+    { enabled: !!fieldId }
+  );
+  
+  const { data: crops } = trpc.crops.listByField.useQuery(
+    { fieldId: fieldId! },
+    { enabled: !!fieldId }
+  );
+  
+  // Format NDVI history for display
+  const formattedHistory = useMemo(() => {
+    if (!ndviHistory?.length) {
+      return [{ date: "Sem dados", ndvi: 0.5, hasImage: false, cloudy: false }];
+    }
+    return ndviHistory.map(n => ({
+      date: new Date(n.captureDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }),
+      ndvi: n.ndviAverage ?? 0.5,
+      hasImage: !!n.imageUrl,
+      cloudy: (n.cloudCoverage ?? 0) > 50,
+    }));
+  }, [ndviHistory]);
+  
+  // Get current NDVI value
+  const currentNdvi = ndviHistory?.[selectedHistoryIndex]?.ndviAverage ?? 0.5;
+  
+  // Get area in hectares (stored as hectares * 100)
+  const areaHectares = (field?.areaHectares ?? 0) / 100;
+  
+  // Get current crop
+  const currentCrop = crops?.[0];
 
-  const field = mockField;
   const filteredHistory = hideCloudyDays 
-    ? field.history.filter(h => !h.cloudy)
-    : field.history;
+    ? formattedHistory.filter(h => !h.cloudy)
+    : formattedHistory;
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMapInstance(map);
     
-    // Add field polygon
-    if (field.boundaries) {
-      const points = JSON.parse(field.boundaries) as { lat: number; lng: number }[];
-      const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
-      coordinates.push(coordinates[0]);
+    // Add field polygon if we have boundaries
+    if (!field?.boundaries) return;
+    
+    try {
+      const boundariesData = typeof field.boundaries === 'string' 
+        ? JSON.parse(field.boundaries) 
+        : field.boundaries;
+      
+      if (!Array.isArray(boundariesData) || boundariesData.length < 3) return;
+      
+      const coordinates = boundariesData.map((p: any) => [
+        p.lng || p.lon || p[0], 
+        p.lat || p[1]
+      ] as [number, number]);
+      coordinates.push(coordinates[0]); // Close the polygon
 
       map.on('load', () => {
+        if (map.getSource('field')) return; // Already added
+        
         map.addSource('field', {
           type: 'geojson',
           data: {
@@ -110,7 +139,7 @@ export default function FieldDetailOneSoil() {
           type: 'fill',
           source: 'field',
           paint: {
-            'fill-color': getNdviColor(field.ndviValue),
+            'fill-color': getNdviColor(currentNdvi),
             'fill-opacity': 0.7
           }
         });
@@ -126,15 +155,17 @@ export default function FieldDetailOneSoil() {
         });
 
         // Fit to bounds
-        const lngs = points.map(p => p.lng);
-        const lats = points.map(p => p.lat);
+        const lngs = coordinates.map(c => c[0]);
+        const lats = coordinates.map(c => c[1]);
         map.fitBounds(
           [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
           { padding: 40 }
         );
       });
+    } catch (e) {
+      console.error("Error parsing field boundaries:", e);
     }
-  }, [field]);
+  }, [field?.boundaries, currentNdvi]);
 
   const getNdviLabel = () => {
     switch (ndviType) {
@@ -144,6 +175,25 @@ export default function FieldDetailOneSoil() {
       case "heterogenity": return "Heterogenity NDVI";
     }
   };
+
+  // Loading state
+  if (loadingField) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+      </div>
+    );
+  }
+  
+  // Not found state
+  if (!field) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+        <p className="text-gray-500 mb-4">Campo não encontrado</p>
+        <Button onClick={() => setLocation("/fields")}>Voltar</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -162,7 +212,7 @@ export default function FieldDetailOneSoil() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{field.name}</h1>
-            <p className="text-gray-500">{(field.areaHectares / 100).toFixed(1)} ha</p>
+            <p className="text-gray-500">{areaHectares.toFixed(1)} ha</p>
           </div>
           <Button variant="ghost" size="icon">
             <MoreVertical className="h-5 w-5" />
@@ -175,7 +225,10 @@ export default function FieldDetailOneSoil() {
         <MapboxMap
           onMapReady={handleMapReady}
           className="w-full h-full"
-          initialCenter={[-54.608, -20.474]}
+          initialCenter={[
+            parseFloat(field.longitude || "-54.608"), 
+            parseFloat(field.latitude || "-20.474")
+          ]}
           initialZoom={14}
         />
         
@@ -250,9 +303,9 @@ export default function FieldDetailOneSoil() {
             <div className="flex items-center gap-3">
               <div 
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: field.cropColor }}
+                style={{ backgroundColor: currentCrop?.status === "growing" ? "#22c55e" : "#ef4444" }}
               />
-              <span className="font-semibold text-gray-900">{field.cropType}</span>
+              <span className="font-semibold text-gray-900">{currentCrop?.cropType || "Sem cultivo"}</span>
             </div>
             <Button variant="ghost" size="icon">
               <Pencil className="h-4 w-4" />
@@ -261,12 +314,20 @@ export default function FieldDetailOneSoil() {
           
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
-              <p className="text-sm text-gray-500">Planting date</p>
-              <p className="text-gray-900">{field.plantingDate || "Not set"}</p>
+              <p className="text-sm text-gray-500">Data de plantio</p>
+              <p className="text-gray-900">
+                {currentCrop?.plantingDate 
+                  ? new Date(currentCrop.plantingDate).toLocaleDateString('pt-BR') 
+                  : "Não definida"}
+              </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Harvest date</p>
-              <p className="text-gray-900">{field.harvestDate || "Not set"}</p>
+              <p className="text-sm text-gray-500">Data de colheita</p>
+              <p className="text-gray-900">
+                {currentCrop?.expectedHarvestDate 
+                  ? new Date(currentCrop.expectedHarvestDate).toLocaleDateString('pt-BR') 
+                  : "Não definida"}
+              </p>
             </div>
           </div>
         </div>
