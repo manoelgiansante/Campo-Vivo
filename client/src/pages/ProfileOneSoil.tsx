@@ -9,7 +9,10 @@ import {
   FileText,
   Send,
   HelpCircle,
-  LogOut
+  LogOut,
+  Tractor,
+  Link2,
+  AlertCircle
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -46,13 +49,21 @@ export default function ProfileOneSoil() {
           </div>
         </div>
 
-        {/* Settings Section */}
+        {/* Integrations Section */}
         <div className="p-4">
           <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Account</p>
+            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Integrações</p>
+            <JohnDeereIntegration />
+          </div>
+        </div>
+
+        {/* Settings Section */}
+        <div className="p-4 pt-0">
+          <div className="bg-white rounded-2xl overflow-hidden">
+            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
             <MenuItem 
               icon={<Settings className="h-5 w-5 text-green-600" />}
-              label="Settings"
+              label="Configurações"
               onClick={() => {}}
             />
           </div>
@@ -118,13 +129,21 @@ export default function ProfileOneSoil() {
         </div>
       </div>
 
+      {/* Integrations Section */}
+      <div className="p-4 pt-0">
+        <div className="bg-white rounded-2xl overflow-hidden">
+          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Integrações</p>
+          <JohnDeereIntegration />
+        </div>
+      </div>
+
       {/* Account Section */}
       <div className="p-4 pt-0">
         <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Account</p>
+          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
           <MenuItem 
             icon={<Settings className="h-5 w-5 text-green-600" />}
-            label="Settings"
+            label="Configurações"
             onClick={() => {}}
           />
         </div>
@@ -209,5 +228,85 @@ function MenuItem({
       </div>
       <ChevronRight className="h-5 w-5 text-gray-400" />
     </button>
+  );
+}
+
+// John Deere Integration Component
+function JohnDeereIntegration() {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const handleConnect = () => {
+    setIsConnecting(true);
+    // Simulate connection process
+    setTimeout(() => {
+      setIsConnecting(false);
+      setIsConnected(true);
+    }, 2000);
+  };
+
+  const handleDisconnect = () => {
+    setIsConnected(false);
+  };
+
+  return (
+    <div className="px-4 py-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {/* John Deere Logo */}
+          <div className="w-10 h-10 bg-[#367C2B] rounded-lg flex items-center justify-center">
+            <Tractor className="h-6 w-6 text-[#FFDE00]" />
+          </div>
+          <div>
+            <p className="font-medium text-gray-900">Integração com John Deere</p>
+            {isConnected ? (
+              <p className="text-sm text-green-600 flex items-center gap-1">
+                <Link2 className="h-3 w-3" />
+                Conectado
+              </p>
+            ) : (
+              <p className="text-sm text-orange-500 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Integração não autorizada
+              </p>
+            )}
+          </div>
+        </div>
+        
+        {isConnected ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-600 border-red-200 hover:bg-red-50"
+            onClick={handleDisconnect}
+          >
+            Desconectar
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            className="bg-[#367C2B] hover:bg-[#2d6a24] text-white"
+            onClick={handleConnect}
+            disabled={isConnecting}
+          >
+            {isConnecting ? "Conectando..." : "Conectar"}
+          </Button>
+        )}
+      </div>
+      
+      {!isConnected && (
+        <p className="text-xs text-gray-500 mt-3 pl-13">
+          Clique em "Conectar" para autorizar a integração com sua conta John Deere Operations Center.
+        </p>
+      )}
+      
+      {isConnected && (
+        <div className="mt-3 p-3 bg-green-50 rounded-lg">
+          <p className="text-sm text-green-800">
+            ✓ Sincronizando dados de máquinas e operações
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
