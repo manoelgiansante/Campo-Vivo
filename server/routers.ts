@@ -275,13 +275,21 @@ export const appRouter = router({
         season: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const crop = await db.getCropById(input.id);
+        if (!crop || crop.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Cultivo não encontrado" });
+        }
         const { id, ...data } = input;
         await db.updateCrop(id, data);
         return { success: true };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const crop = await db.getCropById(input.id);
+        if (!crop || crop.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Cultivo não encontrado" });
+        }
         await db.deleteCrop(input.id);
         return { success: true };
       }),
@@ -405,14 +413,22 @@ export const appRouter = router({
         severity: z.enum(["low", "medium", "high", "critical"]).optional(),
         isResolved: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const note = await db.getFieldNoteById(input.id);
+        if (!note || note.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Anotação não encontrada" });
+        }
         const { id, ...data } = input;
         await db.updateFieldNote(id, data);
         return { success: true };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const note = await db.getFieldNoteById(input.id);
+        if (!note || note.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Anotação não encontrada" });
+        }
         await db.deleteFieldNote(input.id);
         return { success: true };
       }),
@@ -783,7 +799,11 @@ export const appRouter = router({
         isConfirmed: z.boolean().optional(),
         notes: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const plan = await db.getCropRotationPlanById(input.id);
+        if (!plan || plan.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Plano de rotação não encontrado" });
+        }
         const { id, ...data } = input;
         await db.updateCropRotationPlan(id, data);
         return { success: true };
@@ -851,20 +871,32 @@ export const appRouter = router({
         dueDate: z.date().optional(),
         completedAt: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const task = await db.getTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
         const { id, ...data } = input;
         await db.updateTask(id, data);
         return { success: true };
       }),
     complete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const task = await db.getTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
         await db.updateTask(input.id, { status: "completed", completedAt: new Date() });
         return { success: true };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const task = await db.getTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
         await db.deleteTask(input.id);
         return { success: true };
       }),

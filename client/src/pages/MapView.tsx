@@ -13,6 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { FieldBottomSheet } from "@/components/FieldBottomSheet";
 import { 
   Folder, 
   ChevronDown, 
@@ -38,6 +39,10 @@ export default function MapView() {
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
+
+  // Bottom sheet state
+  const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
+  const [showFieldSheet, setShowFieldSheet] = useState(false);
 
   const { data: fields } = trpc.fields.list.useQuery();
 
@@ -127,9 +132,10 @@ export default function MapView() {
                 },
               });
 
-              // Add click handler
+              // Add click handler - Open Bottom Sheet instead of navigate
               mapInstance.on("click", sourceId, () => {
-                setLocation(`/fields/${field.id}`);
+                setSelectedFieldId(field.id);
+                setShowFieldSheet(true);
               });
 
               // Change cursor on hover
@@ -155,7 +161,10 @@ export default function MapView() {
                   <span class="font-medium text-gray-800 text-sm">${areaText}</span>
                 </div>
               `;
-              el.onclick = () => setLocation(`/fields/${field.id}`);
+              el.onclick = () => {
+                setSelectedFieldId(field.id);
+                setShowFieldSheet(true);
+              };
 
               new mapboxgl.Marker({ element: el })
                 .setLngLat([centerLng, centerLat])
@@ -382,6 +391,13 @@ export default function MapView() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Field Details Bottom Sheet */}
+      <FieldBottomSheet
+        fieldId={selectedFieldId}
+        open={showFieldSheet}
+        onOpenChange={setShowFieldSheet}
+      />
     </div>
   );
 }

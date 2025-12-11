@@ -8,7 +8,20 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { FontSize, FontWeight, Spacing } from '@/constants/theme';
-import MapView, { PROVIDER_DEFAULT, UrlTile, Region } from 'react-native-maps';
+
+// Import map only for native platforms
+let MapView: any = null;
+let PROVIDER_DEFAULT: any = null;
+let UrlTile: any = null;
+
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  PROVIDER_DEFAULT = Maps.PROVIDER_DEFAULT;
+  UrlTile = Maps.UrlTile;
+}
+
+import type { Region } from 'react-native-maps';
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtYXVvMG1lMTBkcG4ya3B6anM5a2VoOW0ifQ.zN4Ra2gAVOJ8Hf1tuYfyQA';
 
@@ -135,24 +148,45 @@ export default function MapScreen() {
   const satelliteUrl = `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.png?access_token=${MAPBOX_TOKEN}`;
   const streetsUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
 
+  // Web fallback - show message that maps only work on native
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={styles.webFallback}>
+          <Ionicons name="map-outline" size={64} color={colors.primary} />
+          <Text style={[styles.webFallbackTitle, { color: colors.text }]}>
+            Mapa disponível apenas no app
+          </Text>
+          <Text style={[styles.webFallbackText, { color: colors.textSecondary }]}>
+            Para visualizar o mapa, baixe o app Campo Vivo no seu celular.
+          </Text>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Map */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_DEFAULT}
-        initialRegion={initialRegion}
-        showsUserLocation={locationPermission === true}
-        showsMyLocationButton={false}
-        mapType="none"
-      >
-        <UrlTile
-          urlTemplate={mapStyle === 'satellite' ? satelliteUrl : streetsUrl}
-          maximumZ={19}
-          flipY={false}
-        />
-      </MapView>
+      {MapView && (
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          provider={PROVIDER_DEFAULT}
+          initialRegion={initialRegion}
+          showsUserLocation={locationPermission === true}
+          showsMyLocationButton={false}
+          mapType="none"
+        >
+          {UrlTile && (
+            <UrlTile
+              urlTemplate={mapStyle === 'satellite' ? satelliteUrl : streetsUrl}
+              maximumZ={19}
+              flipY={false}
+            />
+          )}
+        </MapView>
+      )}
 
       {/* Header Overlay */}
       <SafeAreaView style={styles.headerOverlay} edges={['top']}>
@@ -385,5 +419,23 @@ const styles = StyleSheet.create({
   ndviLabel: {
     color: '#fff',
     fontSize: 8,
+  },
+  webFallback: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  webFallbackTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  webFallbackText: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    maxWidth: 300,
   },
 });

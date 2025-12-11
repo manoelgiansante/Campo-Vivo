@@ -180,6 +180,13 @@ export async function deleteCrop(id: number) {
   await db.delete(crops).where(eq(crops.id, id));
 }
 
+export async function getCropById(id: number): Promise<Crop | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(crops).where(eq(crops.id, id)).limit(1);
+  return result[0];
+}
+
 // ==================== FIELD NOTES FUNCTIONS ====================
 export async function createFieldNote(note: InsertFieldNote): Promise<number> {
   const db = await getDb();
@@ -210,6 +217,13 @@ export async function deleteFieldNote(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
+}
+
+export async function getFieldNoteById(id: number): Promise<FieldNote | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fieldNotes).where(eq(fieldNotes.id, id)).limit(1);
+  return result[0];
 }
 
 // ==================== WEATHER FUNCTIONS ====================
@@ -301,6 +315,13 @@ export async function updateCropRotationPlan(id: number, data: Partial<InsertCro
   await db.update(cropRotationPlans).set(data).where(eq(cropRotationPlans.id, id));
 }
 
+export async function getCropRotationPlanById(id: number): Promise<CropRotationPlan | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(cropRotationPlans).where(eq(cropRotationPlans.id, id)).limit(1);
+  return result[0];
+}
+
 // ==================== TASK FUNCTIONS ====================
 export async function createTask(task: InsertTask): Promise<number> {
   const db = await getDb();
@@ -335,6 +356,13 @@ export async function deleteTask(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(tasks).where(eq(tasks.id, id));
+}
+
+export async function getTaskById(id: number): Promise<Task | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  return result[0];
 }
 
 // ==================== NOTIFICATION FUNCTIONS ====================
