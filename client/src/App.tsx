@@ -17,6 +17,13 @@ import FarmsOneSoil from "./pages/FarmsOneSoil";
 import FarmDetailOneSoil from "./pages/FarmDetailOneSoil";
 import FieldShareOneSoil from "./pages/FieldShareOneSoil";
 
+// New Pro features pages
+import WeatherCharts from "./pages/WeatherCharts";
+import SatelliteCompare from "./pages/SatelliteCompare";
+import PrescriptionMap from "./pages/PrescriptionMap";
+import FieldImport from "./pages/FieldImport";
+import PlansPage from "./pages/PlansPage";
+
 function Router() {
   return (
     <Switch>
@@ -72,6 +79,34 @@ function Router() {
           </MobileLayout>
         )}
       </Route>
+      <Route path="/fields/:id/weather">
+        {() => (
+          <MobileLayout>
+            <WeatherCharts />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/fields/:id/compare">
+        {() => (
+          <MobileLayout hideNav fullScreen>
+            <SatelliteCompare />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/fields/:id/prescription">
+        {() => (
+          <MobileLayout>
+            <PrescriptionMap />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/fields/import">
+        {() => (
+          <MobileLayout>
+            <FieldImport />
+          </MobileLayout>
+        )}
+      </Route>
 
       {/* Farms */}
       <Route path="/farms">
@@ -103,6 +138,15 @@ function Router() {
         {() => (
           <MobileLayout>
             <ProfileOneSoil />
+          </MobileLayout>
+        )}
+      </Route>
+
+      {/* Plans */}
+      <Route path="/plans">
+        {() => (
+          <MobileLayout hideNav>
+            <PlansPage />
           </MobileLayout>
         )}
       </Route>

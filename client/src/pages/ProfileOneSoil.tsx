@@ -14,7 +14,9 @@ import {
   Link2,
   AlertCircle,
   Building2,
-  Share2
+  Share2,
+  Crown,
+  Upload,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -144,9 +146,20 @@ export default function ProfileOneSoil() {
         <div className="bg-white rounded-2xl overflow-hidden">
           <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
           <MenuItem 
+            icon={<Crown className="h-5 w-5 text-amber-500" />}
+            label="Meu Plano"
+            badge="Gratuito"
+            onClick={() => setLocation("/plans")}
+          />
+          <MenuItem 
             icon={<Building2 className="h-5 w-5 text-green-600" />}
             label="Minhas Fazendas"
             onClick={() => setLocation("/farms")}
+          />
+          <MenuItem 
+            icon={<Upload className="h-5 w-5 text-green-600" />}
+            label="Importar Talhões"
+            onClick={() => setLocation("/fields/import")}
           />
           <MenuItem 
             icon={<Settings className="h-5 w-5 text-green-600" />}
@@ -214,11 +227,13 @@ export default function ProfileOneSoil() {
 function MenuItem({
   icon,
   label,
+  badge,
   onClick,
   danger = false
 }: {
   icon: React.ReactNode;
   label: string;
+  badge?: string;
   onClick: () => void;
   danger?: boolean;
 }) {
@@ -232,6 +247,11 @@ function MenuItem({
       <div className="flex items-center gap-3">
         {icon}
         <span>{label}</span>
+        {badge && (
+          <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
+            {badge}
+          </span>
+        )}
       </div>
       <ChevronRight className="h-5 w-5 text-gray-400" />
     </button>

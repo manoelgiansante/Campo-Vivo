@@ -28,7 +28,11 @@ import {
   Loader2,
   Share2,
   FileText,
-  Download
+  Download,
+  Cloud,
+  BarChart3,
+  Layers,
+  ImageIcon,
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 import { useLocation, useRoute } from "wouter";
@@ -324,7 +328,7 @@ export default function FieldDetailOneSoil() {
       </div>
 
       {/* Crop Info Section */}
-      <div className="px-4 mt-4 pb-24">
+      <div className="px-4 mt-4">
         <div className="bg-white rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -357,6 +361,34 @@ export default function FieldDetailOneSoil() {
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Pro Features Actions */}
+      <div className="px-4 mt-4 pb-24">
+        <h2 className="text-sm font-medium text-gray-500 mb-3">Análises Avançadas</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <ProFeatureButton
+            icon={<BarChart3 className="h-5 w-5" />}
+            label="Gráficos de Clima"
+            onClick={() => setLocation(`/fields/${fieldId}/weather`)}
+          />
+          <ProFeatureButton
+            icon={<ImageIcon className="h-5 w-5" />}
+            label="Comparar Satélite"
+            onClick={() => setLocation(`/fields/${fieldId}/compare`)}
+          />
+          <ProFeatureButton
+            icon={<Layers className="h-5 w-5" />}
+            label="Mapa de Prescrição"
+            onClick={() => setLocation(`/fields/${fieldId}/prescription`)}
+            isPro
+          />
+          <ProFeatureButton
+            icon={<Cloud className="h-5 w-5" />}
+            label="NDVI Detalhado"
+            onClick={() => setLocation(`/fields/${fieldId}/weather`)}
+          />
         </div>
       </div>
 
@@ -512,6 +544,38 @@ function NdviOption({
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+// Pro Feature Button Component
+function ProFeatureButton({
+  icon,
+  label,
+  onClick,
+  isPro = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  isPro?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white rounded-xl p-4 text-left hover:bg-gray-50 transition-colors relative"
+    >
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-green-100 rounded-lg text-green-600">
+          {icon}
+        </div>
+        <span className="text-sm font-medium text-gray-900">{label}</span>
+      </div>
+      {isPro && (
+        <span className="absolute top-2 right-2 bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
+          PRO
+        </span>
+      )}
     </button>
   );
 }
