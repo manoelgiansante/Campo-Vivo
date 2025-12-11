@@ -3,5 +3,11 @@
   "buildCommand": "pnpm run build:client",
   "outputDirectory": "dist/public",
   "installCommand": "pnpm install",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
