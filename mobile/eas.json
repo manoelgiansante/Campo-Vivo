@@ -5,12 +5,32 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtNm9kOG9hbjA4dDUyanM4Y2N3cDd0YnEifQ.yfG17s5BOPIM3G9pUxYa3g"
+      }
+    },
+    "development-device": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtNm9kOG9hbjA4dDUyanM4Y2N3cDd0YnEifQ.yfG17s5BOPIM3G9pUxYa3g"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtNm9kOG9hbjA4dDUyanM4Y2N3cDd0YnEifQ.yfG17s5BOPIM3G9pUxYa3g"
+      }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtNm9kOG9hbjA4dDUyanM4Y2N3cDd0YnEifQ.yfG17s5BOPIM3G9pUxYa3g"
+      }
+    }
   },
   "submit": {
     "production": {}

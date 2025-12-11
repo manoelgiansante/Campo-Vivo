@@ -37,7 +37,9 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -53,10 +55,23 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Campo Vivo precisa da sua localização para mostrar seus campos no mapa."
         }
+      ],
+      "expo-web-browser",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "sk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtNm9kOG9hbjA4dDUyanM4Y2N3cDd0YnEifQ.yfG17s5BOPIM3G9pUxYa3g"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d25b9bcb-2bc0-4d90-8c60-0810527d09e1"
+      }
     }
   }
 }

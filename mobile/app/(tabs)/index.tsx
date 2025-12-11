@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Text, Platform, Dimensions } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, StyleSheet, Text, Platform, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,56 +8,138 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { FontSize, FontWeight, Spacing } from '@/constants/theme';
+import MapView, { PROVIDER_DEFAULT, UrlTile, Region } from 'react-native-maps';
 
-// Placeholder map for web and when react-native-maps is not available
-function PlaceholderMap() {
-  const { colors } = useTheme();
-  const { currentLocation } = useAppStore();
-
-  return (
-    <View style={[styles.mapPlaceholder, { backgroundColor: colors.surface }]}>
-      <Ionicons name="map" size={64} color={colors.primary} />
-      <Text style={[styles.mapPlaceholderText, { color: colors.text }]}>
-        Mapa Campo Vivo
-      </Text>
-      {currentLocation && (
-        <Text style={[styles.locationText, { color: colors.textSecondary }]}>
-          📍 {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
-        </Text>
-      )}
-    </View>
-  );
-}
+const MAPBOX_TOKEN = 'pk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtYXVvMG1lMTBkcG4ya3B6anM5a2VoOW0ifQ.zN4Ra2gAVOJ8Hf1tuYfyQA';
 
 export default function MapScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { setCurrentLocation, fields } = useAppStore();
+  const { setCurrentLocation, currentLocation, lastKnownLocation, fields } = useAppStore();
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
+  const [mapStyle, setMapStyle] = useState<'satellite' | 'streets'>('satellite');
+  const [isLocating, setIsLocating] = useState(false);
+  const mapRef = useRef<MapView>(null);
 
+  // Buscar localização ao iniciar
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status === 'granted');
       
       if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({});
-        setCurrentLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
+        try {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          setCurrentLocation({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          });
+        } catch (error) {
+          console.log('Erro ao obter localização:', error);
+          // Usa última localização conhecida se disponível
+        }
       }
     })();
   }, []);
 
+  // Centralizar no mapa quando a localização mudar
+  useEffect(() => {
+    if (currentLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }, 500);
+    }
+  }, []);
+
+  const centerOnLocation = async () => {
+    if (!locationPermission) {
+      Alert.alert(
+        'Permissão Necessária',
+        'Permita o acesso à localização nas configurações do dispositivo.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsLocating(true);
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      
+      const newLocation = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+      
+      setCurrentLocation(newLocation);
+      
+      if (mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude: newLocation.latitude,
+          longitude: newLocation.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 1000);
+      }
+    } catch (error) {
+      console.log('Erro ao obter localização:', error);
+      Alert.alert('Erro', 'Não foi possível obter sua localização. Tente novamente.');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  // Usar última localização conhecida ou localização atual ou padrão
+  const locationToUse = currentLocation || lastKnownLocation;
+  
+  const initialRegion: Region = locationToUse ? {
+    latitude: locationToUse.latitude,
+    longitude: locationToUse.longitude,
+    latitudeDelta: 0.02,
+    longitudeDelta: 0.02,
+  } : {
+    // Localização padrão (Brasil central)
+    latitude: -15.7801,
+    longitude: -47.9292,
+    latitudeDelta: 5,
+    longitudeDelta: 5,
+  };
+
+  // Mapbox tile URL for satellite imagery
+  const satelliteUrl = `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.png?access_token=${MAPBOX_TOKEN}`;
+  const streetsUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
+      {/* Map */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_DEFAULT}
+        initialRegion={initialRegion}
+        showsUserLocation={locationPermission === true}
+        showsMyLocationButton={false}
+        mapType="none"
+      >
+        <UrlTile
+          urlTemplate={mapStyle === 'satellite' ? satelliteUrl : streetsUrl}
+          maximumZ={19}
+          flipY={false}
+        />
+      </MapView>
+
+      {/* Header Overlay */}
+      <SafeAreaView style={styles.headerOverlay} edges={['top']}>
+        <View style={[styles.header, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
           <View>
-            <Text style={[styles.title, { color: colors.text }]}>Campo Vivo</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text style={[styles.title, { color: '#fff' }]}>Campo Vivo</Text>
+            <Text style={[styles.subtitle, { color: 'rgba(255,255,255,0.8)' }]}>
               {fields.length} campos cadastrados
             </Text>
           </View>
@@ -65,44 +147,90 @@ export default function MapScreen() {
             title=""
             variant="ghost"
             onPress={() => router.push('/fields/new')}
-            icon={<Ionicons name="add-circle" size={28} color={colors.primary} />}
+            icon={<Ionicons name="add-circle" size={28} color="#fff" />}
           />
         </View>
-
-        {/* Map Area */}
-        <View style={styles.mapContainer}>
-          <PlaceholderMap />
-          
-          {/* Floating Action Button */}
-          <View style={styles.fabContainer}>
-            <Button
-              title="Novo Campo"
-              onPress={() => router.push('/fields/new')}
-              icon={<Ionicons name="add" size={20} color="#fff" />}
-              style={styles.fab}
-            />
-          </View>
-
-          {/* Location Button */}
-          <View style={styles.locationButton}>
-            <Button
-              title=""
-              variant="secondary"
-              onPress={async () => {
-                if (locationPermission) {
-                  const location = await Location.getCurrentPositionAsync({});
-                  setCurrentLocation({
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude,
-                  });
-                }
-              }}
-              icon={<Ionicons name="locate" size={24} color={colors.primary} />}
-              style={{ width: 48, height: 48 }}
-            />
-          </View>
-        </View>
       </SafeAreaView>
+
+      {/* Map Style Toggle */}
+      <View style={styles.mapStyleToggle}>
+        <TouchableOpacity
+          style={[
+            styles.styleButton,
+            mapStyle === 'satellite' && styles.styleButtonActive
+          ]}
+          onPress={() => setMapStyle('satellite')}
+        >
+          <Ionicons 
+            name="globe" 
+            size={20} 
+            color={mapStyle === 'satellite' ? '#fff' : colors.text} 
+          />
+          <Text style={[
+            styles.styleButtonText,
+            { color: mapStyle === 'satellite' ? '#fff' : colors.text }
+          ]}>Satélite</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.styleButton,
+            mapStyle === 'streets' && styles.styleButtonActive
+          ]}
+          onPress={() => setMapStyle('streets')}
+        >
+          <Ionicons 
+            name="map" 
+            size={20} 
+            color={mapStyle === 'streets' ? '#fff' : colors.text} 
+          />
+          <Text style={[
+            styles.styleButtonText,
+            { color: mapStyle === 'streets' ? '#fff' : colors.text }
+          ]}>Mapa</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Location Button */}
+      <TouchableOpacity 
+        style={[
+          styles.locationButton, 
+          { backgroundColor: isLocating ? colors.primary : colors.surface }
+        ]}
+        onPress={centerOnLocation}
+        disabled={isLocating}
+      >
+        <Ionicons 
+          name={isLocating ? "navigate" : "locate"} 
+          size={24} 
+          color={isLocating ? '#fff' : colors.primary} 
+        />
+      </TouchableOpacity>
+
+      {/* FAB - New Field */}
+      <TouchableOpacity 
+        style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => router.push('/fields/new')}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+        <Text style={styles.fabText}>Novo Campo</Text>
+      </TouchableOpacity>
+
+      {/* NDVI Scale */}
+      <View style={[styles.ndviScale, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+        <Text style={styles.ndviTitle}>NDVI</Text>
+        <View style={styles.ndviGradient}>
+          <View style={[styles.ndviColor, { backgroundColor: '#d73027' }]} />
+          <View style={[styles.ndviColor, { backgroundColor: '#fc8d59' }]} />
+          <View style={[styles.ndviColor, { backgroundColor: '#fee08b' }]} />
+          <View style={[styles.ndviColor, { backgroundColor: '#d9ef8b' }]} />
+          <View style={[styles.ndviColor, { backgroundColor: '#91cf60' }]} />
+          <View style={[styles.ndviColor, { backgroundColor: '#1a9850' }]} />
+        </View>
+        <View style={styles.ndviLabels}>
+          <Text style={styles.ndviLabel}>0</Text>
+          <Text style={styles.ndviLabel}>1</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -113,8 +241,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  safeArea: {
-    flex: 1,
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   header: {
     flexDirection: 'row',
@@ -122,6 +256,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    borderRadius: 0,
   },
   title: {
     fontSize: FontSize.xxl,
@@ -131,40 +266,104 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     marginTop: 2,
   },
-  mapContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mapPlaceholderText: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.semibold,
-    marginTop: Spacing.md,
-  },
-  locationText: {
-    fontSize: FontSize.sm,
-    marginTop: Spacing.sm,
-  },
-  fabContainer: {
+  mapStyleToggle: {
     position: 'absolute',
-    bottom: Spacing.lg,
+    top: 120,
     right: Spacing.md,
-  },
-  fab: {
-    paddingHorizontal: Spacing.lg,
+    flexDirection: 'column',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
   },
+  styleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  styleButtonActive: {
+    backgroundColor: '#22c55e',
+  },
+  styleButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
   locationButton: {
     position: 'absolute',
-    bottom: Spacing.lg,
+    bottom: 100,
     left: Spacing.md,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 100,
+    right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  fabText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  ndviScale: {
+    position: 'absolute',
+    bottom: 100,
+    left: '50%',
+    marginLeft: -50,
+    width: 100,
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  ndviTitle: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  ndviGradient: {
+    flexDirection: 'row',
+    height: 8,
+    width: '100%',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  ndviColor: {
+    flex: 1,
+  },
+  ndviLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 2,
+  },
+  ndviLabel: {
+    color: '#fff',
+    fontSize: 8,
   },
 });

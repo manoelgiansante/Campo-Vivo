@@ -17,7 +17,7 @@ import {
   Undo2,
   Square
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
@@ -28,13 +28,19 @@ type DrawMode = "select" | "draw";
 export default function FieldDrawNew() {
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<DrawMode>("draw");
+  const modeRef = useRef<DrawMode>("draw"); // REF para evitar closure stale
   const [points, setPoints] = useState<[number, number][]>([]); // [lng, lat]
   const [area, setArea] = useState<number>(0);
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
-  const markersRef = useState<mapboxgl.Marker[]>([])[0];
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
+
+  // Sincronizar ref com state
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   const createField = trpc.fields.create.useMutation({
     onSuccess: (data) => {
@@ -68,8 +74,8 @@ export default function FieldDrawNew() {
     if (!mapInstance) return;
 
     // Clear existing markers
-    markersRef.forEach(m => m.remove());
-    markersRef.length = 0;
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
 
     // Remove existing polygon
     if (mapInstance.getLayer("draw-polygon")) {
@@ -104,7 +110,7 @@ export default function FieldDrawNew() {
           });
         });
 
-        markersRef.push(marker);
+        markersRef.current.push(marker);
       });
 
       // Draw polygon if we have at least 3 points
@@ -144,7 +150,7 @@ export default function FieldDrawNew() {
         });
       }
     }
-  }, [points, mode, mapInstance, markersRef]);
+  }, [points, mode, mapInstance]);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
@@ -165,13 +171,13 @@ export default function FieldDrawNew() {
         map.setZoom(5);
       });
 
-    // Add click listener for drawing
+    // Add click listener for drawing - usar modeRef para evitar closure stale
     map.on("click", (e) => {
-      if (mode === "draw") {
+      if (modeRef.current === "draw") {
         setPoints(prev => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
       }
     });
-  }, [setMap, getUserLocation, mode]);
+  }, [setMap, getUserLocation]);
 
   const handleUndo = () => {
     setPoints(prev => prev.slice(0, -1));

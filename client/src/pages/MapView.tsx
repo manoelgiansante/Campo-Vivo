@@ -47,18 +47,45 @@ export default function MapView() {
 
     const addFieldsToMap = () => {
       fields.forEach((field) => {
-        if (field.boundaries) {
-          try {
-            const points = JSON.parse(field.boundaries as string) as { lat: number; lng: number }[];
-            if (points.length >= 3) {
-              // Convert to Mapbox format [lng, lat]
-              const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
-              coordinates.push(coordinates[0]); // Close polygon
+        if (!field.boundaries) return;
+        
+        try {
+          // Parse boundaries com validação robusta
+          let points: { lat: number; lng: number }[];
+          
+          if (typeof field.boundaries === 'string') {
+            points = JSON.parse(field.boundaries);
+          } else {
+            points = field.boundaries as { lat: number; lng: number }[];
+          }
+          
+          // Validar formato
+          if (!Array.isArray(points) || points.length < 3) {
+            console.warn(`Campo ${field.id}: boundaries inválido (menos de 3 pontos)`);
+            return;
+          }
+          
+          // Verificar se tem lat/lng válidos
+          const hasValidCoords = points.every(p => 
+            typeof p.lat === 'number' && 
+            typeof p.lng === 'number' &&
+            !isNaN(p.lat) && 
+            !isNaN(p.lng)
+          );
+          
+          if (!hasValidCoords) {
+            console.warn(`Campo ${field.id}: coordenadas inválidas`);
+            return;
+          }
 
-              const sourceId = `field-${field.id}`;
-              const ndviValue = 0.7; // Default NDVI value for visualization
-              const fillColor = mapLayer === "vegetation" ? getNdviColor(ndviValue) : "#666666";
-              const fillOpacity = mapLayer === "vegetation" ? 0.6 : 0.3;
+          // Convert to Mapbox format [lng, lat]
+          const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
+          coordinates.push(coordinates[0]); // Close polygon
+
+          const sourceId = `field-${field.id}`;
+          const ndviValue = 0.7; // Default NDVI value for visualization
+          const fillColor = mapLayer === "vegetation" ? getNdviColor(ndviValue) : "#666666";
+          const fillOpacity = mapLayer === "vegetation" ? 0.6 : 0.3;
 
               // Remove existing layers/sources
               if (mapInstance.getLayer(sourceId)) mapInstance.removeLayer(sourceId);
@@ -133,11 +160,9 @@ export default function MapView() {
               new mapboxgl.Marker({ element: el })
                 .setLngLat([centerLng, centerLat])
                 .addTo(mapInstance);
-            }
           } catch (e) {
-            console.error("Error parsing boundaries:", e);
+            console.error(`Erro ao processar campo ${field.id}:`, e);
           }
-        }
       });
 
       // Fit bounds to show all fields
