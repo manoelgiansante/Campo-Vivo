@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { ExportReportDialog } from "@/components/ExportReportDialog";
 import { 
   ChevronDown, 
   ChevronLeft,
@@ -26,7 +27,8 @@ import {
   Info,
   Loader2,
   Share2,
-  FileText
+  FileText,
+  Download
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 import { useLocation, useRoute } from "wouter";
@@ -55,6 +57,7 @@ export default function FieldDetailOneSoil() {
   
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showLayerSheet, setShowLayerSheet] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
   const [ndviType, setNdviType] = useState<NdviType>("basic");
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(0);
@@ -207,6 +210,14 @@ export default function FieldDetailOneSoil() {
             <ChevronLeft className="h-6 w-6" />
           </button>
           <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setShowExportDialog(true)}
+              title="Exportar relatório"
+            >
+              <FileText className="h-5 w-5" />
+            </Button>
             <Button 
               variant="ghost" 
               size="icon"
@@ -390,6 +401,14 @@ export default function FieldDetailOneSoil() {
           )}
         </SheetContent>
       </Sheet>
+      
+      {/* Export Report Dialog */}
+      <ExportReportDialog 
+        fieldId={fieldId!} 
+        fieldName={field.name}
+        open={showExportDialog} 
+        onOpenChange={setShowExportDialog} 
+      />
     </div>
   );
 }
