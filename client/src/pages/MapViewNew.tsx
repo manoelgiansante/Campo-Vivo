@@ -238,6 +238,13 @@ export default function MapViewNew() {
           duration: 2000
         });
         
+        // Salvar posição para uso posterior (ex: criar campo)
+        localStorage.setItem('campovivo_map_position', JSON.stringify({
+          lng: coords[0],
+          lat: coords[1],
+          zoom: 15
+        }));
+        
         // Add a marker at user's location
         new mapboxgl.Marker({ color: "#3b82f6" })
           .setLngLat(coords)
@@ -282,9 +289,9 @@ export default function MapViewNew() {
 
   const getLayerLabel = () => {
     switch (mapLayer) {
-      case "satellite": return "Satellite";
-      case "crop": return "Crop";
-      case "vegetation": return "Vegetation";
+      case "satellite": return "Satélite";
+      case "crop": return "Cultivo";
+      case "vegetation": return "Vegetação";
     }
   };
 
@@ -346,7 +353,19 @@ export default function MapViewNew() {
             variant="secondary"
             size="icon"
             className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-sm border-0 text-white hover:bg-gray-800"
-            onClick={() => setLocation("/fields/new")}
+            onClick={() => {
+              // Salvar posição atual do mapa antes de navegar
+              if (mapInstance) {
+                const center = mapInstance.getCenter();
+                const zoom = mapInstance.getZoom();
+                localStorage.setItem('campovivo_map_position', JSON.stringify({
+                  lng: center.lng,
+                  lat: center.lat,
+                  zoom: zoom
+                }));
+              }
+              setLocation("/fields/new");
+            }}
           >
             <Plus className="h-5 w-5" />
           </Button>
@@ -386,7 +405,19 @@ export default function MapViewNew() {
         variant="secondary"
         size="icon"
         className="absolute right-4 bottom-48 z-10 h-12 w-12 rounded-full bg-white shadow-lg border-0"
-        onClick={() => setLocation("/fields/new")}
+        onClick={() => {
+          // Salvar posição atual do mapa antes de navegar
+          if (mapInstance) {
+            const center = mapInstance.getCenter();
+            const zoom = mapInstance.getZoom();
+            localStorage.setItem('campovivo_map_position', JSON.stringify({
+              lng: center.lng,
+              lat: center.lat,
+              zoom: zoom
+            }));
+          }
+          setLocation("/fields/new");
+        }}
       >
         <Plus className="h-5 w-5 text-gray-700" />
       </Button>
@@ -450,28 +481,28 @@ export default function MapViewNew() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader className="pb-4">
-            <SheetTitle className="text-left">Map layer</SheetTitle>
+            <SheetTitle className="text-left">Camada do mapa</SheetTitle>
           </SheetHeader>
           
           {/* Layer Types */}
           <div className="flex gap-3 mb-6">
             <LayerOption
               icon={<Satellite className="h-6 w-6" />}
-              label="Satellite image"
+              label="Imagem de satélite"
               selected={mapLayer === "satellite"}
               onClick={() => setMapLayer("satellite")}
               bgColor="bg-green-100"
             />
             <LayerOption
               icon={<Wheat className="h-6 w-6" />}
-              label="Crop"
+              label="Cultivo"
               selected={mapLayer === "crop"}
               onClick={() => setMapLayer("crop")}
               bgColor="bg-blue-100"
             />
             <LayerOption
               icon={<Leaf className="h-6 w-6" />}
-              label="Vegetation"
+              label="Vegetação"
               selected={mapLayer === "vegetation"}
               onClick={() => setMapLayer("vegetation")}
               bgColor="bg-lime-100"
@@ -482,22 +513,22 @@ export default function MapViewNew() {
           {mapLayer === "vegetation" && (
             <div className="space-y-1">
               <NdviOption
-                label="Basic NDVI"
+                label="NDVI Básico"
                 selected={ndviType === "basic"}
                 onClick={() => setNdviType("basic")}
               />
               <NdviOption
-                label="Contrasted NDVI"
+                label="NDVI Contrastado"
                 selected={ndviType === "contrasted"}
                 onClick={() => setNdviType("contrasted")}
               />
               <NdviOption
-                label="Average NDVI"
+                label="NDVI Médio"
                 selected={ndviType === "average"}
                 onClick={() => setNdviType("average")}
               />
               <NdviOption
-                label="Heterogenity NDVI"
+                label="NDVI Heterogeneidade"
                 selected={ndviType === "heterogenity"}
                 onClick={() => setNdviType("heterogenity")}
               />

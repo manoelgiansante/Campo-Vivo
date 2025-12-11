@@ -175,10 +175,10 @@ export default function FieldDetailOneSoil() {
 
   const getNdviLabel = () => {
     switch (ndviType) {
-      case "basic": return "Basic NDVI";
-      case "contrasted": return "Contrasted NDVI";
-      case "average": return "Average NDVI";
-      case "heterogenity": return "Heterogenity NDVI";
+      case "basic": return "NDVI Básico";
+      case "contrasted": return "NDVI Contrastado";
+      case "average": return "NDVI Médio";
+      case "heterogenity": return "NDVI Heterogeneidade";
     }
   };
 
@@ -297,9 +297,9 @@ export default function FieldDetailOneSoil() {
       {/* History Section */}
       <div className="px-4 mt-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">History</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Histórico</h2>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Hide cloudy days</span>
+            <span className="text-sm text-gray-500">Ocultar dias nublados</span>
             <Switch 
               checked={hideCloudyDays} 
               onCheckedChange={setHideCloudyDays}
@@ -364,27 +364,27 @@ export default function FieldDetailOneSoil() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader className="pb-4">
-            <SheetTitle className="text-left">Map layer</SheetTitle>
+            <SheetTitle className="text-left">Camada do mapa</SheetTitle>
           </SheetHeader>
           
           <div className="flex gap-3 mb-6">
             <LayerOption
               icon={<Satellite className="h-6 w-6" />}
-              label="Satellite image"
+              label="Imagem de satélite"
               selected={mapLayer === "satellite"}
               onClick={() => setMapLayer("satellite")}
               bgColor="bg-green-100"
             />
             <LayerOption
               icon={<Wheat className="h-6 w-6" />}
-              label="Crop"
+              label="Cultivo"
               selected={mapLayer === "crop"}
               onClick={() => setMapLayer("crop")}
               bgColor="bg-blue-100"
             />
             <LayerOption
               icon={<Leaf className="h-6 w-6" />}
-              label="Vegetation"
+              label="Vegetação"
               selected={mapLayer === "vegetation"}
               onClick={() => setMapLayer("vegetation")}
               bgColor="bg-lime-100"
@@ -393,10 +393,10 @@ export default function FieldDetailOneSoil() {
 
           {mapLayer === "vegetation" && (
             <div className="space-y-1">
-              <NdviOption label="Basic NDVI" selected={ndviType === "basic"} onClick={() => setNdviType("basic")} />
-              <NdviOption label="Contrasted NDVI" selected={ndviType === "contrasted"} onClick={() => setNdviType("contrasted")} />
-              <NdviOption label="Average NDVI" selected={ndviType === "average"} onClick={() => setNdviType("average")} />
-              <NdviOption label="Heterogenity NDVI" selected={ndviType === "heterogenity"} onClick={() => setNdviType("heterogenity")} />
+              <NdviOption label="NDVI Básico" selected={ndviType === "basic"} onClick={() => setNdviType("basic")} />
+              <NdviOption label="NDVI Contrastado" selected={ndviType === "contrasted"} onClick={() => setNdviType("contrasted")} />
+              <NdviOption label="NDVI Médio" selected={ndviType === "average"} onClick={() => setNdviType("average")} />
+              <NdviOption label="NDVI Heterogeneidade" selected={ndviType === "heterogenity"} onClick={() => setNdviType("heterogenity")} />
             </div>
           )}
         </SheetContent>

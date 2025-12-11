@@ -39,6 +39,20 @@ const suggestedFields = [
   { id: 6, area: 5.5, coordinates: [[-54.63, -20.49], [-54.62, -20.49], [-54.62, -20.50], [-54.63, -20.50]] },
 ];
 
+// Obter posição salva do mapa ou usar padrão
+const getSavedMapPosition = () => {
+  try {
+    const saved = localStorage.getItem('campovivo_map_position');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      return { center: [pos.lng, pos.lat] as [number, number], zoom: pos.zoom || 15 };
+    }
+  } catch (e) {
+    console.error('Erro ao carregar posição do mapa:', e);
+  }
+  return { center: [-54.6, -20.47] as [number, number], zoom: 13 };
+};
+
 export default function FieldDrawOneSoil() {
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<DrawMode>("select");
@@ -50,6 +64,9 @@ export default function FieldDrawOneSoil() {
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  
+  // Obter posição inicial do mapa (salva da navegação anterior)
+  const savedPosition = getSavedMapPosition();
   
   // Mutation para criar campo
   const createField = trpc.fields.create.useMutation({
@@ -305,8 +322,8 @@ export default function FieldDrawOneSoil() {
       <MapboxMap
         onMapReady={handleMapReady}
         className="h-full w-full"
-        initialCenter={[-54.6, -20.47]}
-        initialZoom={13}
+        initialCenter={savedPosition.center}
+        initialZoom={savedPosition.zoom}
       />
 
       {/* Top Bar */}
@@ -328,7 +345,7 @@ export default function FieldDrawOneSoil() {
             }`}
           >
             <Hand className="h-4 w-4" />
-            <span className="font-medium">Select</span>
+            <span className="font-medium">Selecionar</span>
           </button>
           <button
             onClick={() => setMode("draw")}
@@ -337,7 +354,7 @@ export default function FieldDrawOneSoil() {
             }`}
           >
             <Pencil className="h-4 w-4" />
-            <span className="font-medium">Draw</span>
+            <span className="font-medium">Desenhar</span>
           </button>
         </div>
 
@@ -354,7 +371,7 @@ export default function FieldDrawOneSoil() {
       {mode === "select" && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10">
           <div className="bg-gray-900/80 backdrop-blur-sm text-white text-sm px-4 py-2 rounded-full">
-            Loading field boundaries...
+            Carregando limites dos campos...
           </div>
         </div>
       )}
@@ -378,7 +395,7 @@ export default function FieldDrawOneSoil() {
           className="absolute bottom-32 left-4 z-10 flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm text-white px-4 py-3 rounded-full"
         >
           <Undo2 className="h-4 w-4" />
-          <span>Undo</span>
+          <span>Desfazer</span>
         </button>
       )}
 
@@ -398,8 +415,8 @@ export default function FieldDrawOneSoil() {
           onClick={handleFinish}
           className="absolute bottom-20 left-4 right-4 z-10 bg-green-600 text-white py-4 rounded-2xl text-center font-semibold"
         >
-          <div>Finish field boundary</div>
-          <div className="text-sm font-normal opacity-90">Area {area.toFixed(1)} ha</div>
+          <div>Finalizar limite do campo</div>
+          <div className="text-sm font-normal opacity-90">Área {area.toFixed(1)} ha</div>
         </button>
       )}
 
@@ -409,7 +426,7 @@ export default function FieldDrawOneSoil() {
           onClick={() => setLocation("/fields")}
           className="absolute bottom-20 left-4 right-4 z-10 bg-green-600 text-white py-4 rounded-2xl text-center font-semibold"
         >
-          Add {selectedFields.length} field{selectedFields.length > 1 ? "s" : ""}
+          Adicionar {selectedFields.length} campo{selectedFields.length > 1 ? "s" : ""}
         </button>
       )}
       

@@ -133,9 +133,9 @@ export default function FieldsListNew() {
 
   const getLayerLabel = () => {
     switch (mapLayer) {
-      case "satellite": return "Satellite";
-      case "crop": return "Crop";
-      case "vegetation": return "Vegetation";
+      case "satellite": return "Satélite";
+      case "crop": return "Cultivo";
+      case "vegetation": return "Vegetação";
     }
   };
 
@@ -173,17 +173,17 @@ export default function FieldsListNew() {
           /* Normal Header */
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Campos</h1>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
                     <Folder className="h-4 w-4" />
-                    <span>All fields</span>
+                    <span>Todos os campos</span>
                     <ChevronDown className="h-3 w-3" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <DropdownMenuItem>All fields</DropdownMenuItem>
+                  <DropdownMenuItem>Todos os campos</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setLocation("/farms")}>
                     <Building2 className="h-4 w-4 mr-2" />
@@ -296,28 +296,28 @@ export default function FieldsListNew() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader className="pb-4">
-            <SheetTitle className="text-left">Map layer</SheetTitle>
+            <SheetTitle className="text-left">Camada do mapa</SheetTitle>
           </SheetHeader>
           
           {/* Layer Types */}
           <div className="flex gap-3 mb-6">
             <LayerOption
               icon={<Satellite className="h-6 w-6" />}
-              label="Satellite image"
+              label="Imagem de satélite"
               selected={mapLayer === "satellite"}
               onClick={() => setMapLayer("satellite")}
               bgColor="bg-green-100"
             />
             <LayerOption
               icon={<Wheat className="h-6 w-6" />}
-              label="Crop"
+              label="Cultivo"
               selected={mapLayer === "crop"}
               onClick={() => setMapLayer("crop")}
               bgColor="bg-blue-100"
             />
             <LayerOption
               icon={<Leaf className="h-6 w-6" />}
-              label="Vegetation"
+              label="Vegetação"
               selected={mapLayer === "vegetation"}
               onClick={() => setMapLayer("vegetation")}
               bgColor="bg-lime-100"
@@ -327,10 +327,10 @@ export default function FieldsListNew() {
           {/* NDVI Types */}
           {mapLayer === "vegetation" && (
             <div className="space-y-1">
-              <NdviOption label="Basic NDVI" selected={true} onClick={() => {}} />
-              <NdviOption label="Contrasted NDVI" selected={false} onClick={() => {}} />
-              <NdviOption label="Average NDVI" selected={false} onClick={() => {}} />
-              <NdviOption label="Heterogenity NDVI" selected={false} onClick={() => {}} />
+              <NdviOption label="NDVI Básico" selected={true} onClick={() => {}} />
+              <NdviOption label="NDVI Contrastado" selected={false} onClick={() => {}} />
+              <NdviOption label="NDVI Médio" selected={false} onClick={() => {}} />
+              <NdviOption label="NDVI Heterogeneidade" selected={false} onClick={() => {}} />
             </div>
           )}
         </SheetContent>

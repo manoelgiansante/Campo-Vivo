@@ -166,7 +166,7 @@ export default function FieldDetailNew() {
             <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
             <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
               <Folder className="h-4 w-4" />
-              <span>All fields</span>
+              <span>Todos os campos</span>
               <ChevronDown className="h-3 w-3" />
             </button>
           </div>
@@ -265,9 +265,9 @@ export default function FieldDetailNew() {
           {/* History Section */}
           <div className="px-4 py-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">History</h3>
+              <h3 className="font-semibold text-gray-900">Histórico</h3>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Hide cloudy days</span>
+                <span className="text-sm text-gray-500">Ocultar dias nublados</span>
                 <Switch 
                   checked={hideCloudy} 
                   onCheckedChange={setHideCloudy}
@@ -336,19 +336,19 @@ export default function FieldDetailNew() {
               </div>
               <div className="grid grid-cols-2 gap-4 mt-3">
                 <div>
-                  <p className="text-sm text-gray-500">Planting date</p>
+                  <p className="text-sm text-gray-500">Data de plantio</p>
                   <p className="font-medium text-gray-900">
                     {currentCrop?.plantingDate 
                       ? format(new Date(currentCrop.plantingDate), "dd/MM/yyyy")
-                      : "Not set"}
+                      : "Não definida"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Harvest date</p>
+                  <p className="text-sm text-gray-500">Data de colheita</p>
                   <p className="font-medium text-gray-900">
                     {currentCrop?.expectedHarvestDate 
                       ? format(new Date(currentCrop.expectedHarvestDate), "dd/MM/yyyy")
-                      : "Not set"}
+                      : "Não definida"}
                   </p>
                 </div>
               </div>
