@@ -95,17 +95,22 @@ export default function FieldsListNew() {
   
   // Campos com valores processados
   const fields = fieldsData ?? [];
+  const fieldIds = fields.map(f => f.id);
   
-  // Usar valores NDVI default até implementar batch query
-  // TODO: Criar endpoint ndvi.getLatestBatch para buscar todos de uma vez
+  // Usar batch query para buscar NDVI de todos os campos de uma vez
+  const { data: ndviBatchData } = trpc.ndvi.getLatestBatch.useQuery(
+    { fieldIds },
+    { enabled: fieldIds.length > 0 }
+  );
+  
   const ndviByFieldId = useMemo(() => {
     const map: Record<number, number> = {};
     fields.forEach(field => {
-      // Default NDVI baseado em se tem dados ou não
-      map[field.id] = 0.5;
+      const ndviData = ndviBatchData?.[field.id];
+      map[field.id] = ndviData?.ndviAverage ?? 0.5;
     });
     return map;
-  }, [fields]);
+  }, [fields, ndviBatchData]);
   
   const totalArea = fields.reduce((sum, f) => sum + (f.areaHectares ?? 0), 0);
 

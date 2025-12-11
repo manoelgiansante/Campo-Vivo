@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./_core/env";
+import { storagePut } from "./storage";
 
 // Helper function to generate mock weather forecast
 function generateMockForecast() {
@@ -399,6 +400,28 @@ export const appRouter = router({
         }
         return await db.getLatestNdviByFieldId(input.fieldId);
       }),
+    // Batch query para buscar NDVI de múltiplos campos de uma vez
+    getLatestBatch: protectedProcedure
+      .input(z.object({ fieldIds: z.array(z.number()) }))
+      .query(async ({ ctx, input }) => {
+        const results: Record<number, { ndviAverage: number | null; captureDate: Date | null }> = {};
+        
+        // Verificar que todos os campos pertencem ao usuário
+        const userFields = await db.getFieldsByUserId(ctx.user.id);
+        const userFieldIds = new Set(userFields.map(f => f.id));
+        
+        for (const fieldId of input.fieldIds) {
+          if (!userFieldIds.has(fieldId)) continue;
+          
+          const ndvi = await db.getLatestNdviByFieldId(fieldId);
+          results[fieldId] = {
+            ndviAverage: ndvi?.ndviAverage ?? null,
+            captureDate: ndvi?.captureDate ?? null,
+          };
+        }
+        
+        return results;
+      }),
   }),
 
   // ==================== CROP ROTATION ====================
@@ -658,6 +681,197 @@ export const appRouter = router({
             message: "Erro ao buscar endereço" 
           });
         }
+      }),
+  }),
+
+  // ==================== UPLOAD DE FOTOS ====================
+  upload: router({
+    photo: protectedProcedure
+      .input(z.object({
+        base64: z.string(), // Base64 encoded image
+        fileName: z.string(),
+        contentType: z.string().default("image/jpeg"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // Decode base64 to buffer
+          const base64Data = input.base64.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Data, "base64");
+          
+          // Generate unique filename
+          const timestamp = Date.now();
+          const uniqueName = `photos/${ctx.user.id}/${timestamp}_${input.fileName}`;
+          
+          // Upload to storage
+          const result = await storagePut(uniqueName, buffer, input.contentType);
+          
+          return {
+            success: true,
+            url: result.url,
+            key: result.key,
+          };
+        } catch (error) {
+          console.error("Upload error:", error);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Erro ao fazer upload da foto",
+          });
+        }
+      }),
+    // Upload múltiplas fotos
+    photos: protectedProcedure
+      .input(z.object({
+        photos: z.array(z.object({
+          base64: z.string(),
+          fileName: z.string(),
+          contentType: z.string().default("image/jpeg"),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const results = [];
+        
+        for (const photo of input.photos) {
+          try {
+            const base64Data = photo.base64.replace(/^data:image\/\w+;base64,/, "");
+            const buffer = Buffer.from(base64Data, "base64");
+            const timestamp = Date.now();
+            const uniqueName = `photos/${ctx.user.id}/${timestamp}_${photo.fileName}`;
+            
+            const result = await storagePut(uniqueName, buffer, photo.contentType);
+            results.push({
+              success: true,
+              url: result.url,
+              key: result.key,
+              fileName: photo.fileName,
+            });
+          } catch (error) {
+            results.push({
+              success: false,
+              url: null,
+              key: null,
+              fileName: photo.fileName,
+              error: "Erro no upload",
+            });
+          }
+        }
+        
+        return { results };
+      }),
+  }),
+
+  // ==================== OFFLINE SYNC ====================
+  sync: router({
+    // Buscar alterações pendentes do servidor
+    getPendingChanges: protectedProcedure
+      .input(z.object({ lastSyncTimestamp: z.string().optional() }))
+      .query(async ({ ctx, input }) => {
+        const lastSync = input.lastSyncTimestamp 
+          ? new Date(input.lastSyncTimestamp) 
+          : new Date(0);
+        
+        // Buscar dados atualizados desde o último sync
+        const [fields, notes, tasks] = await Promise.all([
+          db.getFieldsByUserId(ctx.user.id),
+          db.getFieldNotesByUserId(ctx.user.id),
+          db.getTasksByUserId(ctx.user.id),
+        ]);
+        
+        // Filtrar apenas itens atualizados após lastSync
+        const updatedFields = fields.filter(f => new Date(f.updatedAt) > lastSync);
+        const updatedNotes = notes.filter(n => new Date(n.updatedAt) > lastSync);
+        const updatedTasks = tasks.filter(t => new Date(t.updatedAt) > lastSync);
+        
+        return {
+          fields: updatedFields,
+          notes: updatedNotes,
+          tasks: updatedTasks,
+          serverTimestamp: new Date().toISOString(),
+        };
+      }),
+    // Enviar alterações do cliente para o servidor
+    pushChanges: protectedProcedure
+      .input(z.object({
+        fields: z.array(z.object({
+          localId: z.string(),
+          action: z.enum(["create", "update", "delete"]),
+          data: z.any(),
+        })).optional(),
+        notes: z.array(z.object({
+          localId: z.string(),
+          action: z.enum(["create", "update", "delete"]),
+          data: z.any(),
+        })).optional(),
+        tasks: z.array(z.object({
+          localId: z.string(),
+          action: z.enum(["create", "update", "delete"]),
+          data: z.any(),
+        })).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const results = {
+          fields: [] as { localId: string; serverId?: number; success: boolean; error?: string }[],
+          notes: [] as { localId: string; serverId?: number; success: boolean; error?: string }[],
+          tasks: [] as { localId: string; serverId?: number; success: boolean; error?: string }[],
+        };
+        
+        // Processar campos
+        for (const field of input.fields ?? []) {
+          try {
+            if (field.action === "create") {
+              const id = await db.createField({ ...field.data, userId: ctx.user.id });
+              results.fields.push({ localId: field.localId, serverId: id, success: true });
+            } else if (field.action === "update" && field.data.id) {
+              await db.updateField(field.data.id, field.data);
+              results.fields.push({ localId: field.localId, serverId: field.data.id, success: true });
+            } else if (field.action === "delete" && field.data.id) {
+              await db.deleteField(field.data.id);
+              results.fields.push({ localId: field.localId, success: true });
+            }
+          } catch (error: any) {
+            results.fields.push({ localId: field.localId, success: false, error: error.message });
+          }
+        }
+        
+        // Processar notas
+        for (const note of input.notes ?? []) {
+          try {
+            if (note.action === "create") {
+              const id = await db.createFieldNote({ ...note.data, userId: ctx.user.id });
+              results.notes.push({ localId: note.localId, serverId: id, success: true });
+            } else if (note.action === "update" && note.data.id) {
+              await db.updateFieldNote(note.data.id, note.data);
+              results.notes.push({ localId: note.localId, serverId: note.data.id, success: true });
+            } else if (note.action === "delete" && note.data.id) {
+              await db.deleteFieldNote(note.data.id);
+              results.notes.push({ localId: note.localId, success: true });
+            }
+          } catch (error: any) {
+            results.notes.push({ localId: note.localId, success: false, error: error.message });
+          }
+        }
+        
+        // Processar tarefas
+        for (const task of input.tasks ?? []) {
+          try {
+            if (task.action === "create") {
+              const id = await db.createTask({ ...task.data, userId: ctx.user.id });
+              results.tasks.push({ localId: task.localId, serverId: id, success: true });
+            } else if (task.action === "update" && task.data.id) {
+              await db.updateTask(task.data.id, task.data);
+              results.tasks.push({ localId: task.localId, serverId: task.data.id, success: true });
+            } else if (task.action === "delete" && task.data.id) {
+              await db.deleteTask(task.data.id);
+              results.tasks.push({ localId: task.localId, success: true });
+            }
+          } catch (error: any) {
+            results.tasks.push({ localId: task.localId, success: false, error: error.message });
+          }
+        }
+        
+        return {
+          results,
+          serverTimestamp: new Date().toISOString(),
+        };
       }),
   }),
 });

@@ -49,9 +49,9 @@ export function Input({
             styles.input,
             {
               color: colors.text,
+              paddingLeft: leftIcon ? 0 : 16,
+              paddingRight: rightIcon ? 0 : 16,
             },
-            leftIcon && { paddingLeft: 0 },
-            rightIcon && { paddingRight: 0 },
             style,
           ]}
           placeholderTextColor={colors.textTertiary}
