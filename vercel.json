@@ -1,13 +1,8 @@
 {
-  "version": 2,
-  "buildCommand": "pnpm run build:client",
+  "buildCommand": "npm install && npm run build:client",
   "outputDirectory": "dist/public",
-  "installCommand": "pnpm install",
-  "framework": null,
+  "framework": "vite",
   "rewrites": [
-    {
-      "source": "/((?!assets/).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
