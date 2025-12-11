@@ -11,8 +11,24 @@ interface MobileLayoutProps {
   fullScreen?: boolean;
 }
 
+// Check if running in demo mode (no OAuth configured)
+const isDemoMode = !import.meta.env.VITE_OAUTH_PORTAL_URL || !import.meta.env.VITE_APP_ID;
+
 export function MobileLayout({ children, hideNav = false, fullScreen = false }: MobileLayoutProps) {
   const { loading, user } = useAuth();
+
+  // In demo mode, skip authentication check
+  if (isDemoMode) {
+    return (
+      <div className={`min-h-screen bg-gray-100 ${fullScreen ? "" : "pb-16"}`}>
+        <main className={fullScreen ? "h-screen" : ""}>
+          {children}
+        </main>
+        {!hideNav && <BottomNav />}
+        <OfflineIndicator />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -37,7 +53,10 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              const loginUrl = getLoginUrl();
+              if (loginUrl) {
+                window.location.href = loginUrl;
+              }
             }}
             size="lg"
             className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl"
