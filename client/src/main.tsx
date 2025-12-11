@@ -8,7 +8,15 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false, // Don't retry failed queries
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -29,8 +37,16 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+    // Only log and redirect for auth errors, suppress others in demo mode
+    if (error instanceof TRPCClientError && error.message === UNAUTHED_ERR_MSG) {
+      redirectToLoginIfUnauthorized(error);
+    }
+    // Suppress API errors in console for demo mode (no backend)
+    if (import.meta.env.PROD) {
+      console.debug("[API unavailable - running in demo mode]");
+    } else {
+      console.error("[API Query Error]", error);
+    }
   }
 });
 
@@ -38,7 +54,9 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+    if (!import.meta.env.PROD) {
+      console.error("[API Mutation Error]", error);
+    }
   }
 });
 
