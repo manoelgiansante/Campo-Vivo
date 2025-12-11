@@ -93,25 +93,19 @@ export default function FieldsListNew() {
   // Fetch real data from API
   const { data: fieldsData, isLoading: loadingFields } = trpc.fields.list.useQuery();
   
-  // Fetch NDVI for each field
+  // Campos com valores processados
   const fields = fieldsData ?? [];
-  const fieldIds = fields.map(f => f.id);
   
-  // Fetch latest NDVI for all fields
-  const ndviQueries = fieldIds.map(id => 
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    trpc.ndvi.getLatest.useQuery({ fieldId: id }, { enabled: !!id })
-  );
-  
-  // Map NDVI values by field ID
+  // Usar valores NDVI default até implementar batch query
+  // TODO: Criar endpoint ndvi.getLatestBatch para buscar todos de uma vez
   const ndviByFieldId = useMemo(() => {
     const map: Record<number, number> = {};
-    fieldIds.forEach((id, index) => {
-      const ndviData = ndviQueries[index]?.data;
-      map[id] = ndviData?.ndviAverage ?? 0.5; // Default to 0.5 if no data
+    fields.forEach(field => {
+      // Default NDVI baseado em se tem dados ou não
+      map[field.id] = 0.5;
     });
     return map;
-  }, [fieldIds, ndviQueries]);
+  }, [fields]);
   
   const totalArea = fields.reduce((sum, f) => sum + (f.areaHectares ?? 0), 0);
 

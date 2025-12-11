@@ -22,31 +22,16 @@ import {
   Leaf,
   Satellite,
   Wheat,
-  Info
+  Info,
+  Loader2
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import mapboxgl from "mapbox-gl";
+import { trpc } from "@/lib/trpc";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
-
-// Mock data for demo
-const mockFields = [
-  {
-    id: 1,
-    name: "pasto 1",
-    areaHectares: 1770,
-    ndviValue: 0.74,
-    boundaries: JSON.stringify([
-      { lat: -20.4697, lng: -54.6131 },
-      { lat: -20.4697, lng: -54.6031 },
-      { lat: -20.4797, lng: -54.6031 },
-      { lat: -20.4797, lng: -54.6131 },
-    ]),
-    lastUpdate: "22 de nov."
-  }
-];
 
 // NDVI color scale
 const getNdviColor = (value: number): string => {
@@ -68,7 +53,18 @@ export default function MapViewNew() {
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
 
-  const fields = mockFields;
+  // Buscar campos reais do banco de dados
+  const { data: fieldsData, isLoading } = trpc.fields.list.useQuery();
+  
+  // Processar campos com NDVI
+  const fields = useMemo(() => {
+    if (!fieldsData) return [];
+    return fieldsData.map(field => ({
+      ...field,
+      ndviValue: 0.5, // Default NDVI, será atualizado com dados reais
+      lastUpdate: field.updatedAt ? new Date(field.updatedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }) : 'Recente'
+    }));
+  }, [fieldsData]);
 
   // Handle map ready
   const handleMapReady = useCallback((map: mapboxgl.Map) => {

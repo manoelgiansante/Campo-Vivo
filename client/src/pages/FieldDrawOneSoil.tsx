@@ -1,5 +1,14 @@
 import { MapboxMap } from "@/components/MapboxMap";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { 
   X,
   Hand,
@@ -8,12 +17,15 @@ import {
   Navigation,
   Undo2,
   Square,
-  CircleDot
+  CircleDot,
+  Loader2
 } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 type DrawMode = "select" | "draw";
 
@@ -30,11 +42,30 @@ const suggestedFields = [
 export default function FieldDrawOneSoil() {
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<DrawMode>("select");
+  const modeRef = useRef<DrawMode>("select"); // Ref para evitar closure stale
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [drawnPoints, setDrawnPoints] = useState<[number, number][]>([]);
   const [selectedFields, setSelectedFields] = useState<number[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [fieldName, setFieldName] = useState("");
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  
+  // Mutation para criar campo
+  const createField = trpc.fields.create.useMutation({
+    onSuccess: (data) => {
+      toast.success("Campo criado com sucesso!");
+      setLocation(`/fields/${data.id}`);
+    },
+    onError: (error) => {
+      toast.error("Erro ao criar campo: " + error.message);
+    },
+  });
+  
+  // Sincronizar modeRef com mode
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   // Calculate area of drawn polygon
   const calculateArea = useCallback(() => {
@@ -108,14 +139,14 @@ export default function FieldDrawOneSoil() {
       markersRef.current.push(marker);
     });
 
-    // Click handler for drawing
+    // Click handler for drawing - usa modeRef para evitar closure stale
     map.on("click", (e) => {
-      if (mode === "draw") {
+      if (modeRef.current === "draw") {
         const newPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         setDrawnPoints(prev => [...prev, newPoint]);
       }
     });
-  }, [mode]);
+  }, []); // Remove mode das dependências pois usamos ref
 
   // Toggle field selection
   const toggleFieldSelection = (fieldId: number, map: mapboxgl.Map) => {
@@ -227,10 +258,32 @@ export default function FieldDrawOneSoil() {
 
   const handleFinish = () => {
     if (drawnPoints.length >= 3) {
-      // Save field and redirect
-      console.log("Field created:", drawnPoints);
-      setLocation("/fields");
+      setShowNameDialog(true);
     }
+  };
+  
+  const handleSaveField = () => {
+    if (!fieldName.trim()) {
+      toast.error("Digite um nome para o campo");
+      return;
+    }
+    
+    const area = calculateArea();
+    const closed = [...drawnPoints, drawnPoints[0]];
+    const polygon = turf.polygon([closed]);
+    const centroid = turf.centroid(polygon);
+    const [centerLng, centerLat] = centroid.geometry.coordinates;
+    
+    // Converter para formato lat/lng
+    const boundaryPoints = drawnPoints.map(([lng, lat]) => ({ lat, lng }));
+    
+    createField.mutate({
+      name: fieldName,
+      latitude: centerLat.toString(),
+      longitude: centerLng.toString(),
+      boundaries: JSON.stringify(boundaryPoints),
+      areaHectares: Math.round(area * 100), // hectares * 100 para precisão
+    });
   };
 
   const handleLocationClick = useCallback(() => {
@@ -359,6 +412,49 @@ export default function FieldDrawOneSoil() {
           Add {selectedFields.length} field{selectedFields.length > 1 ? "s" : ""}
         </button>
       )}
+      
+      {/* Dialog para nome do campo */}
+      <Dialog open={showNameDialog} onOpenChange={setShowNameDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nome do Campo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="fieldName">Nome</Label>
+              <Input
+                id="fieldName"
+                placeholder="Ex: Pasto Norte, Lavoura Sul..."
+                value={fieldName}
+                onChange={(e) => setFieldName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="text-sm text-gray-500">
+              Área: {calculateArea().toFixed(1)} hectares
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNameDialog(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveField}
+              disabled={createField.isPending}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {createField.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar Campo"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

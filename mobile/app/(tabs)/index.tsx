@@ -57,20 +57,34 @@ export default function MapScreen() {
   }, []);
 
   const centerOnLocation = async () => {
+    console.log('centerOnLocation chamado');
+    console.log('locationPermission:', locationPermission);
+    console.log('mapRef.current:', !!mapRef.current);
+    
     if (!locationPermission) {
-      Alert.alert(
-        'Permissão Necessária',
-        'Permita o acesso à localização nas configurações do dispositivo.',
-        [{ text: 'OK' }]
-      );
-      return;
+      // Tenta pedir permissão novamente
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'Permita o acesso à localização nas configurações do dispositivo.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      setLocationPermission(true);
     }
 
     setIsLocating(true);
     try {
+      console.log('Buscando localização...');
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,
+        distanceInterval: 0,
       });
+      
+      console.log('Localização obtida:', location.coords);
       
       const newLocation = {
         latitude: location.coords.latitude,
@@ -79,17 +93,23 @@ export default function MapScreen() {
       
       setCurrentLocation(newLocation);
       
+      // Salvar como última localização conhecida
+      useAppStore.setState({ lastKnownLocation: newLocation });
+      
       if (mapRef.current) {
+        console.log('Animando mapa para:', newLocation);
         mapRef.current.animateToRegion({
           latitude: newLocation.latitude,
           longitude: newLocation.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 1000);
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 1500);
+      } else {
+        console.log('mapRef.current é null!');
       }
     } catch (error) {
       console.log('Erro ao obter localização:', error);
-      Alert.alert('Erro', 'Não foi possível obter sua localização. Tente novamente.');
+      Alert.alert('Erro', 'Não foi possível obter sua localização. Verifique se o GPS está ativado.');
     } finally {
       setIsLocating(false);
     }
