@@ -48,18 +48,18 @@ export default function FieldsList() {
       <div className="bg-gray-100 sticky top-0 z-10 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Campos</h1>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
                   <Folder className="h-4 w-4" />
-                  <span>All fields</span>
+                  <span>Todos os campos</span>
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem>All fields</DropdownMenuItem>
-                <DropdownMenuItem>Create group...</DropdownMenuItem>
+                <DropdownMenuItem>Todos os campos</DropdownMenuItem>
+                <DropdownMenuItem>Criar grupo...</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -86,7 +86,7 @@ export default function FieldsList() {
       <div className="px-4">
         {/* Group Header */}
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-          <span className="font-medium text-gray-700">No groups</span>
+          <span className="font-medium text-gray-700">Sem grupos</span>
           <span>{(totalArea / 100).toFixed(1)} ha</span>
         </div>
 
@@ -136,27 +136,27 @@ export default function FieldsList() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Map layer</SheetTitle>
+            <SheetTitle>Camada do mapa</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 justify-center">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Satellite image"
+                label="Imagem de satélite"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Crop"
+                label="Cultivo"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
               />
               <LayerButton
                 icon={<Leaf className="h-6 w-6" />}
-                label="Vegetation"
+                label="Vegetação"
                 active={mapLayer === "vegetation"}
                 onClick={() => setMapLayer("vegetation")}
                 color="green"
@@ -165,10 +165,10 @@ export default function FieldsList() {
 
             {mapLayer === "vegetation" && (
               <div className="mt-6 space-y-2">
-                <NdviOption label="Basic NDVI" active={true} onClick={() => {}} />
-                <NdviOption label="Contrasted NDVI" active={false} onClick={() => {}} />
-                <NdviOption label="Average NDVI" active={false} onClick={() => {}} />
-                <NdviOption label="Heterogenity NDVI" active={false} onClick={() => {}} />
+                <NdviOption label="NDVI Básico" active={true} onClick={() => {}} />
+                <NdviOption label="NDVI Contrastado" active={false} onClick={() => {}} />
+                <NdviOption label="NDVI Médio" active={false} onClick={() => {}} />
+                <NdviOption label="NDVI Heterogeneidade" active={false} onClick={() => {}} />
               </div>
             )}
           </div>

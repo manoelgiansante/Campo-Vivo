@@ -261,7 +261,7 @@ export default function FieldDrawNew() {
             }`}
           >
             <Hand className="h-4 w-4" />
-            <span className="text-sm">Select</span>
+            <span className="text-sm">Selecionar</span>
           </button>
           <button
             onClick={() => setMode("draw")}
@@ -270,7 +270,7 @@ export default function FieldDrawNew() {
             }`}
           >
             <Pencil className="h-4 w-4" />
-            <span className="text-sm">Draw</span>
+            <span className="text-sm">Desenhar</span>
           </button>
         </div>
 
@@ -321,7 +321,7 @@ export default function FieldDrawNew() {
             disabled={points.length === 0}
           >
             <Undo2 className="h-4 w-4" />
-            <span>Undo</span>
+            <span>Desfazer</span>
           </Button>
 
           {/* Location Button */}
@@ -341,10 +341,10 @@ export default function FieldDrawNew() {
           onClick={handleFinish}
           disabled={points.length < 3}
         >
-          Finish field boundary
+          Finalizar limite do campo
           {area > 0 && (
             <span className="ml-2 font-normal">
-              Area {area.toFixed(1)} ha
+              Área {area.toFixed(1)} ha
             </span>
           )}
         </Button>

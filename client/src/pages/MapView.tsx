@@ -257,17 +257,17 @@ export default function MapView() {
                 className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-4 h-10 gap-2"
               >
                 <Folder className="h-4 w-4" />
-                <span>All fields</span>
-                <span className="text-gray-400">Season {selectedSeason}</span>
+                <span>Todos os campos</span>
+                <span className="text-gray-400">Safra {selectedSeason}</span>
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48">
               <DropdownMenuItem onClick={() => setSelectedSeason("2024")}>
-                Season 2024
+                Safra 2024
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSelectedSeason("2023")}>
-                Season 2023
+                Safra 2023
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -328,27 +328,27 @@ export default function MapView() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Map layer</SheetTitle>
+            <SheetTitle>Camada do mapa</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 mb-6">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Satellite image"
+                label="Imagem de satélite"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Crop"
+                label="Cultivo"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
               />
               <LayerButton
                 icon={<Leaf className="h-6 w-6" />}
-                label="Vegetation"
+                label="Vegetação"
                 active={mapLayer === "vegetation"}
                 onClick={() => setMapLayer("vegetation")}
                 color="green"
@@ -358,22 +358,22 @@ export default function MapView() {
             {mapLayer === "vegetation" && (
               <div className="space-y-2">
                 <NdviOption
-                  label="Basic NDVI"
+                  label="NDVI Básico"
                   active={ndviType === "basic"}
                   onClick={() => setNdviType("basic")}
                 />
                 <NdviOption
-                  label="Contrasted NDVI"
+                  label="NDVI Contrastado"
                   active={ndviType === "contrasted"}
                   onClick={() => setNdviType("contrasted")}
                 />
                 <NdviOption
-                  label="Average NDVI"
+                  label="NDVI Médio"
                   active={ndviType === "average"}
                   onClick={() => setNdviType("average")}
                 />
                 <NdviOption
-                  label="Heterogenity NDVI"
+                  label="NDVI Heterogeneidade"
                   active={ndviType === "heterogenity"}
                   onClick={() => setNdviType("heterogenity")}
                 />
