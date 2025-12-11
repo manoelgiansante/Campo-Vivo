@@ -4,6 +4,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -20,7 +21,8 @@ import {
   Leaf,
   Satellite,
   Wheat,
-  Loader2
+  Loader2,
+  Building2
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -139,7 +141,11 @@ export default function FieldsListNew() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem>All fields</DropdownMenuItem>
-                <DropdownMenuItem>Create group...</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setLocation("/farms")}>
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Gerenciar Fazendas
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

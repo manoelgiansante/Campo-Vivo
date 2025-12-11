@@ -12,7 +12,9 @@ import {
   LogOut,
   Tractor,
   Link2,
-  AlertCircle
+  AlertCircle,
+  Building2,
+  Share2
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -141,6 +143,11 @@ export default function ProfileOneSoil() {
       <div className="p-4 pt-0">
         <div className="bg-white rounded-2xl overflow-hidden">
           <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
+          <MenuItem 
+            icon={<Building2 className="h-5 w-5 text-green-600" />}
+            label="Minhas Fazendas"
+            onClick={() => setLocation("/farms")}
+          />
           <MenuItem 
             icon={<Settings className="h-5 w-5 text-green-600" />}
             label="Configurações"
