@@ -79,7 +79,7 @@ export function useOfflineSync() {
       
       // Invalidate queries to refresh data
       utils.fields.list.invalidate();
-      utils.notes.list.invalidate();
+      utils.notes.listAll.invalidate();
       utils.tasks.list.invalidate();
       
       const syncedCount = successfulIds.size;
