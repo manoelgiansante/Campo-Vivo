@@ -2,7 +2,15 @@
   "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "npx vite build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
+    { "source": "/api/trpc/:path*", "destination": "/api/trpc/[trpc]" },
+    { "source": "/api/oauth/:path*", "destination": "/api/oauth/[...path]" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
