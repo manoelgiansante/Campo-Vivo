@@ -14,6 +14,7 @@ import {
   InsertFarm, farms, Farm,
   InsertFieldShare, fieldShares, FieldShare,
   InsertPushToken, pushTokens, PushToken,
+  InsertNdviHistory, ndviHistory, NdviHistory,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -547,4 +548,51 @@ export async function deactivatePushToken(token: string) {
   const db = await getDb();
   if (!db) return;
   await db.update(pushTokens).set({ isActive: false }).where(eq(pushTokens.token, token));
+}
+
+// ==================== NDVI HISTORY FUNCTIONS ====================
+export async function createNdviHistory(data: InsertNdviHistory): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(ndviHistory).values(data);
+  return result[0].insertId;
+}
+
+export async function getNdviHistoryByFieldId(fieldId: number, days: number = 30): Promise<NdviHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  return await db.select().from(ndviHistory)
+    .where(and(eq(ndviHistory.fieldId, fieldId), gte(ndviHistory.acquisitionDate, startDate)))
+    .orderBy(desc(ndviHistory.acquisitionDate));
+}
+
+export async function getLatestNdviHistoryByFieldId(fieldId: number): Promise<NdviHistory | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(ndviHistory)
+    .where(eq(ndviHistory.fieldId, fieldId))
+    .orderBy(desc(ndviHistory.acquisitionDate))
+    .limit(1);
+  return result[0];
+}
+
+export async function updateFieldNdvi(fieldId: number, ndviValue: number, polygonId?: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: Partial<Field> = {
+    currentNdvi: ndviValue,
+    lastNdviSync: new Date(),
+  };
+  if (polygonId) {
+    updateData.agroPolygonId = polygonId;
+  }
+  await db.update(fields).set(updateData).where(eq(fields.id, fieldId));
+}
+
+export async function updateFieldAgroPolygonId(fieldId: number, polygonId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fields).set({ agroPolygonId: polygonId }).where(eq(fields.id, fieldId));
 }

@@ -12,4 +12,6 @@ export const ENV = {
   // Sentinel Hub for real NDVI data
   sentinelHubClientId: process.env.SENTINEL_HUB_CLIENT_ID ?? "",
   sentinelHubClientSecret: process.env.SENTINEL_HUB_CLIENT_SECRET ?? "",
+  // Agromonitoring API for NDVI (free tier available)
+  agromonitoringApiKey: process.env.AGROMONITORING_API_KEY ?? "",
 };

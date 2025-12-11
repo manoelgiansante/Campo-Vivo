@@ -7,6 +7,7 @@ import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
+import * as agromonitoring from "./services/agromonitoring";
 
 // Helper function to generate mock weather forecast
 function generateMockForecast() {
@@ -758,6 +759,103 @@ export const appRouter = router({
             message: "Erro ao buscar dados de satélite" 
           });
         }
+      }),
+    // === AGROMONITORING INTEGRATION ===
+    // Sincronizar NDVI via Agromonitoring API (gratuito)
+    syncFromAgromonitoring: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        if (!ENV.agromonitoringApiKey) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "API Agromonitoring não configurada" });
+        }
+        
+        try {
+          const result = await agromonitoring.syncFieldNdvi(field);
+          if (result) {
+            const updatedField = await db.getFieldById(input.fieldId);
+            return { 
+              success: true, 
+              ndvi: updatedField?.currentNdvi ? updatedField.currentNdvi / 100 : null,
+              lastSync: updatedField?.lastNdviSync
+            };
+          }
+          return { success: false, message: "Campo precisa ter polígono definido (boundaries)" };
+        } catch (error) {
+          console.error("Erro ao sincronizar NDVI Agromonitoring:", error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: error instanceof Error ? error.message : "Erro ao sincronizar NDVI" 
+          });
+        }
+      }),
+    // Sincronizar todos os campos do usuário via Agromonitoring
+    syncAllFromAgromonitoring: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        if (!ENV.agromonitoringApiKey) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "API Agromonitoring não configurada" });
+        }
+        
+        const fields = await db.getFieldsByUserId(ctx.user.id);
+        const results = await agromonitoring.syncAllFieldsNdvi(fields);
+        
+        return { 
+          success: results.success > 0 || results.failed === 0,
+          synced: results.success,
+          failed: results.failed,
+          total: fields.length
+        };
+      }),
+    // Buscar histórico de NDVI real (do banco após sincronização)
+    getRealHistory: protectedProcedure
+      .input(z.object({ 
+        fieldId: z.number(),
+        days: z.number().optional().default(30)
+      }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        const history = await db.getNdviHistoryByFieldId(input.fieldId, input.days);
+        return history.map(h => ({
+          date: h.acquisitionDate,
+          ndvi: h.ndviValue / 100,
+          min: h.ndviMin ? h.ndviMin / 100 : null,
+          max: h.ndviMax ? h.ndviMax / 100 : null,
+          cloudCoverage: h.cloudCoverage,
+          satellite: h.satellite,
+          imageUrl: h.imageUrl
+        }));
+      }),
+    // Buscar NDVI atual (campo já sincronizado)
+    getCurrentReal: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        return {
+          ndvi: field.currentNdvi ? field.currentNdvi / 100 : null,
+          lastSync: field.lastNdviSync,
+          agroPolygonId: field.agroPolygonId
+        };
+      }),
+    // Status da integração
+    getIntegrationStatus: protectedProcedure
+      .query(async () => {
+        return {
+          agromonitoring: !!ENV.agromonitoringApiKey,
+          sentinelHub: !!(ENV.sentinelHubClientId && ENV.sentinelHubClientSecret),
+          recommended: ENV.agromonitoringApiKey ? "agromonitoring" : "simulation"
+        };
       }),
   }),
 

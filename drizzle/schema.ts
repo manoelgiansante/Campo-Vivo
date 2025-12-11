@@ -57,6 +57,10 @@ export const fields = mysqlTable("fields", {
   soilType: varchar("soilType", { length: 100 }),
   irrigationType: mysqlEnum("irrigationType", ["none", "drip", "sprinkler", "pivot", "flood"]).default("none"),
   isActive: boolean("isActive").default(true),
+  // Agromonitoring integration
+  agroPolygonId: varchar("agroPolygonId", { length: 50 }), // ID do polígono no Agromonitoring
+  lastNdviSync: timestamp("lastNdviSync"), // Última sincronização de NDVI
+  currentNdvi: int("currentNdvi"), // NDVI atual (0-100, onde 100 = 1.0)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -271,3 +275,21 @@ export const pushTokens = mysqlTable("pushTokens", {
 
 export type PushToken = typeof pushTokens.$inferSelect;
 export type InsertPushToken = typeof pushTokens.$inferInsert;
+
+// ==================== NDVI HISTORY (Histórico de NDVI por Satélite) ====================
+export const ndviHistory = mysqlTable("ndviHistory", {
+  id: int("id").autoincrement().primaryKey(),
+  fieldId: int("fieldId").notNull(),
+  userId: int("userId").notNull(),
+  ndviValue: int("ndviValue").notNull(), // NDVI * 100 (ex: 72 = 0.72)
+  ndviMin: int("ndviMin"), // Mínimo * 100
+  ndviMax: int("ndviMax"), // Máximo * 100
+  cloudCoverage: int("cloudCoverage"), // Percentual de nuvens (0-100)
+  satellite: varchar("satellite", { length: 50 }), // "Sentinel-2", "Landsat-8", etc.
+  imageUrl: varchar("imageUrl", { length: 500 }), // URL da imagem NDVI
+  acquisitionDate: timestamp("acquisitionDate").notNull(), // Data da imagem do satélite
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type NdviHistory = typeof ndviHistory.$inferSelect;
+export type InsertNdviHistory = typeof ndviHistory.$inferInsert;
