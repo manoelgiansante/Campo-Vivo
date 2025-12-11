@@ -5,13 +5,13 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MobileLayout } from "./components/MobileLayout";
 
-// New OneSoil-style pages
-import MapView from "./pages/MapView";
-import FieldsList from "./pages/FieldsList";
-import FieldDetailNew from "./pages/FieldDetailNew";
-import FieldDrawNew from "./pages/FieldDrawNew";
-import NotesNew from "./pages/NotesNew";
-import ProfileNew from "./pages/ProfileNew";
+// OneSoil-style pages
+import MapViewNew from "./pages/MapViewNew";
+import FieldsListNew from "./pages/FieldsListNew";
+import FieldDetailOneSoil from "./pages/FieldDetailOneSoil";
+import FieldDrawOneSoil from "./pages/FieldDrawOneSoil";
+import NotesOneSoil from "./pages/NotesOneSoil";
+import ProfileOneSoil from "./pages/ProfileOneSoil";
 
 function Router() {
   return (
@@ -20,14 +20,14 @@ function Router() {
       <Route path="/">
         {() => (
           <MobileLayout fullScreen>
-            <MapView />
+            <MapViewNew />
           </MobileLayout>
         )}
       </Route>
       <Route path="/map">
         {() => (
           <MobileLayout fullScreen>
-            <MapView />
+            <MapViewNew />
           </MobileLayout>
         )}
       </Route>
@@ -36,21 +36,21 @@ function Router() {
       <Route path="/fields">
         {() => (
           <MobileLayout>
-            <FieldsList />
+            <FieldsListNew />
           </MobileLayout>
         )}
       </Route>
       <Route path="/fields/new">
         {() => (
           <MobileLayout hideNav fullScreen>
-            <FieldDrawNew />
+            <FieldDrawOneSoil />
           </MobileLayout>
         )}
       </Route>
       <Route path="/fields/:id">
         {() => (
           <MobileLayout>
-            <FieldDetailNew />
+            <FieldDetailOneSoil />
           </MobileLayout>
         )}
       </Route>
@@ -59,7 +59,7 @@ function Router() {
       <Route path="/notes">
         {() => (
           <MobileLayout>
-            <NotesNew />
+            <NotesOneSoil />
           </MobileLayout>
         )}
       </Route>
@@ -68,7 +68,7 @@ function Router() {
       <Route path="/profile">
         {() => (
           <MobileLayout>
-            <ProfileNew />
+            <ProfileOneSoil />
           </MobileLayout>
         )}
       </Route>

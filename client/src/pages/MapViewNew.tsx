@@ -1,0 +1,406 @@
+import { MapboxMap, useMapbox } from "@/components/MapboxMap";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { 
+  Folder, 
+  ChevronDown, 
+  ChevronUp,
+  Search, 
+  Plus,
+  Navigation,
+  Leaf,
+  Satellite,
+  Wheat,
+  Info
+} from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { useLocation } from "wouter";
+import mapboxgl from "mapbox-gl";
+
+type MapLayer = "satellite" | "crop" | "vegetation";
+type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
+
+// Mock data for demo
+const mockFields = [
+  {
+    id: 1,
+    name: "pasto 1",
+    areaHectares: 1770,
+    ndviValue: 0.74,
+    boundaries: JSON.stringify([
+      { lat: -20.4697, lng: -54.6131 },
+      { lat: -20.4697, lng: -54.6031 },
+      { lat: -20.4797, lng: -54.6031 },
+      { lat: -20.4797, lng: -54.6131 },
+    ]),
+    lastUpdate: "22 de nov."
+  }
+];
+
+// NDVI color scale
+const getNdviColor = (value: number): string => {
+  if (value < 0.2) return "#d73027";
+  if (value < 0.4) return "#fc8d59";
+  if (value < 0.5) return "#fee08b";
+  if (value < 0.6) return "#d9ef8b";
+  if (value < 0.7) return "#91cf60";
+  if (value < 0.8) return "#1a9850";
+  return "#006837";
+};
+
+export default function MapViewNew() {
+  const [, setLocation] = useLocation();
+  const [selectedSeason, setSelectedSeason] = useState("2024");
+  const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
+  const [ndviType, setNdviType] = useState<NdviType>("basic");
+  const [showLayerSheet, setShowLayerSheet] = useState(false);
+  const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
+  const { setMap, getUserLocation } = useMapbox();
+
+  const fields = mockFields;
+
+  // Handle map ready
+  const handleMapReady = useCallback((map: mapboxgl.Map) => {
+    setMapInstance(map);
+    setMap(map);
+    
+    // Center on Brazil if no fields
+    if (fields.length === 0) {
+      map.flyTo({
+        center: [-54.6, -20.47],
+        zoom: 14
+      });
+    }
+  }, [setMap, fields.length]);
+
+  // Add fields to map
+  useEffect(() => {
+    if (!mapInstance || !fields) return;
+
+    fields.forEach((field) => {
+      if (field.boundaries) {
+        try {
+          const points = JSON.parse(field.boundaries as string) as { lat: number; lng: number }[];
+          if (points.length >= 3) {
+            const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
+            coordinates.push(coordinates[0]);
+
+            const sourceId = `field-${field.id}`;
+            const fillColor = mapLayer === "vegetation" ? getNdviColor(field.ndviValue) : "#666666";
+
+            // Remove existing
+            if (mapInstance.getLayer(sourceId)) mapInstance.removeLayer(sourceId);
+            if (mapInstance.getLayer(`${sourceId}-outline`)) mapInstance.removeLayer(`${sourceId}-outline`);
+            if (mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
+
+            // Add source
+            mapInstance.addSource(sourceId, {
+              type: "geojson",
+              data: {
+                type: "Feature",
+                properties: { id: field.id, name: field.name },
+                geometry: {
+                  type: "Polygon",
+                  coordinates: [coordinates],
+                },
+              },
+            });
+
+            // Add fill layer
+            mapInstance.addLayer({
+              id: sourceId,
+              type: "fill",
+              source: sourceId,
+              paint: {
+                "fill-color": fillColor,
+                "fill-opacity": 0.7,
+              },
+            });
+
+            // Add outline layer
+            mapInstance.addLayer({
+              id: `${sourceId}-outline`,
+              type: "line",
+              source: sourceId,
+              paint: {
+                "line-color": "#000000",
+                "line-width": 2,
+              },
+            });
+
+            // Click handler
+            mapInstance.on("click", sourceId, () => {
+              setLocation(`/fields/${field.id}`);
+            });
+
+            // Add label
+            const lngs = coordinates.map(c => c[0]);
+            const lats = coordinates.map(c => c[1]);
+            const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+            const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+
+            const el = document.createElement("div");
+            el.innerHTML = `
+              <div class="text-white text-xs font-medium px-2 py-1 rounded bg-black/50 backdrop-blur-sm">
+                ${field.lastUpdate}
+              </div>
+            `;
+            el.style.cursor = "pointer";
+            el.onclick = () => setLocation(`/fields/${field.id}`);
+
+            new mapboxgl.Marker({ element: el })
+              .setLngLat([centerLng, centerLat])
+              .addTo(mapInstance);
+          }
+        } catch (e) {
+          console.error("Error parsing boundaries:", e);
+        }
+      }
+    });
+
+    // Fit to fields
+    if (fields.length > 0 && fields[0].boundaries) {
+      const points = JSON.parse(fields[0].boundaries as string) as { lat: number; lng: number }[];
+      const lngs = points.map(p => p.lng);
+      const lats = points.map(p => p.lat);
+      
+      mapInstance.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 100, maxZoom: 15 }
+      );
+    }
+  }, [mapInstance, fields, mapLayer, setLocation]);
+
+  const handleLocationClick = useCallback(() => {
+    getUserLocation();
+  }, [getUserLocation]);
+
+  const getLayerLabel = () => {
+    switch (mapLayer) {
+      case "satellite": return "Satellite";
+      case "crop": return "Crop";
+      case "vegetation": return "Vegetation";
+    }
+  };
+
+  return (
+    <div className="h-screen w-full relative">
+      {/* Map */}
+      <MapboxMap
+        onMapReady={handleMapReady}
+        className="h-full w-full"
+        initialCenter={[-54.6, -20.47]}
+        initialZoom={14}
+      />
+
+      {/* Top Header */}
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+        {/* Season Selector */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm text-white px-4 py-2.5 rounded-full">
+              <Folder className="h-4 w-4" />
+              <div className="text-left">
+                <div className="text-sm font-medium">All fields</div>
+                <div className="text-xs text-gray-300">Season {selectedSeason}</div>
+              </div>
+              <ChevronDown className="h-4 w-4 ml-1" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuItem onClick={() => setSelectedSeason("2024")}>
+              Season 2024
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedSeason("2023")}>
+              Season 2023
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="icon"
+            className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-sm border-0 text-white hover:bg-gray-800"
+          >
+            <Search className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-sm border-0 text-white hover:bg-gray-800"
+            onClick={() => setLocation("/fields/new")}
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* NDVI Scale (left side) */}
+      {mapLayer === "vegetation" && (
+        <div className="absolute left-4 bottom-32 z-10">
+          <div className="w-2 h-24 rounded-full overflow-hidden" style={{
+            background: "linear-gradient(to top, #d73027, #fc8d59, #fee08b, #d9ef8b, #91cf60, #1a9850, #006837)"
+          }} />
+        </div>
+      )}
+
+      {/* Layer Button (center bottom) */}
+      <button
+        onClick={() => setShowLayerSheet(true)}
+        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm text-white px-5 py-3 rounded-full"
+      >
+        <Leaf className="h-5 w-5" />
+        <span className="font-medium">{getLayerLabel()}</span>
+      </button>
+
+      {/* Location Button (right side) */}
+      <Button
+        variant="secondary"
+        size="icon"
+        className="absolute right-4 bottom-32 z-10 h-12 w-12 rounded-full bg-white shadow-lg border-0"
+        onClick={handleLocationClick}
+      >
+        <Navigation className="h-5 w-5 text-gray-700" />
+      </Button>
+
+      {/* Add Field Button */}
+      <Button
+        variant="secondary"
+        size="icon"
+        className="absolute right-4 bottom-48 z-10 h-12 w-12 rounded-full bg-white shadow-lg border-0"
+        onClick={() => setLocation("/fields/new")}
+      >
+        <Plus className="h-5 w-5 text-gray-700" />
+      </Button>
+
+      {/* Info Button */}
+      <button className="absolute right-4 bottom-4 z-10 h-8 w-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center">
+        <Info className="h-4 w-4 text-gray-600" />
+      </button>
+
+      {/* Layer Selection Sheet */}
+      <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
+        <SheetContent side="bottom" className="rounded-t-3xl">
+          <SheetHeader className="pb-4">
+            <SheetTitle className="text-left">Map layer</SheetTitle>
+          </SheetHeader>
+          
+          {/* Layer Types */}
+          <div className="flex gap-3 mb-6">
+            <LayerOption
+              icon={<Satellite className="h-6 w-6" />}
+              label="Satellite image"
+              selected={mapLayer === "satellite"}
+              onClick={() => setMapLayer("satellite")}
+              bgColor="bg-green-100"
+            />
+            <LayerOption
+              icon={<Wheat className="h-6 w-6" />}
+              label="Crop"
+              selected={mapLayer === "crop"}
+              onClick={() => setMapLayer("crop")}
+              bgColor="bg-blue-100"
+            />
+            <LayerOption
+              icon={<Leaf className="h-6 w-6" />}
+              label="Vegetation"
+              selected={mapLayer === "vegetation"}
+              onClick={() => setMapLayer("vegetation")}
+              bgColor="bg-lime-100"
+            />
+          </div>
+
+          {/* NDVI Types (only for vegetation) */}
+          {mapLayer === "vegetation" && (
+            <div className="space-y-1">
+              <NdviOption
+                label="Basic NDVI"
+                selected={ndviType === "basic"}
+                onClick={() => setNdviType("basic")}
+              />
+              <NdviOption
+                label="Contrasted NDVI"
+                selected={ndviType === "contrasted"}
+                onClick={() => setNdviType("contrasted")}
+              />
+              <NdviOption
+                label="Average NDVI"
+                selected={ndviType === "average"}
+                onClick={() => setNdviType("average")}
+              />
+              <NdviOption
+                label="Heterogenity NDVI"
+                selected={ndviType === "heterogenity"}
+                onClick={() => setNdviType("heterogenity")}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+// Layer Option Component
+function LayerOption({
+  icon,
+  label,
+  selected,
+  onClick,
+  bgColor
+}: {
+  icon: React.ReactNode;
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  bgColor: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all ${
+        selected ? "ring-2 ring-gray-900 ring-offset-2" : ""
+      }`}
+    >
+      <div className={`w-16 h-16 rounded-xl ${bgColor} flex items-center justify-center`}>
+        {icon}
+      </div>
+      <span className="text-xs text-gray-700 text-center">{label}</span>
+    </button>
+  );
+}
+
+// NDVI Option Component
+function NdviOption({
+  label,
+  selected,
+  onClick
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-4 py-3 rounded-xl transition-colors ${
+        selected ? "bg-gray-100 font-medium" : "hover:bg-gray-50"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
