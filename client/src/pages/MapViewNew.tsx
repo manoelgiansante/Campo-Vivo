@@ -228,9 +228,29 @@ export default function MapViewNew() {
     }
   }, [mapInstance, fields, mapLayer, setLocation]);
 
-  const handleLocationClick = useCallback(() => {
-    getUserLocation();
-  }, [getUserLocation]);
+  const handleLocationClick = useCallback(async () => {
+    try {
+      const coords = await getUserLocation();
+      if (mapInstance && coords) {
+        mapInstance.flyTo({
+          center: coords,
+          zoom: 15,
+          duration: 2000
+        });
+        
+        // Add a marker at user's location
+        new mapboxgl.Marker({ color: "#3b82f6" })
+          .setLngLat(coords)
+          .setPopup(new mapboxgl.Popup().setHTML('<p class="text-sm font-medium">Sua localização</p>'))
+          .addTo(mapInstance);
+          
+        toast.success("Localização encontrada!");
+      }
+    } catch (error) {
+      console.error("Error getting location:", error);
+      toast.error("Não foi possível obter sua localização. Verifique as permissões do navegador.");
+    }
+  }, [getUserLocation, mapInstance]);
 
   // Handle address search
   const handleSearch = useCallback(() => {
