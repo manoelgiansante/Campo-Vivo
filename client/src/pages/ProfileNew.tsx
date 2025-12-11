@@ -29,8 +29,9 @@ import {
   Bell,
   Leaf
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { PushNotificationManager } from "@/components/PushNotificationManager";
 
 export default function ProfileNew() {
   const { user, logout } = useAuth();
@@ -104,11 +105,16 @@ export default function ProfileNew() {
       {/* Menu Items */}
       <div className="px-4 mt-4">
         <div className="bg-white rounded-2xl overflow-hidden">
-          <MenuItem
-            icon={<Bell className="h-5 w-5" />}
-            label="Notificações"
-            onClick={() => toast.info("Em breve!")}
-          />
+          {/* Push Notifications Section */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <Bell className="h-5 w-5 text-blue-600" />
+              </div>
+              <span className="font-medium text-gray-900">Notificações</span>
+            </div>
+            <PushNotificationManager />
+          </div>
           <MenuItem
             icon={<Settings className="h-5 w-5" />}
             label="Configurações"
