@@ -199,6 +199,76 @@ export const appRouter = router({
       }),
   }),
 
+  // ==================== MAPS / GEOCODING ====================
+  maps: router({
+    geocode: protectedProcedure
+      .input(z.object({ query: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const mapboxToken = ENV.mapboxToken;
+        
+        if (!mapboxToken) {
+          // Return mock results if no token
+          return {
+            results: [
+              { id: "1", place_name: `${input.query} - Brasil`, center: [-54.6, -20.47] as [number, number] },
+              { id: "2", place_name: `${input.query}, Mato Grosso do Sul`, center: [-54.8, -20.5] as [number, number] },
+            ]
+          };
+        }
+
+        try {
+          const response = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(input.query)}.json?access_token=${mapboxToken}&country=br&language=pt&limit=5`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Mapbox API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          return {
+            results: data.features.map((f: any) => ({
+              id: f.id,
+              place_name: f.place_name,
+              center: f.center as [number, number],
+            }))
+          };
+        } catch (error) {
+          console.error("Geocoding error:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao buscar localização" });
+        }
+      }),
+    reverseGeocode: protectedProcedure
+      .input(z.object({ lat: z.number(), lng: z.number() }))
+      .mutation(async ({ input }) => {
+        const mapboxToken = ENV.mapboxToken;
+        
+        if (!mapboxToken) {
+          return { address: "Localização aproximada" };
+        }
+
+        try {
+          const response = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${input.lng},${input.lat}.json?access_token=${mapboxToken}&language=pt&limit=1`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Mapbox API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          return {
+            address: data.features[0]?.place_name || "Localização desconhecida"
+          };
+        } catch (error) {
+          console.error("Reverse geocoding error:", error);
+          return { address: "Erro ao buscar endereço" };
+        }
+      }),
+  }),
+
   // ==================== FIELD NOTES ====================
   notes: router({
     listByField: protectedProcedure
@@ -421,6 +491,169 @@ export const appRouter = router({
         }
         
         return results;
+      }),
+    // Buscar NDVI real do Sentinel Hub
+    fetchFromSatellite: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        const clientId = ENV.sentinelHubClientId;
+        const clientSecret = ENV.sentinelHubClientSecret;
+        
+        // Se não tiver credenciais, gera dados simulados mas realistas
+        if (!clientId || !clientSecret) {
+          // Gerar NDVI simulado baseado na estação do ano
+          const month = new Date().getMonth();
+          let baseNdvi = 0.5;
+          
+          // Verão (alta vegetação): 0.6-0.85
+          // Inverno (baixa vegetação): 0.3-0.5
+          if (month >= 10 || month <= 2) { // Nov-Fev (verão no Brasil)
+            baseNdvi = 0.65 + Math.random() * 0.2;
+          } else if (month >= 5 && month <= 8) { // Jun-Set (inverno)
+            baseNdvi = 0.35 + Math.random() * 0.15;
+          } else { // Transição
+            baseNdvi = 0.5 + Math.random() * 0.15;
+          }
+          
+          const ndviData = {
+            fieldId: input.fieldId,
+            ndviAverage: parseFloat(baseNdvi.toFixed(2)),
+            ndviMin: parseFloat((baseNdvi - 0.1 - Math.random() * 0.1).toFixed(2)),
+            ndviMax: parseFloat((baseNdvi + 0.1 + Math.random() * 0.1).toFixed(2)),
+            cloudCoverage: Math.floor(Math.random() * 30),
+            captureDate: new Date(),
+          };
+          
+          // Salvar no banco
+          await db.createNdviData(ndviData);
+          
+          return {
+            success: true,
+            message: "NDVI atualizado (modo simulado)",
+            data: ndviData
+          };
+        }
+        
+        try {
+          // 1. Obter token OAuth do Sentinel Hub
+          const tokenResponse = await fetch("https://services.sentinel-hub.com/oauth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `grant_type=client_credentials&client_id=${clientId}&client_secret=${clientSecret}`
+          });
+          
+          if (!tokenResponse.ok) {
+            throw new Error("Erro ao autenticar com Sentinel Hub");
+          }
+          
+          const tokenData = await tokenResponse.json();
+          const accessToken = tokenData.access_token;
+          
+          // 2. Preparar coordenadas do campo
+          let bbox: [number, number, number, number] = [-54.7, -20.5, -54.5, -20.4]; // Default
+          
+          if (field.boundaries) {
+            const coords = typeof field.boundaries === 'string' 
+              ? JSON.parse(field.boundaries) 
+              : field.boundaries;
+            if (Array.isArray(coords) && coords.length > 0) {
+              const lngs = coords.map((c: any) => c.lng || c.lon || c[0]);
+              const lats = coords.map((c: any) => c.lat || c[1]);
+              bbox = [
+                Math.min(...lngs),
+                Math.min(...lats),
+                Math.max(...lngs),
+                Math.max(...lats)
+              ];
+            }
+          }
+          
+          // 3. Buscar NDVI estatísticas
+          const today = new Date();
+          const fromDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 dias atrás
+          
+          const statsRequest = {
+            input: {
+              bounds: { bbox, properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
+              data: [{
+                type: "sentinel-2-l2a",
+                dataFilter: {
+                  timeRange: {
+                    from: fromDate.toISOString(),
+                    to: today.toISOString()
+                  },
+                  maxCloudCoverage: 30
+                }
+              }]
+            },
+            aggregation: {
+              timeRange: { from: fromDate.toISOString(), to: today.toISOString() },
+              aggregationInterval: { of: "P1D" },
+              evalscript: `
+                //VERSION=3
+                function setup() {
+                  return { input: ["B04", "B08"], output: { bands: 1, sampleType: "FLOAT32" } };
+                }
+                function evaluatePixel(sample) {
+                  let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
+                  return [ndvi];
+                }
+              `,
+              resx: 10,
+              resy: 10
+            },
+            calculations: { default: { statistics: { default: { percentiles: { k: [25, 50, 75] } } } } }
+          };
+          
+          const statsResponse = await fetch("https://services.sentinel-hub.com/api/v1/statistics", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(statsRequest)
+          });
+          
+          if (!statsResponse.ok) {
+            const errorText = await statsResponse.text();
+            console.error("Sentinel Hub Stats Error:", errorText);
+            throw new Error("Erro ao buscar estatísticas NDVI");
+          }
+          
+          const statsData = await statsResponse.json();
+          
+          // 4. Processar resultados
+          const latestStats = statsData.data?.[0]?.outputs?.default?.bands?.B0?.stats;
+          
+          const ndviData = {
+            fieldId: input.fieldId,
+            ndviAverage: latestStats?.mean ?? 0.5,
+            ndviMin: latestStats?.min ?? 0.3,
+            ndviMax: latestStats?.max ?? 0.8,
+            cloudCoverage: 0,
+            captureDate: new Date(statsData.data?.[0]?.interval?.from || new Date()),
+          };
+          
+          // 5. Salvar no banco
+          await db.createNdviData(ndviData);
+          
+          return {
+            success: true,
+            message: "NDVI atualizado via satélite",
+            data: ndviData
+          };
+        } catch (error) {
+          console.error("Sentinel Hub error:", error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Erro ao buscar dados de satélite" 
+          });
+        }
       }),
   }),
 

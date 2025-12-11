@@ -9,4 +9,7 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   openWeatherApiKey: process.env.OPENWEATHER_API_KEY ?? "",
   mapboxToken: process.env.MAPBOX_TOKEN ?? "",
+  // Sentinel Hub for real NDVI data
+  sentinelHubClientId: process.env.SENTINEL_HUB_CLIENT_ID ?? "",
+  sentinelHubClientSecret: process.env.SENTINEL_HUB_CLIENT_SECRET ?? "",
 };

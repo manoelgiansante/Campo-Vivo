@@ -12,6 +12,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { 
   Folder, 
   ChevronDown, 
@@ -23,12 +30,15 @@ import {
   Satellite,
   Wheat,
   Info,
-  Loader2
+  Loader2,
+  MapPin,
+  X
 } from "lucide-react";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import mapboxgl from "mapbox-gl";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
@@ -51,7 +61,27 @@ export default function MapViewNew() {
   const [ndviType, setNdviType] = useState<NdviType>("basic");
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{
+    id: string;
+    place_name: string;
+    center: [number, number];
+  }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const { setMap, getUserLocation } = useMapbox();
+  
+  // Geocoding mutation
+  const geocode = trpc.maps.geocode.useMutation({
+    onSuccess: (data) => {
+      setSearchResults(data.results);
+      setIsSearching(false);
+    },
+    onError: (error) => {
+      toast.error("Erro na busca: " + error.message);
+      setIsSearching(false);
+    },
+  });
 
   // Buscar campos reais do banco de dados
   const { data: fieldsData, isLoading } = trpc.fields.list.useQuery();
@@ -182,6 +212,34 @@ export default function MapViewNew() {
     getUserLocation();
   }, [getUserLocation]);
 
+  // Handle address search
+  const handleSearch = useCallback(() => {
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    geocode.mutate({ query: searchQuery });
+  }, [searchQuery, geocode]);
+
+  // Navigate to search result
+  const handleSelectResult = useCallback((result: { center: [number, number]; place_name: string }) => {
+    if (mapInstance) {
+      mapInstance.flyTo({
+        center: result.center,
+        zoom: 15,
+        duration: 2000
+      });
+      
+      // Add temporary marker
+      new mapboxgl.Marker({ color: "#3b82f6" })
+        .setLngLat(result.center)
+        .setPopup(new mapboxgl.Popup().setHTML(`<p class="text-sm">${result.place_name}</p>`))
+        .addTo(mapInstance);
+    }
+    setShowSearchDialog(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    toast.success("Localização encontrada!");
+  }, [mapInstance]);
+
   const getLayerLabel = () => {
     switch (mapLayer) {
       case "satellite": return "Satellite";
@@ -230,6 +288,7 @@ export default function MapViewNew() {
             variant="secondary"
             size="icon"
             className="h-11 w-11 rounded-full bg-gray-900/90 backdrop-blur-sm border-0 text-white hover:bg-gray-800"
+            onClick={() => setShowSearchDialog(true)}
           >
             <Search className="h-5 w-5" />
           </Button>
@@ -286,6 +345,56 @@ export default function MapViewNew() {
       <button className="absolute right-4 bottom-4 z-10 h-8 w-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center">
         <Info className="h-4 w-4 text-gray-600" />
       </button>
+
+      {/* Search Dialog */}
+      <Dialog open={showSearchDialog} onOpenChange={setShowSearchDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5" />
+              Buscar localização
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Digite o endereço ou cidade..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="flex-1"
+              />
+              <Button onClick={handleSearch} disabled={isSearching}>
+                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </div>
+            
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.id}
+                    onClick={() => handleSelectResult(result)}
+                    className="w-full text-left p-3 rounded-lg hover:bg-gray-100 transition-colors border"
+                  >
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 mt-0.5 text-gray-500 flex-shrink-0" />
+                      <span className="text-sm">{result.place_name}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            {searchResults.length === 0 && searchQuery && !isSearching && (
+              <p className="text-sm text-gray-500 text-center py-4">
+                Nenhum resultado encontrado. Tente outro termo.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Layer Selection Sheet */}
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
