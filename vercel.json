@@ -1,6 +1,6 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build:client",
+  "buildCommand": "cd client && npx vite build --outDir ../dist --emptyOutDir && cd .. && ls -la dist",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
