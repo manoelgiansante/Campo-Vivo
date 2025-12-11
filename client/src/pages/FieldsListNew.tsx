@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +23,8 @@ import {
   Satellite,
   Wheat,
   Loader2,
-  Building2
+  Building2,
+  X
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -91,6 +93,8 @@ export default function FieldsListNew() {
   const [, setLocation] = useLocation();
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Fetch real data from API
   const { data: fieldsData, isLoading: loadingFields } = trpc.fields.list.useQuery();
@@ -116,6 +120,17 @@ export default function FieldsListNew() {
   
   const totalArea = fields.reduce((sum, f) => sum + (f.areaHectares ?? 0), 0);
 
+  // Filtrar campos pela busca
+  const filteredFields = useMemo(() => {
+    if (!searchQuery.trim()) return fields;
+    const query = searchQuery.toLowerCase();
+    return fields.filter(field => 
+      field.name.toLowerCase().includes(query) ||
+      field.city?.toLowerCase().includes(query) ||
+      field.state?.toLowerCase().includes(query)
+    );
+  }, [fields, searchQuery]);
+
   const getLayerLabel = () => {
     switch (mapLayer) {
       case "satellite": return "Satellite";
@@ -128,51 +143,87 @@ export default function FieldsListNew() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-gray-100 sticky top-0 z-10 px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
-                  <Folder className="h-4 w-4" />
-                  <span>All fields</span>
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem>All fields</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/farms")}>
-                  <Building2 className="h-4 w-4 mr-2" />
-                  Gerenciar Fazendas
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-10 w-10">
-              <Search className="h-5 w-5" />
-            </Button>
+        {showSearch ? (
+          /* Search Bar */
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Buscar campo por nome, cidade..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-10"
+                autoFocus
+              />
+            </div>
             <Button 
               variant="ghost" 
               size="icon" 
               className="h-10 w-10"
-              onClick={() => setLocation("/fields/new")}
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery("");
+              }}
             >
-              <Plus className="h-5 w-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-10 w-10">
-              <MoreVertical className="h-5 w-5" />
+              <X className="h-5 w-5" />
             </Button>
           </div>
-        </div>
+        ) : (
+          /* Normal Header */
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
+                    <Folder className="h-4 w-4" />
+                    <span>All fields</span>
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem>All fields</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setLocation("/farms")}>
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Gerenciar Fazendas
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-10 w-10"
+                onClick={() => setShowSearch(true)}
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-10 w-10"
+                onClick={() => setLocation("/fields/new")}
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-10 w-10">
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
       <div className="px-4 pb-32">
         {/* Group Header */}
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-          <span className="font-medium text-gray-700">Sem grupos</span>
+          <span className="font-medium text-gray-700">
+            {searchQuery ? `${filteredFields.length} resultado(s)` : "Sem grupos"}
+          </span>
           <span>{totalArea.toFixed(1)} ha</span>
         </div>
 
@@ -184,9 +235,9 @@ export default function FieldsListNew() {
         )}
 
         {/* Fields List */}
-        {!loadingFields && fields.length > 0 ? (
+        {!loadingFields && filteredFields.length > 0 ? (
           <div className="space-y-2">
-            {fields.map((field) => (
+            {filteredFields.map((field) => (
               <FieldCard
                 key={field.id}
                 field={field}
@@ -194,6 +245,23 @@ export default function FieldsListNew() {
                 onClick={() => setLocation(`/fields/${field.id}`)}
               />
             ))}
+          </div>
+        ) : !loadingFields && searchQuery && filteredFields.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+              <Search className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Nenhum campo encontrado</h3>
+            <p className="text-gray-500 text-sm">
+              Nenhum campo corresponde a "{searchQuery}"
+            </p>
+            <Button 
+              variant="outline" 
+              className="mt-4"
+              onClick={() => setSearchQuery("")}
+            >
+              Limpar busca
+            </Button>
           </div>
         ) : !loadingFields && fields.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center">

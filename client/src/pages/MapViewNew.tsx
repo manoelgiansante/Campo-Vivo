@@ -56,7 +56,7 @@ const getNdviColor = (value: number): string => {
 
 export default function MapViewNew() {
   const [, setLocation] = useLocation();
-  const [selectedSeason, setSelectedSeason] = useState("2024");
+  const [selectedSeason, setSelectedSeason] = useState<string>("all");
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
   const [ndviType, setNdviType] = useState<NdviType>("basic");
   const [showLayerSheet, setShowLayerSheet] = useState(false);
@@ -70,6 +70,15 @@ export default function MapViewNew() {
   }>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const { setMap, getUserLocation } = useMapbox();
+  
+  // Available seasons based on current year
+  const currentYear = new Date().getFullYear();
+  const seasons = [
+    { value: "all", label: "Todas as safras" },
+    { value: String(currentYear), label: `Safra ${currentYear}` },
+    { value: String(currentYear - 1), label: `Safra ${currentYear - 1}` },
+    { value: String(currentYear - 2), label: `Safra ${currentYear - 2}` },
+  ];
   
   // Geocoding mutation
   const geocode = trpc.maps.geocode.useMutation({
@@ -86,15 +95,26 @@ export default function MapViewNew() {
   // Buscar campos reais do banco de dados
   const { data: fieldsData, isLoading } = trpc.fields.list.useQuery();
   
-  // Processar campos com NDVI
+  // Processar campos com NDVI e filtrar por temporada
   const fields = useMemo(() => {
     if (!fieldsData) return [];
-    return fieldsData.map(field => ({
+    
+    // Filtrar por temporada se não for "all"
+    let filtered = fieldsData;
+    if (selectedSeason !== "all") {
+      const seasonYear = parseInt(selectedSeason);
+      filtered = fieldsData.filter(field => {
+        const createdYear = field.createdAt ? new Date(field.createdAt).getFullYear() : currentYear;
+        return createdYear === seasonYear;
+      });
+    }
+    
+    return filtered.map(field => ({
       ...field,
       ndviValue: 0.5, // Default NDVI, será atualizado com dados reais
       lastUpdate: field.updatedAt ? new Date(field.updatedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }) : 'Recente'
     }));
-  }, [fieldsData]);
+  }, [fieldsData, selectedSeason, currentYear]);
 
   // Handle map ready
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
@@ -266,19 +286,29 @@ export default function MapViewNew() {
             <button className="flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm text-white px-4 py-2.5 rounded-full">
               <Folder className="h-4 w-4" />
               <div className="text-left">
-                <div className="text-sm font-medium">All fields</div>
-                <div className="text-xs text-gray-300">Season {selectedSeason}</div>
+                <div className="text-sm font-medium">
+                  {fields.length} campo{fields.length !== 1 ? 's' : ''}
+                </div>
+                <div className="text-xs text-gray-300">
+                  {seasons.find(s => s.value === selectedSeason)?.label}
+                </div>
               </div>
               <ChevronDown className="h-4 w-4 ml-1" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-48">
-            <DropdownMenuItem onClick={() => setSelectedSeason("2024")}>
-              Season 2024
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setSelectedSeason("2023")}>
-              Season 2023
-            </DropdownMenuItem>
+            {seasons.map(season => (
+              <DropdownMenuItem 
+                key={season.value}
+                onClick={() => setSelectedSeason(season.value)}
+                className={selectedSeason === season.value ? "bg-green-50 text-green-700" : ""}
+              >
+                {season.label}
+                {selectedSeason === season.value && (
+                  <span className="ml-auto text-green-600">✓</span>
+                )}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 

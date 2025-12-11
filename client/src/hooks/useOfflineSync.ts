@@ -8,11 +8,15 @@ interface PendingChange {
   entityType: "fields" | "notes" | "tasks";
   data: any;
   timestamp: number;
+  retryCount?: number;
+  lastError?: string;
 }
 
 const STORAGE_KEY = "campovivo_offline_queue";
 const OFFLINE_DATA_KEY = "campovivo_offline_data";
 const LAST_SYNC_KEY = "campovivo_last_sync";
+const MAX_RETRY_COUNT = 3;
+const RETRY_DELAY_MS = 5000; // 5 seconds base delay
 
 export function useOfflineSync() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -45,18 +49,22 @@ export function useOfflineSync() {
   const syncChanges = useCallback(async () => {
     if (syncInProgress.current || pendingChanges.length === 0 || !isOnline) return;
     
+    // Filter out changes that have exceeded max retries
+    const changesToSync = pendingChanges.filter(c => (c.retryCount || 0) < MAX_RETRY_COUNT);
+    if (changesToSync.length === 0) return;
+    
     syncInProgress.current = true;
     setIsSyncing(true);
     
     try {
       // Group changes by entity type
-      const fields = pendingChanges
+      const fields = changesToSync
         .filter(c => c.entityType === "fields")
         .map(c => ({ localId: c.localId, action: c.action, data: c.data }));
-      const notes = pendingChanges
+      const notes = changesToSync
         .filter(c => c.entityType === "notes")
         .map(c => ({ localId: c.localId, action: c.action, data: c.data }));
-      const tasks = pendingChanges
+      const tasks = changesToSync
         .filter(c => c.entityType === "tasks")
         .map(c => ({ localId: c.localId, action: c.action, data: c.data }));
       
@@ -66,13 +74,32 @@ export function useOfflineSync() {
         tasks: tasks.length > 0 ? tasks : undefined,
       });
       
-      // Remove successful changes from queue
+      // Process results
       const successfulIds = new Set<string>();
-      result.results.fields.filter(r => r.success).forEach(r => successfulIds.add(r.localId));
-      result.results.notes.filter(r => r.success).forEach(r => successfulIds.add(r.localId));
-      result.results.tasks.filter(r => r.success).forEach(r => successfulIds.add(r.localId));
+      const failedIds = new Map<string, string>();
       
-      setPendingChanges(prev => prev.filter(c => !successfulIds.has(c.localId)));
+      [...result.results.fields, ...result.results.notes, ...result.results.tasks].forEach(r => {
+        if (r.success) {
+          successfulIds.add(r.localId);
+        } else {
+          failedIds.set(r.localId, r.error || "Unknown error");
+        }
+      });
+      
+      // Update pending changes - remove successful, increment retry for failed
+      setPendingChanges(prev => prev
+        .filter(c => !successfulIds.has(c.localId))
+        .map(c => {
+          if (failedIds.has(c.localId)) {
+            return {
+              ...c,
+              retryCount: (c.retryCount || 0) + 1,
+              lastError: failedIds.get(c.localId),
+            };
+          }
+          return c;
+        })
+      );
       
       // Update last sync timestamp
       localStorage.setItem(LAST_SYNC_KEY, result.serverTimestamp);
@@ -83,12 +110,23 @@ export function useOfflineSync() {
       utils.tasks.list.invalidate();
       
       const syncedCount = successfulIds.size;
+      const failedCount = failedIds.size;
+      
       if (syncedCount > 0) {
-        toast.success(`${syncedCount} alterações sincronizadas`);
+        toast.success(`${syncedCount} alteração(ões) sincronizada(s)`);
+      }
+      if (failedCount > 0) {
+        toast.warning(`${failedCount} alteração(ões) falharam, tentando novamente...`);
+        // Schedule retry with exponential backoff
+        const maxRetry = Math.max(...pendingChanges.map(c => c.retryCount || 0));
+        const delay = RETRY_DELAY_MS * Math.pow(2, maxRetry);
+        setTimeout(() => syncChanges(), delay);
       }
     } catch (error) {
       console.error("Sync failed:", error);
       toast.error("Falha na sincronização. Tentaremos novamente.");
+      // Schedule retry
+      setTimeout(() => syncChanges(), RETRY_DELAY_MS);
     } finally {
       setIsSyncing(false);
       syncInProgress.current = false;
