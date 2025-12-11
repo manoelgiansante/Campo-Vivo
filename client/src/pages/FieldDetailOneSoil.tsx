@@ -24,12 +24,15 @@ import {
   Wheat,
   Pencil,
   Info,
-  Loader2
+  Loader2,
+  Share2,
+  FileText
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 import { useLocation, useRoute } from "wouter";
 import mapboxgl from "mapbox-gl";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
@@ -203,9 +206,18 @@ export default function FieldDetailOneSoil() {
           <button onClick={() => setLocation("/fields")} className="p-1">
             <ChevronLeft className="h-6 w-6" />
           </button>
-          <Button variant="ghost" size="icon">
-            <MoreVertical className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setLocation(`/fields/${fieldId}/share`)}
+            >
+              <Share2 className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <MoreVertical className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
         
         {/* Field Name & Area */}
@@ -214,8 +226,12 @@ export default function FieldDetailOneSoil() {
             <h1 className="text-2xl font-bold text-gray-900">{field.name}</h1>
             <p className="text-gray-500">{areaHectares.toFixed(1)} ha</p>
           </div>
-          <Button variant="ghost" size="icon">
-            <MoreVertical className="h-5 w-5" />
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={() => setLocation(`/fields/${fieldId}/share`)}
+          >
+            <Share2 className="h-5 w-5 text-gray-500" />
           </Button>
         </div>
       </div>

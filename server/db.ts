@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, sql, inArray, isNull, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -11,6 +11,9 @@ import {
   InsertCropRotationPlan, cropRotationPlans, CropRotationPlan,
   InsertTask, tasks, Task,
   InsertNotification, notifications, Notification,
+  InsertFarm, farms, Farm,
+  InsertFieldShare, fieldShares, FieldShare,
+  InsertPushToken, pushTokens, PushToken,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -393,4 +396,127 @@ export async function getDashboardStats(userId: number) {
     pendingTasks: tasksResult[0]?.count ?? 0,
     unreadAlerts: alertsResult[0]?.count ?? 0,
   };
+}
+
+// ==================== FARM FUNCTIONS ====================
+export async function createFarm(farm: InsertFarm): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(farms).values(farm);
+  return result[0].insertId;
+}
+
+export async function getFarmById(id: number): Promise<Farm | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(farms).where(eq(farms.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getFarmsByUserId(userId: number): Promise<Farm[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(farms).where(eq(farms.userId, userId)).orderBy(asc(farms.name));
+}
+
+export async function updateFarm(id: number, data: Partial<InsertFarm>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(farms).set(data).where(eq(farms.id, id));
+}
+
+export async function deleteFarm(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Remove farm reference from fields but don't delete them
+  await db.update(fields).set({ farmId: null }).where(eq(fields.farmId, id));
+  await db.delete(farms).where(eq(farms.id, id));
+}
+
+export async function getFieldsByFarmId(farmId: number): Promise<Field[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(fields).where(and(eq(fields.farmId, farmId), eq(fields.isActive, true))).orderBy(asc(fields.name));
+}
+
+export async function assignFieldToFarm(fieldId: number, farmId: number | null) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fields).set({ farmId }).where(eq(fields.id, fieldId));
+}
+
+// ==================== FIELD SHARE FUNCTIONS ====================
+export async function createFieldShare(share: InsertFieldShare): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(fieldShares).values(share);
+  return result[0].insertId;
+}
+
+export async function getFieldSharesByFieldId(fieldId: number): Promise<FieldShare[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(fieldShares).where(eq(fieldShares.fieldId, fieldId)).orderBy(desc(fieldShares.createdAt));
+}
+
+export async function getFieldSharesByUserId(userId: number): Promise<FieldShare[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(fieldShares).where(eq(fieldShares.sharedWithUserId, userId)).orderBy(desc(fieldShares.createdAt));
+}
+
+export async function getFieldShareByToken(token: string): Promise<FieldShare | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fieldShares).where(eq(fieldShares.shareToken, token)).limit(1);
+  return result[0];
+}
+
+export async function acceptFieldShare(shareId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fieldShares).set({ sharedWithUserId: userId, acceptedAt: new Date() }).where(eq(fieldShares.id, shareId));
+}
+
+export async function deleteFieldShare(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(fieldShares).where(eq(fieldShares.id, id));
+}
+
+export async function getSharedFieldsForUser(userId: number): Promise<Field[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const shares = await db.select().from(fieldShares).where(eq(fieldShares.sharedWithUserId, userId));
+  if (shares.length === 0) return [];
+  const fieldIds = shares.map(s => s.fieldId);
+  return await db.select().from(fields).where(inArray(fields.id, fieldIds));
+}
+
+// ==================== PUSH TOKEN FUNCTIONS ====================
+export async function savePushToken(token: InsertPushToken): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Check if token exists, update or insert
+  const existing = await db.select().from(pushTokens).where(eq(pushTokens.token, token.token)).limit(1);
+  if (existing.length > 0) {
+    await db.update(pushTokens).set({ isActive: true, updatedAt: new Date() }).where(eq(pushTokens.id, existing[0].id));
+    return existing[0].id;
+  }
+  
+  const result = await db.insert(pushTokens).values(token);
+  return result[0].insertId;
+}
+
+export async function getPushTokensByUserId(userId: number): Promise<PushToken[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.isActive, true)));
+}
+
+export async function deactivatePushToken(token: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(pushTokens).set({ isActive: false }).where(eq(pushTokens.token, token));
 }

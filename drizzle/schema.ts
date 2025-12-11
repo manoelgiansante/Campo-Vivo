@@ -43,6 +43,7 @@ export type InsertFarm = typeof farms.$inferInsert;
 export const fields = mysqlTable("fields", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  farmId: int("farmId"), // Link to farm (optional grouping)
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   areaHectares: int("areaHectares"), // área em hectares * 100 para precisão
@@ -237,3 +238,36 @@ export const offlineSyncQueue = mysqlTable("offlineSyncQueue", {
 
 export type OfflineSyncQueue = typeof offlineSyncQueue.$inferSelect;
 export type InsertOfflineSyncQueue = typeof offlineSyncQueue.$inferInsert;
+
+// ==================== FIELD SHARES (Compartilhamento de Campos) ====================
+export const fieldShares = mysqlTable("fieldShares", {
+  id: int("id").autoincrement().primaryKey(),
+  fieldId: int("fieldId").notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  sharedWithUserId: int("sharedWithUserId"), // Se for compartilhado com usuário específico
+  sharedWithEmail: varchar("sharedWithEmail", { length: 320 }), // Se for convite por email
+  permission: mysqlEnum("permission", ["view", "edit", "admin"]).default("view"),
+  shareToken: varchar("shareToken", { length: 64 }), // Token para link público
+  isPublic: boolean("isPublic").default(false),
+  expiresAt: timestamp("expiresAt"),
+  acceptedAt: timestamp("acceptedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FieldShare = typeof fieldShares.$inferSelect;
+export type InsertFieldShare = typeof fieldShares.$inferInsert;
+
+// ==================== PUSH TOKENS (Tokens de Notificação Push) ====================
+export const pushTokens = mysqlTable("pushTokens", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  token: varchar("token", { length: 500 }).notNull(),
+  platform: mysqlEnum("platform", ["ios", "android", "web"]).notNull(),
+  deviceName: varchar("deviceName", { length: 100 }),
+  isActive: boolean("isActive").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PushToken = typeof pushTokens.$inferSelect;
+export type InsertPushToken = typeof pushTokens.$inferInsert;

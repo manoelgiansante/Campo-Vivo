@@ -13,6 +13,9 @@ import FieldDrawOneSoil from "./pages/FieldDrawOneSoil";
 import FieldDrawPro from "./pages/FieldDrawPro";
 import NotesOneSoil from "./pages/NotesOneSoil";
 import ProfileOneSoil from "./pages/ProfileOneSoil";
+import FarmsOneSoil from "./pages/FarmsOneSoil";
+import FarmDetailOneSoil from "./pages/FarmDetailOneSoil";
+import FieldShareOneSoil from "./pages/FieldShareOneSoil";
 
 function Router() {
   return (
@@ -59,6 +62,29 @@ function Router() {
         {() => (
           <MobileLayout>
             <FieldDetailOneSoil />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/fields/:id/share">
+        {() => (
+          <MobileLayout>
+            <FieldShareOneSoil />
+          </MobileLayout>
+        )}
+      </Route>
+
+      {/* Farms */}
+      <Route path="/farms">
+        {() => (
+          <MobileLayout>
+            <FarmsOneSoil />
+          </MobileLayout>
+        )}
+      </Route>
+      <Route path="/farms/:id">
+        {() => (
+          <MobileLayout>
+            <FarmDetailOneSoil />
           </MobileLayout>
         )}
       </Route>

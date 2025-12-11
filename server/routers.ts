@@ -60,6 +60,94 @@ export const appRouter = router({
       }),
   }),
 
+  // ==================== FARMS (Fazendas/Grupos) ====================
+  farms: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await db.getFarmsByUserId(ctx.user.id);
+    }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const farm = await db.getFarmById(input.id);
+        if (!farm || farm.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+        }
+        return farm;
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        country: z.string().optional(),
+        color: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const id = await db.createFarm({
+          ...input,
+          userId: ctx.user.id,
+        });
+        return { id, success: true };
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        country: z.string().optional(),
+        color: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const farm = await db.getFarmById(input.id);
+        if (!farm || farm.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+        }
+        const { id, ...data } = input;
+        await db.updateFarm(id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const farm = await db.getFarmById(input.id);
+        if (!farm || farm.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+        }
+        await db.deleteFarm(input.id);
+        return { success: true };
+      }),
+    getFields: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const farm = await db.getFarmById(input.id);
+        if (!farm || farm.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+        }
+        return await db.getFieldsByFarmId(input.id);
+      }),
+    assignField: protectedProcedure
+      .input(z.object({ fieldId: z.number(), farmId: z.number().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        if (input.farmId) {
+          const farm = await db.getFarmById(input.farmId);
+          if (!farm || farm.userId !== ctx.user.id) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+          }
+        }
+        await db.assignFieldToFarm(input.fieldId, input.farmId);
+        return { success: true };
+      }),
+  }),
+
   // ==================== FIELDS ====================
   fields: router({
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -1107,6 +1195,418 @@ export const appRouter = router({
         };
       }),
   }),
+
+  // ==================== FIELD SHARING ====================
+  sharing: router({
+    getByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        return await db.getFieldSharesByFieldId(input.fieldId);
+      }),
+    getSharedWithMe: protectedProcedure.query(async ({ ctx }) => {
+      return await db.getSharedFieldsForUser(ctx.user.id);
+    }),
+    create: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        sharedWithEmail: z.string().email().optional(),
+        permission: z.enum(["view", "edit", "admin"]).optional(),
+        isPublic: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        // Generate share token
+        const shareToken = crypto.randomUUID().replace(/-/g, '');
+        
+        const id = await db.createFieldShare({
+          fieldId: input.fieldId,
+          ownerUserId: ctx.user.id,
+          sharedWithEmail: input.sharedWithEmail,
+          permission: input.permission ?? "view",
+          isPublic: input.isPublic ?? false,
+          shareToken,
+        });
+        
+        return { id, shareToken, success: true };
+      }),
+    acceptByToken: protectedProcedure
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const share = await db.getFieldShareByToken(input.token);
+        if (!share) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Link de compartilhamento inválido" });
+        }
+        if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Link de compartilhamento expirado" });
+        }
+        await db.acceptFieldShare(share.id, ctx.user.id);
+        return { success: true, fieldId: share.fieldId };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const shares = await db.getFieldSharesByUserId(ctx.user.id);
+        const share = shares.find(s => s.id === input.id);
+        if (!share) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Compartilhamento não encontrado" });
+        }
+        await db.deleteFieldShare(input.id);
+        return { success: true };
+      }),
+    getShareLink: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        // Check if public share already exists
+        const shares = await db.getFieldSharesByFieldId(input.fieldId);
+        const publicShare = shares.find(s => s.isPublic);
+        
+        if (publicShare?.shareToken) {
+          return { shareToken: publicShare.shareToken };
+        }
+        
+        // Create new public share
+        const shareToken = crypto.randomUUID().replace(/-/g, '');
+        await db.createFieldShare({
+          fieldId: input.fieldId,
+          ownerUserId: ctx.user.id,
+          isPublic: true,
+          shareToken,
+        });
+        
+        return { shareToken };
+      }),
+  }),
+
+  // ==================== PUSH NOTIFICATIONS ====================
+  pushNotifications: router({
+    registerToken: protectedProcedure
+      .input(z.object({
+        token: z.string().min(1),
+        platform: z.enum(["ios", "android", "web"]),
+        deviceName: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const id = await db.savePushToken({
+          userId: ctx.user.id,
+          ...input,
+        });
+        return { id, success: true };
+      }),
+    unregisterToken: protectedProcedure
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ input }) => {
+        await db.deactivatePushToken(input.token);
+        return { success: true };
+      }),
+    // Send test notification (for debugging)
+    sendTest: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const tokens = await db.getPushTokensByUserId(ctx.user.id);
+        if (tokens.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum dispositivo registrado" });
+        }
+        
+        // In production, this would call Expo Push API or Firebase
+        // For now, just create a notification in the database
+        await db.createNotification({
+          userId: ctx.user.id,
+          title: "Teste de Notificação",
+          message: "Se você viu isso, as notificações estão funcionando! 🎉",
+          notificationType: "system",
+        });
+        
+        return { success: true, deviceCount: tokens.length };
+      }),
+  }),
+
+  // ==================== EXPORT/REPORTS ====================
+  reports: router({
+    generateFieldReport: protectedProcedure
+      .input(z.object({ 
+        fieldId: z.number(),
+        includeNdvi: z.boolean().optional(),
+        includeWeather: z.boolean().optional(),
+        includeNotes: z.boolean().optional(),
+        includeCrops: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        // Gather all requested data
+        const reportData: any = {
+          field,
+          generatedAt: new Date().toISOString(),
+        };
+        
+        if (input.includeNdvi) {
+          reportData.ndviHistory = await db.getNdviByFieldId(input.fieldId, 30);
+          reportData.latestNdvi = await db.getLatestNdviByFieldId(input.fieldId);
+        }
+        
+        if (input.includeWeather) {
+          reportData.weatherHistory = await db.getWeatherByFieldId(input.fieldId, 14);
+        }
+        
+        if (input.includeNotes) {
+          reportData.notes = await db.getFieldNotesByFieldId(input.fieldId);
+        }
+        
+        if (input.includeCrops) {
+          reportData.crops = await db.getCropsByFieldId(input.fieldId);
+          reportData.rotationPlans = await db.getCropRotationByFieldId(input.fieldId);
+        }
+        
+        // Generate PDF HTML template
+        const htmlReport = generatePdfHtml(reportData);
+        
+        return {
+          success: true,
+          htmlContent: htmlReport,
+          data: reportData,
+        };
+      }),
+    generateFarmReport: protectedProcedure
+      .input(z.object({
+        farmId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const farm = await db.getFarmById(input.farmId);
+        if (!farm || farm.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada" });
+        }
+        
+        const fields = await db.getFieldsByFarmId(input.farmId);
+        const fieldsWithData = await Promise.all(
+          fields.map(async (field) => ({
+            ...field,
+            latestNdvi: await db.getLatestNdviByFieldId(field.id),
+            activeCrop: (await db.getCropsByFieldId(field.id)).find(c => c.status === "growing"),
+          }))
+        );
+        
+        const reportData = {
+          farm,
+          fields: fieldsWithData,
+          totalArea: fields.reduce((sum, f) => sum + (f.areaHectares || 0), 0),
+          generatedAt: new Date().toISOString(),
+        };
+        
+        const htmlReport = generateFarmPdfHtml(reportData);
+        
+        return {
+          success: true,
+          htmlContent: htmlReport,
+          data: reportData,
+        };
+      }),
+  }),
 });
+
+// Helper function to generate PDF HTML for field report
+function generatePdfHtml(data: any): string {
+  const field = data.field;
+  const ndvi = data.latestNdvi;
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório - ${field.name}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+    .header { border-bottom: 2px solid #22C55E; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #22C55E; margin: 0; }
+    .section { margin-bottom: 30px; }
+    .section h2 { color: #166534; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .stat-box { background: #f5f5f5; padding: 15px; border-radius: 8px; }
+    .stat-value { font-size: 24px; font-weight: bold; color: #22C55E; }
+    .stat-label { color: #666; font-size: 14px; }
+    .ndvi-bar { height: 20px; border-radius: 4px; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🌱 CampoVivo</h1>
+    <p>Relatório do Campo: <strong>${field.name}</strong></p>
+    <p>Gerado em: ${new Date(data.generatedAt).toLocaleDateString('pt-BR')}</p>
+  </div>
+  
+  <div class="section">
+    <h2>Informações do Campo</h2>
+    <div class="grid">
+      <div class="stat-box">
+        <div class="stat-value">${field.areaHectares ? (field.areaHectares / 100).toFixed(1) : '-'} ha</div>
+        <div class="stat-label">Área Total</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${field.soilType || 'Não informado'}</div>
+        <div class="stat-label">Tipo de Solo</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${field.irrigationType || 'Nenhuma'}</div>
+        <div class="stat-label">Irrigação</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${field.city || '-'}, ${field.state || '-'}</div>
+        <div class="stat-label">Localização</div>
+      </div>
+    </div>
+  </div>
+  
+  ${ndvi ? `
+  <div class="section">
+    <h2>Índice de Vegetação (NDVI)</h2>
+    <div class="grid">
+      <div class="stat-box">
+        <div class="stat-value">${(ndvi.ndviAverage / 1000).toFixed(2)}</div>
+        <div class="stat-label">NDVI Médio</div>
+        <div class="ndvi-bar" style="background: linear-gradient(to right, #d73027, #fc8d59, #fee08b, #d9ef8b, #91cf60, #1a9850);"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${new Date(ndvi.captureDate).toLocaleDateString('pt-BR')}</div>
+        <div class="stat-label">Data da Captura</div>
+      </div>
+    </div>
+  </div>
+  ` : ''}
+  
+  ${data.notes?.length > 0 ? `
+  <div class="section">
+    <h2>Notas de Campo</h2>
+    <table>
+      <tr><th>Data</th><th>Tipo</th><th>Conteúdo</th></tr>
+      ${data.notes.slice(0, 10).map((n: any) => `
+        <tr>
+          <td>${new Date(n.createdAt).toLocaleDateString('pt-BR')}</td>
+          <td>${n.noteType}</td>
+          <td>${n.content.substring(0, 100)}...</td>
+        </tr>
+      `).join('')}
+    </table>
+  </div>
+  ` : ''}
+  
+  ${data.crops?.length > 0 ? `
+  <div class="section">
+    <h2>Histórico de Cultivos</h2>
+    <table>
+      <tr><th>Cultura</th><th>Variedade</th><th>Plantio</th><th>Status</th></tr>
+      ${data.crops.map((c: any) => `
+        <tr>
+          <td>${c.cropType}</td>
+          <td>${c.variety || '-'}</td>
+          <td>${c.plantingDate ? new Date(c.plantingDate).toLocaleDateString('pt-BR') : '-'}</td>
+          <td>${c.status}</td>
+        </tr>
+      `).join('')}
+    </table>
+  </div>
+  ` : ''}
+  
+  <div class="footer">
+    <p>CampoVivo - Sistema de Gestão Agrícola</p>
+    <p>Este relatório foi gerado automaticamente.</p>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// Helper function to generate PDF HTML for farm report
+function generateFarmPdfHtml(data: any): string {
+  const farm = data.farm;
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório - ${farm.name}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+    .header { border-bottom: 2px solid #22C55E; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #22C55E; margin: 0; }
+    .section { margin-bottom: 30px; }
+    .section h2 { color: #166534; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    .stat-box { background: #f5f5f5; padding: 15px; border-radius: 8px; }
+    .stat-value { font-size: 24px; font-weight: bold; color: #22C55E; }
+    .stat-label { color: #666; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🌱 CampoVivo</h1>
+    <p>Relatório da Fazenda: <strong>${farm.name}</strong></p>
+    <p>Gerado em: ${new Date(data.generatedAt).toLocaleDateString('pt-BR')}</p>
+  </div>
+  
+  <div class="section">
+    <h2>Resumo da Fazenda</h2>
+    <div class="grid">
+      <div class="stat-box">
+        <div class="stat-value">${data.fields.length}</div>
+        <div class="stat-label">Total de Campos</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${(data.totalArea / 100).toFixed(1)} ha</div>
+        <div class="stat-label">Área Total</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${farm.city || '-'}</div>
+        <div class="stat-label">Localização</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="section">
+    <h2>Campos da Fazenda</h2>
+    <table>
+      <tr><th>Nome</th><th>Área (ha)</th><th>NDVI</th><th>Cultura Atual</th></tr>
+      ${data.fields.map((f: any) => `
+        <tr>
+          <td>${f.name}</td>
+          <td>${f.areaHectares ? (f.areaHectares / 100).toFixed(1) : '-'}</td>
+          <td>${f.latestNdvi ? (f.latestNdvi.ndviAverage / 1000).toFixed(2) : '-'}</td>
+          <td>${f.activeCrop?.cropType || '-'}</td>
+        </tr>
+      `).join('')}
+    </table>
+  </div>
+  
+  <div class="footer">
+    <p>CampoVivo - Sistema de Gestão Agrícola</p>
+    <p>Este relatório foi gerado automaticamente.</p>
+  </div>
+</body>
+</html>
+  `;
+}
 
 export type AppRouter = typeof appRouter;
