@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm install --legacy-peer-deps && npm run build:client",
+  "installCommand": "npm install --legacy-peer-deps",
+  "buildCommand": "npm run build:client",
   "outputDirectory": "dist/public",
-  "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
