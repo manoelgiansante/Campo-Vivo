@@ -72,7 +72,7 @@ export default function MapboxMapComponent({
         onLocationChange({ latitude, longitude });
       }
     } catch (error) {
-      console.error('Error getting location:', error);
+      console.error('Erro ao obter localização:', error);
       Alert.alert(
         'Erro',
         'Não foi possível obter sua localização. Verifique se o GPS está ativado.'
