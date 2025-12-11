@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install && cd client && pnpm run build",
-  "outputDirectory": "client/dist",
+  "buildCommand": "pnpm run build:client",
+  "outputDirectory": "dist/public",
   "installCommand": "pnpm install",
-  "framework": "vite"
+  "framework": null
 }
