@@ -51,6 +51,7 @@ const fields = pgTable("fields", {
   irrigationType: varchar("irrigation_type", { length: 50 }),
   notes: text("notes"),
   polygonCoordinates: json("polygon_coordinates"),
+  agroPolygonId: varchar("agro_polygon_id", { length: 100 }),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -230,10 +231,225 @@ const appRouter = t.router({
           notes: input.notes,
           polygonCoordinates: coords,
         }).returning();
+        
+        // Sincronizar NDVI automaticamente se tiver coordenadas
+        if (coords && process.env.AGROMONITORING_API_KEY) {
+          try {
+            const agroPolygonId = await createAgroPolygon(newField.name, coords);
+            if (agroPolygonId) {
+              await database.update(fields)
+                .set({ agroPolygonId })
+                .where(eq(fields.id, newField.id));
+              newField.agroPolygonId = agroPolygonId;
+            }
+          } catch (e) {
+            console.error("Erro ao criar polígono no Agromonitoring:", e);
+          }
+        }
+        
         return newField;
+      }),
+      
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.id), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+        return field || null;
+      }),
+      
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        await database
+          .update(fields)
+          .set({ isActive: false })
+          .where(and(eq(fields.id, input.id), eq(fields.userId, ctx.user.id)));
+        return { success: true };
+      }),
+  }),
+  
+  ndvi: t.router({
+    // Buscar NDVI atual de um campo
+    current: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+          
+        if (!field) throw new Error("Campo não encontrado");
+        
+        // Se não tem API key, retornar dados simulados
+        if (!process.env.AGROMONITORING_API_KEY) {
+          return {
+            ndvi: 0.65 + Math.random() * 0.2,
+            date: new Date().toISOString(),
+            cloudCoverage: Math.random() * 20,
+            source: "simulated",
+          };
+        }
+        
+        // Buscar NDVI real
+        if (field.agroPolygonId) {
+          try {
+            const ndviData = await getAgroNdvi(field.agroPolygonId);
+            if (ndviData) {
+              return {
+                ndvi: ndviData.data.mean,
+                date: new Date(ndviData.dt * 1000).toISOString(),
+                cloudCoverage: ndviData.cl,
+                source: "agromonitoring",
+              };
+            }
+          } catch (e) {
+            console.error("Erro ao buscar NDVI:", e);
+          }
+        }
+        
+        return {
+          ndvi: 0.65,
+          date: new Date().toISOString(),
+          cloudCoverage: 0,
+          source: "default",
+        };
+      }),
+      
+    // Histórico de NDVI
+    history: protectedProcedure
+      .input(z.object({ fieldId: z.number(), days: z.number().default(30) }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+          
+        if (!field) throw new Error("Campo não encontrado");
+        
+        // Se não tem API key, retornar histórico simulado
+        if (!process.env.AGROMONITORING_API_KEY || !field.agroPolygonId) {
+          const history = [];
+          for (let i = 0; i < input.days; i += 5) {
+            history.push({
+              date: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+              ndvi: 0.5 + Math.random() * 0.4,
+              cloudCoverage: Math.random() * 30,
+            });
+          }
+          return history;
+        }
+        
+        // Buscar histórico real
+        try {
+          const endDate = new Date();
+          const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+          const historyData = await getAgroNdviHistory(field.agroPolygonId, startDate, endDate);
+          
+          return historyData.map(h => ({
+            date: new Date(h.dt * 1000).toISOString(),
+            ndvi: h.data.mean,
+            cloudCoverage: h.cl,
+          }));
+        } catch (e) {
+          console.error("Erro ao buscar histórico NDVI:", e);
+          return [];
+        }
       }),
   }),
 });
+
+// ==================== AGROMONITORING HELPERS ====================
+const AGRO_BASE_URL = "https://api.agromonitoring.com/agro/1.0";
+
+async function createAgroPolygon(name: string, coordinates: any): Promise<string | null> {
+  const apiKey = process.env.AGROMONITORING_API_KEY;
+  if (!apiKey) return null;
+  
+  try {
+    // Converter coordenadas para formato GeoJSON
+    let coords = coordinates;
+    if (typeof coordinates === "string") {
+      coords = JSON.parse(coordinates);
+    }
+    
+    // Garantir formato [lng, lat]
+    let geoCoords: [number, number][];
+    if (Array.isArray(coords) && coords[0]?.lat !== undefined) {
+      geoCoords = coords.map((c: any) => [c.lng || c.lon, c.lat]);
+    } else if (Array.isArray(coords) && Array.isArray(coords[0])) {
+      geoCoords = coords;
+    } else {
+      return null;
+    }
+    
+    // Fechar polígono se necessário
+    if (geoCoords.length > 0 && 
+        (geoCoords[0][0] !== geoCoords[geoCoords.length - 1][0] ||
+         geoCoords[0][1] !== geoCoords[geoCoords.length - 1][1])) {
+      geoCoords.push(geoCoords[0]);
+    }
+    
+    const response = await fetch(`${AGRO_BASE_URL}/polygons?appid=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        geo_json: {
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Polygon", coordinates: [geoCoords] },
+        },
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error("Agromonitoring error:", await response.text());
+      return null;
+    }
+    
+    const data = await response.json();
+    return data.id;
+  } catch (e) {
+    console.error("createAgroPolygon error:", e);
+    return null;
+  }
+}
+
+async function getAgroNdvi(polygonId: string): Promise<any> {
+  const apiKey = process.env.AGROMONITORING_API_KEY;
+  if (!apiKey) return null;
+  
+  const response = await fetch(`${AGRO_BASE_URL}/ndvi?polyid=${polygonId}&appid=${apiKey}`);
+  if (!response.ok) return null;
+  
+  const data = await response.json();
+  return Array.isArray(data) ? data[0] : data;
+}
+
+async function getAgroNdviHistory(polygonId: string, startDate: Date, endDate: Date): Promise<any[]> {
+  const apiKey = process.env.AGROMONITORING_API_KEY;
+  if (!apiKey) return [];
+  
+  const start = Math.floor(startDate.getTime() / 1000);
+  const end = Math.floor(endDate.getTime() / 1000);
+  
+  const response = await fetch(
+    `${AGRO_BASE_URL}/ndvi/history?polyid=${polygonId}&start=${start}&end=${end}&appid=${apiKey}`
+  );
+  
+  if (!response.ok) return [];
+  return response.json();
+}
 
 export type AppRouter = typeof appRouter;
 
