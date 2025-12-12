@@ -92,24 +92,42 @@ const appRouter = t.router({
         areaHectares: z.number().optional(),
         centerLat: z.number().optional(),
         centerLng: z.number().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
         soilType: z.string().optional(),
         irrigationType: z.string().optional(),
         notes: z.string().optional(),
         polygonCoordinates: z.any().optional(),
+        boundaries: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const database = await getDb();
+        
+        // Aceitar tanto centerLat/centerLng quanto latitude/longitude
+        const lat = input.centerLat?.toString() || input.latitude;
+        const lng = input.centerLng?.toString() || input.longitude;
+        
+        // Aceitar tanto polygonCoordinates quanto boundaries
+        let coords = input.polygonCoordinates;
+        if (!coords && input.boundaries) {
+          try {
+            coords = JSON.parse(input.boundaries);
+          } catch {
+            coords = input.boundaries;
+          }
+        }
+        
         const [newField] = await database.insert(fields).values({
           userId: ctx.user.id,
           name: input.name,
           area: input.area,
           areaHectares: input.areaHectares?.toString(),
-          centerLat: input.centerLat?.toString(),
-          centerLng: input.centerLng?.toString(),
+          centerLat: lat,
+          centerLng: lng,
           soilType: input.soilType,
           irrigationType: input.irrigationType,
           notes: input.notes,
-          polygonCoordinates: input.polygonCoordinates,
+          polygonCoordinates: coords,
         }).returning();
         return newField;
       }),
