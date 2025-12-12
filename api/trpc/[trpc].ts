@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "../../server/routers";
-import * as db from "../../server/db";
+import { getUserByOpenId, upsertUser } from "../../server/db";
+
+console.log("[tRPC] Handler module loaded");
 
 // Fallback dev user when database is not available
 const createFallbackDevUser = (openId: string, name: string, email: string) => ({
@@ -24,12 +26,12 @@ const createFallbackDevUser = (openId: string, name: string, email: string) => (
 async function getOrCreateDevUser(openId: string, name: string, email: string) {
   try {
     // Try to get existing user from database
-    let user = await db.getUserByOpenId(openId);
+    let user = await getUserByOpenId(openId);
     
     if (!user) {
       // Create new dev user in database
       console.log(`[Auth] Creating dev user in DB: ${openId}`);
-      await db.upsertUser({
+      await upsertUser({
         openId,
         name,
         email,
@@ -37,7 +39,7 @@ async function getOrCreateDevUser(openId: string, name: string, email: string) {
         role: "user",
         userType: "farmer",
       });
-      user = await db.getUserByOpenId(openId);
+      user = await getUserByOpenId(openId);
     }
     
     if (user) {
