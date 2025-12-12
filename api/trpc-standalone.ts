@@ -306,8 +306,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     // NO fallback to dev user - require real auth
 
+    // Determine the correct endpoint from the URL
+    const urlPath = req.url || "";
+    const endpoint = urlPath.includes("/api/trpc-standalone") ? "/api/trpc-standalone" : "/api/trpc";
+
     const response = await fetchRequestHandler({
-      endpoint: "/api/trpc",
+      endpoint,
       req: fetchRequest,
       router: appRouter,
       createContext: () => ({ user }),
