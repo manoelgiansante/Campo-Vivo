@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { 
   X, 
@@ -15,7 +16,8 @@ import {
   Search,
   Navigation,
   Undo2,
-  Square
+  Loader2,
+  Check
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
@@ -25,17 +27,44 @@ import * as turf from "@turf/turf";
 
 type DrawMode = "select" | "draw";
 
+interface SuggestedField {
+  id: string;
+  area: number;
+  coordinates: [number, number][];
+  center: [number, number];
+}
+
+// Obter posição salva do mapa ou usar padrão
+const getSavedMapPosition = () => {
+  try {
+    const saved = localStorage.getItem('campovivo_map_position');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      return { center: [pos.lng, pos.lat] as [number, number], zoom: pos.zoom || 15 };
+    }
+  } catch (e) {
+    console.error('Erro ao carregar posição do mapa:', e);
+  }
+  return null;
+};
+
 export default function FieldDrawNew() {
   const [, setLocation] = useLocation();
-  const [mode, setMode] = useState<DrawMode>("draw");
-  const modeRef = useRef<DrawMode>("draw"); // REF para evitar closure stale
-  const [points, setPoints] = useState<[number, number][]>([]); // [lng, lat]
+  const [mode, setMode] = useState<DrawMode>("select");
+  const modeRef = useRef<DrawMode>("select");
+  const [points, setPoints] = useState<[number, number][]>([]);
   const [area, setArea] = useState<number>(0);
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const labelMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  
+  // Estado para campos sugeridos e selecionados
+  const [suggestedFields, setSuggestedFields] = useState<SuggestedField[]>([]);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(new Set());
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
 
   // Sincronizar ref com state
   useEffect(() => {
@@ -52,7 +81,183 @@ export default function FieldDrawNew() {
     },
   });
 
-  // Calculate area when points change
+  // Gerar campos sugeridos baseados na localização atual do mapa
+  const generateSuggestedFields = useCallback((map: mapboxgl.Map) => {
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    
+    // Só gera campos se o zoom for suficiente
+    if (zoom < 12) {
+      setSuggestedFields([]);
+      return;
+    }
+
+    setIsLoadingFields(true);
+    
+    // Simular carregamento de campos do satélite
+    // Em produção, isso viria de uma API como OneSoil
+    setTimeout(() => {
+      const baseLng = center.lng;
+      const baseLat = center.lat;
+      
+      // Gerar campos aleatórios ao redor do centro
+      const fields: SuggestedField[] = [];
+      const gridSize = 0.008; // ~800m
+      
+      for (let i = -2; i <= 2; i++) {
+        for (let j = -2; j <= 2; j++) {
+          // Pular alguns para criar padrão irregular
+          if (Math.random() > 0.7) continue;
+          
+          const offsetLng = i * gridSize + (Math.random() - 0.5) * 0.003;
+          const offsetLat = j * gridSize + (Math.random() - 0.5) * 0.003;
+          
+          // Criar polígono irregular
+          const size = 0.002 + Math.random() * 0.004;
+          const numPoints = 4 + Math.floor(Math.random() * 3);
+          const coords: [number, number][] = [];
+          
+          for (let p = 0; p < numPoints; p++) {
+            const angle = (p / numPoints) * Math.PI * 2;
+            const r = size * (0.8 + Math.random() * 0.4);
+            coords.push([
+              baseLng + offsetLng + Math.cos(angle) * r,
+              baseLat + offsetLat + Math.sin(angle) * r
+            ]);
+          }
+          
+          // Calcular área
+          const polygon = turf.polygon([[...coords, coords[0]]]);
+          const areaHa = turf.area(polygon) / 10000;
+          
+          if (areaHa > 1 && areaHa < 100) {
+            const centroid = turf.centroid(polygon);
+            fields.push({
+              id: `field-${i}-${j}`,
+              area: Math.round(areaHa * 10) / 10,
+              coordinates: coords,
+              center: centroid.geometry.coordinates as [number, number]
+            });
+          }
+        }
+      }
+      
+      setSuggestedFields(fields);
+      // Pré-selecionar todos os campos quando em modo select
+      if (modeRef.current === "select") {
+        setSelectedFieldIds(new Set(fields.map(f => f.id)));
+      }
+      setIsLoadingFields(false);
+    }, 1000);
+  }, []);
+
+  // Renderizar campos sugeridos no mapa
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    // Limpar markers de labels anteriores
+    labelMarkersRef.current.forEach(m => m.remove());
+    labelMarkersRef.current = [];
+
+    // Remover layers existentes
+    suggestedFields.forEach(field => {
+      if (mapInstance.getLayer(`suggested-${field.id}`)) {
+        mapInstance.removeLayer(`suggested-${field.id}`);
+      }
+      if (mapInstance.getLayer(`suggested-${field.id}-outline`)) {
+        mapInstance.removeLayer(`suggested-${field.id}-outline`);
+      }
+      if (mapInstance.getSource(`suggested-${field.id}`)) {
+        mapInstance.removeSource(`suggested-${field.id}`);
+      }
+    });
+
+    // Adicionar novos layers
+    suggestedFields.forEach(field => {
+      const isSelected = selectedFieldIds.has(field.id);
+      const coords = [...field.coordinates, field.coordinates[0]] as [number, number][];
+      const sourceId = `suggested-${field.id}`;
+
+      mapInstance.addSource(sourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: { id: field.id, area: field.area },
+          geometry: {
+            type: "Polygon",
+            coordinates: [coords]
+          }
+        }
+      });
+
+      // Fill layer
+      mapInstance.addLayer({
+        id: sourceId,
+        type: "fill",
+        source: sourceId,
+        paint: {
+          "fill-color": isSelected ? "#22c55e" : "#9ca3af",
+          "fill-opacity": isSelected ? 0.6 : 0.4
+        }
+      });
+
+      // Outline
+      mapInstance.addLayer({
+        id: `${sourceId}-outline`,
+        type: "line",
+        source: sourceId,
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": 2
+        }
+      });
+
+      // Label marker
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-lg cursor-pointer transition-all ${
+          isSelected 
+            ? 'bg-green-500 text-white' 
+            : 'bg-white/90 text-gray-800 hover:bg-white'
+        }">
+          ${isSelected ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<span class="text-sm">+</span>'}
+          <span class="font-medium text-sm">${field.area} ha</span>
+        </div>
+      `;
+      el.onclick = (e) => {
+        e.stopPropagation();
+        if (mode === "select") {
+          toggleFieldSelection(field.id);
+        }
+      };
+
+      const marker = new mapboxgl.Marker({ element: el })
+        .setLngLat(field.center)
+        .addTo(mapInstance);
+      
+      labelMarkersRef.current.push(marker);
+    });
+  }, [mapInstance, suggestedFields, selectedFieldIds, mode]);
+
+  // Toggle seleção de campo
+  const toggleFieldSelection = (fieldId: string) => {
+    setSelectedFieldIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fieldId)) {
+        newSet.delete(fieldId);
+      } else {
+        newSet.add(fieldId);
+      }
+      return newSet;
+    });
+  };
+
+  // Calcular área total selecionada
+  const totalSelectedArea = suggestedFields
+    .filter(f => selectedFieldIds.has(f.id))
+    .reduce((sum, f) => sum + f.area, 0);
+
+  // Calculate area when points change (modo draw)
   useEffect(() => {
     if (points.length >= 3) {
       try {
@@ -69,9 +274,9 @@ export default function FieldDrawNew() {
     }
   }, [points]);
 
-  // Update polygon on map
+  // Update polygon on map (modo draw)
   useEffect(() => {
-    if (!mapInstance) return;
+    if (!mapInstance || mode !== "draw") return;
 
     // Clear existing markers
     markersRef.current.forEach(m => m.remove());
@@ -92,11 +297,11 @@ export default function FieldDrawNew() {
       // Add markers for each point
       points.forEach((point, index) => {
         const el = document.createElement("div");
-        el.className = "w-5 h-5 bg-white rounded-full border-2 border-gray-500 shadow-md cursor-move";
+        el.className = "w-5 h-5 bg-white rounded-full border-2 border-green-500 shadow-md cursor-move";
         
         const marker = new mapboxgl.Marker({ 
           element: el, 
-          draggable: mode === "select" 
+          draggable: true 
         })
           .setLngLat(point)
           .addTo(mapInstance);
@@ -152,43 +357,85 @@ export default function FieldDrawNew() {
     }
   }, [points, mode, mapInstance]);
 
+  // Limpar quando mudar de modo
+  useEffect(() => {
+    if (mode === "draw") {
+      // Limpar seleção de campos sugeridos
+      setSelectedFieldIds(new Set());
+    } else if (mode === "select") {
+      // Limpar pontos desenhados
+      setPoints([]);
+      // Pré-selecionar todos os campos
+      setSelectedFieldIds(new Set(suggestedFields.map(f => f.id)));
+    }
+  }, [mode, suggestedFields]);
+
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
     setMapInstance(map);
 
-    // Try to get user location
-    getUserLocation()
-      .then(([lng, lat]) => {
-        map.flyTo({
-          center: [lng, lat],
-          zoom: 16,
-          duration: 2000,
+    // Tentar usar posição salva primeiro
+    const savedPos = getSavedMapPosition();
+    if (savedPos) {
+      map.setCenter(savedPos.center);
+      map.setZoom(savedPos.zoom);
+      // Carregar campos sugeridos após posicionar
+      setTimeout(() => generateSuggestedFields(map), 500);
+    } else {
+      // Tentar geolocalização
+      getUserLocation()
+        .then(([lng, lat]) => {
+          map.flyTo({
+            center: [lng, lat],
+            zoom: 16,
+            duration: 2000,
+          });
+          setTimeout(() => generateSuggestedFields(map), 2500);
+        })
+        .catch(() => {
+          map.setCenter([-54.6, -20.47]);
+          map.setZoom(14);
+          setTimeout(() => generateSuggestedFields(map), 500);
         });
-      })
-      .catch(() => {
-        // Keep default center (Brazil)
-        map.setCenter([-47.9292, -15.7801]);
-        map.setZoom(5);
-      });
+    }
 
-    // Add click listener for drawing - usar modeRef para evitar closure stale
+    // Recarregar campos quando mover o mapa
+    map.on("moveend", () => {
+      if (modeRef.current === "select") {
+        generateSuggestedFields(map);
+      }
+    });
+
+    // Click listener para desenhar
     map.on("click", (e) => {
       if (modeRef.current === "draw") {
         setPoints(prev => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
       }
     });
-  }, [setMap, getUserLocation]);
+  }, [setMap, getUserLocation, generateSuggestedFields]);
 
   const handleUndo = () => {
-    setPoints(prev => prev.slice(0, -1));
+    if (mode === "draw") {
+      setPoints(prev => prev.slice(0, -1));
+    }
   };
 
   const handleFinish = () => {
-    if (points.length < 3) {
-      toast.error("Desenhe pelo menos 3 pontos para criar um campo");
-      return;
+    if (mode === "select") {
+      if (selectedFieldIds.size === 0) {
+        toast.error("Selecione pelo menos um campo");
+        return;
+      }
+      // Para modo select, salvar cada campo selecionado
+      // Por enquanto, abrir dialog para nome (poderia ser múltiplos dialogs)
+      setShowNameDialog(true);
+    } else {
+      if (points.length < 3) {
+        toast.error("Desenhe pelo menos 3 pontos para criar um campo");
+        return;
+      }
+      setShowNameDialog(true);
     }
-    setShowNameDialog(true);
   };
 
   const handleCreateField = () => {
@@ -197,22 +444,42 @@ export default function FieldDrawNew() {
       return;
     }
 
-    // Calculate center point
-    const lngSum = points.reduce((sum, p) => sum + p[0], 0);
-    const latSum = points.reduce((sum, p) => sum + p[1], 0);
-    const centerLng = lngSum / points.length;
-    const centerLat = latSum / points.length;
+    if (mode === "select") {
+      // Criar campos a partir da seleção
+      const selectedFields = suggestedFields.filter(f => selectedFieldIds.has(f.id));
+      
+      // Criar cada campo selecionado
+      selectedFields.forEach((field, index) => {
+        const boundariesForStorage = field.coordinates.map(p => ({ lat: p[1], lng: p[0] }));
+        const name = selectedFields.length > 1 
+          ? `${fieldName} ${index + 1}` 
+          : fieldName;
+        
+        createField.mutate({
+          name,
+          areaHectares: Math.round(field.area * 100),
+          latitude: field.center[1].toString(),
+          longitude: field.center[0].toString(),
+          boundaries: JSON.stringify(boundariesForStorage),
+        });
+      });
+    } else {
+      // Criar campo desenhado manualmente
+      const lngSum = points.reduce((sum, p) => sum + p[0], 0);
+      const latSum = points.reduce((sum, p) => sum + p[1], 0);
+      const centerLng = lngSum / points.length;
+      const centerLat = latSum / points.length;
 
-    // Convert to lat/lng format for storage
-    const boundariesForStorage = points.map(p => ({ lat: p[1], lng: p[0] }));
+      const boundariesForStorage = points.map(p => ({ lat: p[1], lng: p[0] }));
 
-    createField.mutate({
-      name: fieldName,
-      areaHectares: Math.round(area * 100), // Store as integer (hectares * 100)
-      latitude: centerLat.toString(),
-      longitude: centerLng.toString(),
-      boundaries: JSON.stringify(boundariesForStorage),
-    });
+      createField.mutate({
+        name: fieldName,
+        areaHectares: Math.round(area * 100),
+        latitude: centerLat.toString(),
+        longitude: centerLng.toString(),
+        boundaries: JSON.stringify(boundariesForStorage),
+      });
+    }
   };
 
   const handleLocateMe = async () => {
@@ -229,16 +496,32 @@ export default function FieldDrawNew() {
     }
   };
 
+  const canFinish = mode === "select" 
+    ? selectedFieldIds.size > 0 
+    : points.length >= 3;
+
+  const currentArea = mode === "select" ? totalSelectedArea : area;
+
   return (
     <div className="relative h-screen w-full">
       {/* Mapbox Map */}
       <MapboxMap
         onMapReady={handleMapReady}
         style="satellite"
-        initialZoom={5}
-        initialCenter={[-47.9292, -15.7801]}
+        initialZoom={14}
+        initialCenter={[-54.6, -20.47]}
         className="absolute inset-0"
       />
+
+      {/* Loading indicator */}
+      {isLoadingFields && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20">
+          <div className="bg-black/70 text-white px-4 py-2 rounded-full flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Carregando limites dos campos...</span>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between pointer-events-none z-10">
@@ -284,31 +567,31 @@ export default function FieldDrawNew() {
         </Button>
       </div>
 
-      {/* Left Side - Control Buttons */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 pointer-events-auto z-10">
-        <Button
-          variant="secondary"
-          size="icon"
-          className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-lg h-10 w-10"
-        >
-          <Square className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-lg h-10 w-10"
-          onClick={handleLocateMe}
-        >
-          <Navigation className="h-5 w-5" />
-        </Button>
-      </div>
+      {/* Instructions */}
+      {mode === "select" && suggestedFields.length > 0 && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+          <div className="bg-black/70 text-white px-4 py-2 rounded-full text-sm">
+            Toque nos campos para selecionar/desmarcar
+          </div>
+        </div>
+      )}
+
+      {mode === "draw" && points.length === 0 && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+          <div className="bg-black/70 text-white px-4 py-2 rounded-full text-sm">
+            Toque no mapa para desenhar os limites
+          </div>
+        </div>
+      )}
 
       {/* Bottom Controls */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-none z-10">
-        {/* Field Name Label */}
-        {points.length > 0 && (
-          <div className="text-white text-sm mb-2 pointer-events-none">
-            <span className="bg-black/50 px-2 py-1 rounded">Novo campo</span>
+        {/* Selection info */}
+        {mode === "select" && selectedFieldIds.size > 0 && (
+          <div className="mb-2 pointer-events-none">
+            <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+              {selectedFieldIds.size} campo{selectedFieldIds.size > 1 ? 's' : ''} selecionado{selectedFieldIds.size > 1 ? 's' : ''}
+            </span>
           </div>
         )}
 
@@ -318,7 +601,7 @@ export default function FieldDrawNew() {
             variant="secondary"
             className="pointer-events-auto bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-4 h-10 gap-2"
             onClick={handleUndo}
-            disabled={points.length === 0}
+            disabled={mode === "draw" ? points.length === 0 : false}
           >
             <Undo2 className="h-4 w-4" />
             <span>Desfazer</span>
@@ -339,12 +622,12 @@ export default function FieldDrawNew() {
         <Button
           className="pointer-events-auto w-full mt-3 bg-green-600 hover:bg-green-700 text-white rounded-xl h-14 text-base font-semibold"
           onClick={handleFinish}
-          disabled={points.length < 3}
+          disabled={!canFinish}
         >
-          Finalizar limite do campo
-          {area > 0 && (
+          {mode === "select" ? "Salvar campos selecionados" : "Finalizar limite do campo"}
+          {currentArea > 0 && (
             <span className="ml-2 font-normal">
-              Área {area.toFixed(1)} ha
+              {currentArea.toFixed(1)} ha
             </span>
           )}
         </Button>
@@ -355,6 +638,12 @@ export default function FieldDrawNew() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Nome do Campo</DialogTitle>
+            <DialogDescription>
+              {mode === "select" && selectedFieldIds.size > 1 
+                ? `Serão criados ${selectedFieldIds.size} campos com este nome base`
+                : "Digite um nome para identificar este campo"
+              }
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input
@@ -364,7 +653,7 @@ export default function FieldDrawNew() {
               autoFocus
             />
             <p className="text-sm text-gray-500 mt-2">
-              Área: {area.toFixed(1)} hectares
+              Área total: {currentArea.toFixed(1)} hectares
             </p>
           </div>
           <div className="flex justify-end gap-2">
