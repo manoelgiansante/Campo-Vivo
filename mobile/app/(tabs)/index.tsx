@@ -81,7 +81,7 @@ export default function MapScreen() {
         Alert.alert(
           'Permissão Necessária',
           'Permita o acesso à localização nas configurações do dispositivo.',
-          [{ text: 'OK' }]
+          [{ text: 'Entendi' }]
         );
         return;
       }
