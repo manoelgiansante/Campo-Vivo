@@ -7,6 +7,17 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, desc, and } from "drizzle-orm";
 import { pgTable, serial, varchar, text, timestamp, integer, json, boolean, pgEnum } from "drizzle-orm/pg-core";
 
+// Simple hash function for passwords (in production use bcrypt)
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
 // ==================== SCHEMA ====================
 const roleEnum = pgEnum("role", ["user", "admin"]);
 const userTypeEnum = pgEnum("user_type", ["farmer", "agronomist", "consultant"]);
@@ -15,7 +26,8 @@ const users = pgTable("users", {
   id: serial("id").primaryKey(),
   openId: varchar("open_id", { length: 64 }).notNull().unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).unique(),
+  password: varchar("password", { length: 255 }),
   loginMethod: varchar("login_method", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
   userType: userTypeEnum("user_type").default("farmer").notNull(),
@@ -72,6 +84,91 @@ const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 const appRouter = t.router({
   auth: t.router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
+    
+    signup: publicProcedure
+      .input(z.object({
+        name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        phone: z.string().optional(),
+        company: z.string().optional(),
+        userType: z.enum(["farmer", "agronomist", "consultant"]).default("farmer"),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await getDb();
+        
+        // Check if email already exists
+        const [existing] = await database.select().from(users).where(eq(users.email, input.email)).limit(1);
+        if (existing) {
+          throw new Error("Email já cadastrado");
+        }
+        
+        // Create user
+        const hashedPassword = simpleHash(input.password);
+        const openId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const [newUser] = await database.insert(users).values({
+          openId,
+          name: input.name,
+          email: input.email,
+          password: hashedPassword,
+          phone: input.phone,
+          company: input.company,
+          userType: input.userType,
+          loginMethod: "email",
+        }).returning();
+        
+        return {
+          user: {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            userType: newUser.userType,
+          },
+        };
+      }),
+    
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(1, "Senha obrigatória"),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await getDb();
+        
+        // Find user by email
+        const [user] = await database.select().from(users).where(eq(users.email, input.email)).limit(1);
+        if (!user) {
+          throw new Error("Email ou senha incorretos");
+        }
+        
+        // Check password
+        const hashedPassword = simpleHash(input.password);
+        if (user.password !== hashedPassword) {
+          throw new Error("Email ou senha incorretos");
+        }
+        
+        // Update last signed in
+        await database.update(users)
+          .set({ lastSignedIn: new Date() })
+          .where(eq(users.id, user.id));
+        
+        return {
+          user: {
+            id: user.id,
+            openId: user.openId,
+            name: user.name,
+            email: user.email,
+            userType: user.userType,
+            phone: user.phone,
+            company: user.company,
+          },
+        };
+      }),
+      
+    logout: publicProcedure.mutation(async () => {
+      return { success: true };
+    }),
   }),
   
   fields: t.router({
@@ -159,11 +256,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+
+  // Parse cookies from request
+  const cookieHeader = req.headers.cookie || "";
+  const cookies = Object.fromEntries(
+    cookieHeader.split(";").map(c => {
+      const [key, ...v] = c.trim().split("=");
+      return [key, v.join("=")];
+    })
+  );
+  const sessionUserId = cookies["campovivo_user_id"];
 
   // Convert request
   const protocol = req.headers["x-forwarded-proto"] || "https";
@@ -187,12 +294,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
 
   try {
-    // Get or create dev user
-    const user = await getOrCreateUser(
-      "dev-user",
-      "Usuário Dev",
-      "dev@campovivo.app"
-    );
+    // Get user from cookie or header
+    let user: User | null = null;
+    const userId = sessionUserId || (req.headers["x-user-id"] as string);
+    
+    if (userId) {
+      const database = await getDb();
+      const [foundUser] = await database.select().from(users).where(eq(users.id, parseInt(userId))).limit(1);
+      user = foundUser || null;
+    }
+    
+    // NO fallback to dev user - require real auth
 
     const response = await fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -203,6 +315,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const responseBody = await response.text();
     response.headers.forEach((value, key) => res.setHeader(key, value));
+    
+    // Check if this was a login/signup response and set cookie
+    if (responseBody.includes('"user":{') && responseBody.includes('"id":')) {
+      try {
+        const parsed = JSON.parse(responseBody);
+        if (parsed.result?.data?.user?.id) {
+          const userId = parsed.result.data.user.id;
+          res.setHeader("Set-Cookie", `campovivo_user_id=${userId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
+        }
+      } catch {}
+    }
+    
+    // Check if this was a logout and clear cookie
+    if (req.url?.includes("auth.logout")) {
+      res.setHeader("Set-Cookie", `campovivo_user_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+    }
+    
     res.status(response.status).send(responseBody);
   } catch (error: any) {
     console.error("tRPC error:", error);

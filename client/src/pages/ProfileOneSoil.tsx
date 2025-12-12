@@ -1,240 +1,350 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { 
-  Cloud,
-  ChevronRight,
-  Settings,
-  Monitor,
-  History,
-  MessageCircle,
-  FileText,
-  Send,
-  HelpCircle,
-  LogOut,
-  Building2,
-  Share2,
-  Crown,
-  Upload,
-} from "lucide-react";
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { User, Mail, Lock, LogOut, Loader2 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
 export default function ProfileOneSoil() {
-  const [, setLocation] = useLocation();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { toast } = useToast();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string; email: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
 
-  if (!isLoggedIn) {
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  // Signup form state
+  const [signupName, setSignupName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+
+  // Check if user is already logged in
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const result = await trpc.auth.me.query();
+      if (result) {
+        setCurrentUser(result);
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      // User not logged in
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!loginEmail || !loginPassword) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await trpc.auth.login.mutate({
+        email: loginEmail,
+        password: loginPassword,
+      });
+
+      setCurrentUser(result.user);
+      setIsAuthenticated(true);
+      toast({
+        title: "Sucesso!",
+        description: "Login realizado com sucesso",
+      });
+      
+      // Clear form
+      setLoginEmail("");
+      setLoginPassword("");
+    } catch (error: any) {
+      toast({
+        title: "Erro no login",
+        description: error.message || "Email ou senha incorretos",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!signupName || !signupEmail || !signupPassword || !signupConfirmPassword) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (signupPassword !== signupConfirmPassword) {
+      toast({
+        title: "Erro",
+        description: "As senhas não coincidem",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (signupPassword.length < 6) {
+      toast({
+        title: "Erro",
+        description: "A senha deve ter pelo menos 6 caracteres",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await trpc.auth.signup.mutate({
+        name: signupName,
+        email: signupEmail,
+        password: signupPassword,
+      });
+
+      setCurrentUser(result.user);
+      setIsAuthenticated(true);
+      toast({
+        title: "Conta criada!",
+        description: "Bem-vindo ao CampoVivo",
+      });
+      
+      // Clear form
+      setSignupName("");
+      setSignupEmail("");
+      setSignupPassword("");
+      setSignupConfirmPassword("");
+    } catch (error: any) {
+      toast({
+        title: "Erro ao criar conta",
+        description: error.message || "Não foi possível criar a conta",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setIsLoading(true);
+    try {
+      await trpc.auth.logout.mutate();
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      toast({
+        title: "Logout realizado",
+        description: "Você saiu da sua conta",
+      });
+    } catch (error) {
+      // Even if the server call fails, clear local state
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Authenticated user view
+  if (isAuthenticated && currentUser) {
     return (
-      <div className="min-h-screen bg-gray-100 pb-24">
-        {/* Not Logged In View */}
-        <div className="p-4">
-          <div className="bg-white rounded-2xl p-6 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-              <Cloud className="h-8 w-8 text-gray-400" />
+      <div className="container mx-auto py-8 px-4 max-w-md">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <User className="w-10 h-10 text-green-600" />
             </div>
-            <p className="text-gray-600 mb-6">
-              Crie uma conta ou faça login para salvar seus dados e acessar o aplicativo web com funcionalidades avançadas.
-            </p>
+            <CardTitle className="text-2xl">{currentUser.name}</CardTitle>
+            <CardDescription>{currentUser.email}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-green-50 p-4 rounded-lg">
+              <p className="text-sm text-green-800">
+                ✓ Conta ativa no CampoVivo
+              </p>
+            </div>
             <Button 
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl mb-3"
-              onClick={() => setIsLoggedIn(true)}
+              variant="outline" 
+              className="w-full" 
+              onClick={handleLogout}
+              disabled={isLoading}
             >
-              Sou novo usuário
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <LogOut className="w-4 h-4 mr-2" />
+              )}
+              Sair da conta
             </Button>
-            <Button 
-              variant="outline"
-              className="w-full h-12 rounded-xl font-semibold"
-              onClick={() => setIsLoggedIn(true)}
-            >
-              Já tenho uma conta
-            </Button>
-          </div>
-        </div>
-
-        {/* Settings Section */}
-        <div className="p-4 pt-0">
-          <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
-            <MenuItem 
-              icon={<Settings className="h-5 w-5 text-green-600" />}
-              label="Configurações"
-              onClick={() => {}}
-            />
-          </div>
-        </div>
-
-        {/* Learn More Section */}
-        <div className="p-4 pt-0">
-          <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Saiba mais</p>
-            <MenuItem 
-              icon={<Monitor className="h-5 w-5 text-green-600" />}
-              label="Recursos da versão web"
-              onClick={() => {}}
-            />
-            <MenuItem 
-              icon={<History className="h-5 w-5 text-green-600" />}
-              label="Histórico de atualizações"
-              onClick={() => {}}
-            />
-          </div>
-        </div>
-
-        {/* Support Section */}
-        <div className="p-4 pt-0">
-          <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Suporte e Ajuda</p>
-            <MenuItem 
-              icon={<MessageCircle className="h-5 w-5 text-green-600" />}
-              label="Chat de suporte"
-              onClick={() => {}}
-            />
-            <MenuItem 
-              icon={<FileText className="h-5 w-5 text-green-600" />}
-              label="Guia do usuário"
-              onClick={() => {}}
-            />
-            <MenuItem 
-              icon={<Send className="h-5 w-5 text-green-600" />}
-              label="Comunidade Telegram"
-              onClick={() => {}}
-            />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  // Logged In View
+  // Login/Signup view
   return (
-    <div className="min-h-screen bg-gray-100 pb-24">
-      {/* Profile Header */}
-      <div className="p-4">
-        <div className="bg-white rounded-2xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-              <span className="text-2xl font-bold text-green-600">M</span>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Manoel</h2>
-              <p className="text-gray-500">manoel@campovivo.com</p>
-            </div>
-          </div>
-        </div>
+    <div className="container mx-auto py-8 px-4 max-w-md">
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold text-green-700">🌾 CampoVivo</h1>
+        <p className="text-gray-600">Gestão inteligente de fazendas</p>
       </div>
 
-      {/* Account Section */}
-      <div className="p-4 pt-0">
-        <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Conta</p>
-          <MenuItem 
-            icon={<Crown className="h-5 w-5 text-amber-500" />}
-            label="Meu Plano"
-            badge="Gratuito"
-            onClick={() => setLocation("/plans")}
-          />
-          <MenuItem 
-            icon={<Building2 className="h-5 w-5 text-green-600" />}
-            label="Minhas Fazendas"
-            onClick={() => setLocation("/farms")}
-          />
-          <MenuItem 
-            icon={<Upload className="h-5 w-5 text-green-600" />}
-            label="Importar Talhões"
-            onClick={() => setLocation("/fields/import")}
-          />
-          <MenuItem 
-            icon={<Settings className="h-5 w-5 text-green-600" />}
-            label="Configurações"
-            onClick={() => {}}
-          />
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "login" | "signup")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="login">Entrar</TabsTrigger>
+              <TabsTrigger value="signup">Criar Conta</TabsTrigger>
+            </TabsList>
 
-      {/* Learn More Section */}
-      <div className="p-4 pt-0">
-        <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Saiba mais</p>
-          <MenuItem 
-            icon={<Monitor className="h-5 w-5 text-green-600" />}
-            label="Recursos da versão web"
-            onClick={() => {}}
-          />
-          <MenuItem 
-            icon={<History className="h-5 w-5 text-green-600" />}
-            label="Histórico de atualizações"
-            onClick={() => {}}
-          />
-        </div>
-      </div>
+            <TabsContent value="login" className="mt-4">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="login-email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      className="pl-10"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
 
-      {/* Support Section */}
-      <div className="p-4 pt-0">
-        <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Suporte e Ajuda</p>
-          <MenuItem 
-            icon={<MessageCircle className="h-5 w-5 text-green-600" />}
-            label="Chat de suporte"
-            onClick={() => {}}
-          />
-          <MenuItem 
-            icon={<FileText className="h-5 w-5 text-green-600" />}
-            label="Guia do usuário"
-            onClick={() => {}}
-          />
-          <MenuItem 
-            icon={<Send className="h-5 w-5 text-green-600" />}
-            label="Comunidade Telegram"
-            onClick={() => {}}
-          />
-        </div>
-      </div>
+                <div className="space-y-2">
+                  <Label htmlFor="login-password">Senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="login-password"
+                      type="password"
+                      placeholder="••••••••"
+                      className="pl-10"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
 
-      {/* Logout */}
-      <div className="p-4 pt-0">
-        <Button 
-          variant="ghost"
-          className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-          onClick={() => setIsLoggedIn(false)}
-        >
-          <LogOut className="h-5 w-5 mr-3" />
-          Sair
-        </Button>
-      </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    "Entrar"
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="signup" className="mt-4">
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-name">Nome completo</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-name"
+                      type="text"
+                      placeholder="João Silva"
+                      className="pl-10"
+                      value={signupName}
+                      onChange={(e) => setSignupName(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      className="pl-10"
+                      value={signupEmail}
+                      onChange={(e) => setSignupEmail(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-password"
+                      type="password"
+                      placeholder="Mínimo 6 caracteres"
+                      className="pl-10"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-confirm">Confirmar senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-confirm"
+                      type="password"
+                      placeholder="••••••••"
+                      className="pl-10"
+                      value={signupConfirmPassword}
+                      onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Criando conta...
+                    </>
+                  ) : (
+                    "Criar Conta"
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+        </CardHeader>
+      </Card>
     </div>
-  );
-}
-
-// Menu Item Component
-function MenuItem({
-  icon,
-  label,
-  badge,
-  onClick,
-  danger = false
-}: {
-  icon: React.ReactNode;
-  label: string;
-  badge?: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors ${
-        danger ? "text-red-600" : "text-gray-900"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        {icon}
-        <span>{label}</span>
-        {badge && (
-          <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </div>
-      <ChevronRight className="h-5 w-5 text-gray-400" />
-    </button>
   );
 }
