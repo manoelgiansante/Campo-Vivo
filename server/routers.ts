@@ -152,7 +152,12 @@ export const appRouter = router({
   // ==================== FIELDS ====================
   fields: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await db.getFieldsByUserId(ctx.user.id);
+      try {
+        return await db.getFieldsByUserId(ctx.user.id);
+      } catch (error) {
+        console.error("[fields.list] Error:", error);
+        return []; // Return empty list on error
+      }
     }),
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -179,11 +184,19 @@ export const appRouter = router({
         irrigationType: z.enum(["none", "drip", "sprinkler", "pivot", "flood"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const id = await db.createField({
-          ...input,
-          userId: ctx.user.id,
-        });
-        return { id, success: true };
+        try {
+          const id = await db.createField({
+            ...input,
+            userId: ctx.user.id,
+          });
+          return { id, success: true };
+        } catch (error) {
+          console.error("[fields.create] Error:", error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: "Erro ao criar campo. Verifique a conexão com o banco de dados." 
+          });
+        }
       }),
     update: protectedProcedure
       .input(z.object({

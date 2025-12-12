@@ -35,20 +35,20 @@ export default function ProfileOneSoil() {
               <Cloud className="h-8 w-8 text-gray-400" />
             </div>
             <p className="text-gray-600 mb-6">
-              Create an account or sign in to save your data and access the web application with enhanced functionality.
+              Crie uma conta ou faça login para salvar seus dados e acessar o aplicativo web com funcionalidades avançadas.
             </p>
             <Button 
               className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl mb-3"
               onClick={() => setIsLoggedIn(true)}
             >
-              I'm a new user
+              Sou novo usuário
             </Button>
             <Button 
               variant="outline"
               className="w-full h-12 rounded-xl font-semibold"
               onClick={() => setIsLoggedIn(true)}
             >
-              I have an account
+              Já tenho uma conta
             </Button>
           </div>
         </div>
@@ -76,15 +76,15 @@ export default function ProfileOneSoil() {
         {/* Learn More Section */}
         <div className="p-4 pt-0">
           <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Learn more</p>
+            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Saiba mais</p>
             <MenuItem 
               icon={<Monitor className="h-5 w-5 text-green-600" />}
-              label="Web version features"
+              label="Recursos da versão web"
               onClick={() => {}}
             />
             <MenuItem 
               icon={<History className="h-5 w-5 text-green-600" />}
-              label="Updates history"
+              label="Histórico de atualizações"
               onClick={() => {}}
             />
           </div>
@@ -93,20 +93,20 @@ export default function ProfileOneSoil() {
         {/* Support Section */}
         <div className="p-4 pt-0">
           <div className="bg-white rounded-2xl overflow-hidden">
-            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Support & Help</p>
+            <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Suporte e Ajuda</p>
             <MenuItem 
               icon={<MessageCircle className="h-5 w-5 text-green-600" />}
-              label="Support chat"
+              label="Chat de suporte"
               onClick={() => {}}
             />
             <MenuItem 
               icon={<FileText className="h-5 w-5 text-green-600" />}
-              label="User Guide"
+              label="Guia do usuário"
               onClick={() => {}}
             />
             <MenuItem 
               icon={<Send className="h-5 w-5 text-green-600" />}
-              label="Telegram community"
+              label="Comunidade Telegram"
               onClick={() => {}}
             />
           </div>
@@ -172,15 +172,15 @@ export default function ProfileOneSoil() {
       {/* Learn More Section */}
       <div className="p-4 pt-0">
         <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Learn more</p>
+          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Saiba mais</p>
           <MenuItem 
             icon={<Monitor className="h-5 w-5 text-green-600" />}
-            label="Web version features"
+            label="Recursos da versão web"
             onClick={() => {}}
           />
           <MenuItem 
             icon={<History className="h-5 w-5 text-green-600" />}
-            label="Updates history"
+            label="Histórico de atualizações"
             onClick={() => {}}
           />
         </div>
@@ -189,20 +189,20 @@ export default function ProfileOneSoil() {
       {/* Support Section */}
       <div className="p-4 pt-0">
         <div className="bg-white rounded-2xl overflow-hidden">
-          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Support & Help</p>
+          <p className="text-sm text-gray-500 px-4 pt-4 pb-2">Suporte e Ajuda</p>
           <MenuItem 
             icon={<MessageCircle className="h-5 w-5 text-green-600" />}
-            label="Support chat"
+            label="Chat de suporte"
             onClick={() => {}}
           />
           <MenuItem 
             icon={<FileText className="h-5 w-5 text-green-600" />}
-            label="User Guide"
+            label="Guia do usuário"
             onClick={() => {}}
           />
           <MenuItem 
             icon={<Send className="h-5 w-5 text-green-600" />}
-            label="Telegram community"
+            label="Comunidade Telegram"
             onClick={() => {}}
           />
         </div>
@@ -216,7 +216,7 @@ export default function ProfileOneSoil() {
           onClick={() => setIsLoggedIn(false)}
         >
           <LogOut className="h-5 w-5 mr-3" />
-          Sign out
+          Sair
         </Button>
       </div>
     </div>
