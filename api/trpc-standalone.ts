@@ -73,7 +73,11 @@ async function getDb() {
 }
 
 // ==================== tRPC ====================
-const t = initTRPC.context<{ user: User | null }>().create();
+import superjson from "superjson";
+
+const t = initTRPC.context<{ user: User | null }>().create({
+  transformer: superjson,
+});
 
 const publicProcedure = t.procedure;
 const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
