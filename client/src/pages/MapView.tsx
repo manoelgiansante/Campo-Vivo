@@ -31,6 +31,29 @@ import mapboxgl from "mapbox-gl";
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
 
+// Salvar e carregar última posição do mapa
+const MAP_POSITION_KEY = "campovivo_map_position";
+
+function getSavedMapPosition(): { center: [number, number]; zoom: number } | null {
+  try {
+    const saved = localStorage.getItem(MAP_POSITION_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn("Erro ao carregar posição do mapa:", e);
+  }
+  return null;
+}
+
+function saveMapPosition(center: [number, number], zoom: number) {
+  try {
+    localStorage.setItem(MAP_POSITION_KEY, JSON.stringify({ center, zoom }));
+  } catch (e) {
+    console.warn("Erro ao salvar posição do mapa:", e);
+  }
+}
+
 export default function MapView() {
   const [, setLocation] = useLocation();
   const [selectedSeason, setSelectedSeason] = useState("2024");
@@ -213,23 +236,42 @@ export default function MapView() {
     return "#22C55E";
   };
 
+  // Carregar posição salva
+  const savedPosition = getSavedMapPosition();
+
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
     setMapInstance(map);
 
-    // Try to get user location
-    getUserLocation()
-      .then(([lng, lat]) => {
-        map.flyTo({
-          center: [lng, lat],
-          zoom: 14,
-          duration: 2000,
-        });
-      })
-      .catch(() => {
-        // Keep default center
+    // Salvar posição ao mover o mapa
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      saveMapPosition([center.lng, center.lat], zoom);
+    });
+
+    // Se tem posição salva, usa ela
+    if (savedPosition) {
+      map.flyTo({
+        center: savedPosition.center,
+        zoom: savedPosition.zoom,
+        duration: 500,
       });
-  }, [setMap, getUserLocation]);
+    } else {
+      // Senão, tenta pegar localização do usuário
+      getUserLocation()
+        .then(([lng, lat]) => {
+          map.flyTo({
+            center: [lng, lat],
+            zoom: 14,
+            duration: 2000,
+          });
+        })
+        .catch(() => {
+          // Keep default center
+        });
+    }
+  }, [setMap, getUserLocation, savedPosition]);
 
   const handleLocateMe = async () => {
     if (!mapInstance) return;
@@ -251,8 +293,8 @@ export default function MapView() {
       <MapboxMap
         onMapReady={handleMapReady}
         style="satellite"
-        initialZoom={4}
-        initialCenter={[-47.9292, -15.7801]}
+        initialZoom={savedPosition?.zoom ?? 4}
+        initialCenter={savedPosition?.center ?? [-47.9292, -15.7801]}
         className="absolute inset-0"
       />
 
