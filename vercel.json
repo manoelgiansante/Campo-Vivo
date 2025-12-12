@@ -5,7 +5,8 @@
   "functions": {
     "api/**/*.ts": {
       "memory": 1024,
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "server/**/*.ts,drizzle/**/*.ts,shared/**/*.ts"
     }
   },
   "rewrites": [
