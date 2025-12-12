@@ -7,6 +7,8 @@
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "dev:web": "cd client && vite",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build:api": "esbuild api/trpc/\\[trpc\\].ts --bundle --platform=node --format=esm --outfile=api-dist/trpc.js --external:@vercel/node && esbuild api/health.ts --bundle --platform=node --format=esm --outfile=api-dist/health.js --external:@vercel/node && esbuild api/db-test.ts --bundle --platform=node --format=esm --outfile=api-dist/db-test.js --external:@vercel/node",
+    "build:all": "npm run build:api && vite build",
     "build:client": "cd client && vite build --outDir ../dist --emptyOutDir",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",

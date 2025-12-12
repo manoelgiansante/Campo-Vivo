@@ -1,17 +1,18 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npx vite build",
+  "buildCommand": "npm run build:all",
   "outputDirectory": "dist",
   "functions": {
-    "api/**/*.ts": {
+    "api-dist/**/*.js": {
       "memory": 1024,
-      "maxDuration": 30,
-      "includeFiles": "server/**/*.ts,drizzle/**/*.ts,shared/**/*.ts"
+      "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc/[trpc]" },
-    { "source": "/api/oauth/:path*", "destination": "/api/oauth/[...path]" },
+    { "source": "/api/trpc/:path*", "destination": "/api-dist/trpc" },
+    { "source": "/api/health", "destination": "/api-dist/health" },
+    { "source": "/api/db-test", "destination": "/api-dist/db-test" },
+    { "source": "/api/oauth/:path*", "destination": "/api-dist/oauth" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
