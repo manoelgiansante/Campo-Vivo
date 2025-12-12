@@ -4,6 +4,8 @@ import { getLoginUrl } from "@/const";
 import { Leaf, Loader2 } from "lucide-react";
 import { BottomNav } from "./BottomNav";
 import { OfflineIndicator } from "./OfflineIndicator";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 
 interface MobileLayoutProps {
   children: React.ReactNode;
@@ -16,19 +18,14 @@ const isDemoMode = !import.meta.env.VITE_OAUTH_PORTAL_URL || !import.meta.env.VI
 
 export function MobileLayout({ children, hideNav = false, fullScreen = false }: MobileLayoutProps) {
   const { loading, user } = useAuth();
+  const [location, setLocation] = useLocation();
 
-  // In demo mode, skip authentication check
-  if (isDemoMode) {
-    return (
-      <div className={`min-h-screen bg-gray-100 ${fullScreen ? "" : "pb-16"}`}>
-        <main className={fullScreen ? "h-screen" : ""}>
-          {children}
-        </main>
-        {!hideNav && <BottomNav />}
-        <OfflineIndicator />
-      </div>
-    );
-  }
+  // Redirect to login if not authenticated (except if already on login page)
+  useEffect(() => {
+    if (!loading && !user && location !== "/login" && location !== "/auth") {
+      setLocation("/login");
+    }
+  }, [loading, user, location, setLocation]);
 
   if (loading) {
     return (
@@ -38,32 +35,11 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
     );
   }
 
-  if (!user) {
+  // Se não tem usuário e não está na página de login, mostra loading (vai redirecionar)
+  if (!user && location !== "/login" && location !== "/auth") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
-        <div className="flex flex-col items-center gap-6 max-w-sm w-full">
-          <div className="h-20 w-20 rounded-2xl bg-green-100 flex items-center justify-center">
-            <Leaf className="h-10 w-10 text-green-600" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">CampoVivo</h1>
-            <p className="text-gray-500 text-sm">
-              Monitore seus campos com imagens de satélite e dados de vegetação em tempo real.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              const loginUrl = getLoginUrl();
-              if (loginUrl) {
-                window.location.href = loginUrl;
-              }
-            }}
-            size="lg"
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl"
-          >
-            Entrar
-          </Button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-green-600" />
       </div>
     );
   }

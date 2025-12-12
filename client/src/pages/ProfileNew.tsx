@@ -66,7 +66,8 @@ export default function ProfileNew() {
 
   const handleLogout = async () => {
     await logout();
-    window.location.href = "/";
+    // Sempre redirecionar para login após logout
+    window.location.href = "/login";
   };
 
   const handleSaveProfile = () => {
