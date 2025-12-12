@@ -163,7 +163,7 @@ export default function FieldDetailNew() {
       <div className="bg-gray-100 sticky top-0 z-10 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Campos</h1>
             <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
               <Folder className="h-4 w-4" />
               <span>Todos os campos</span>
@@ -223,15 +223,15 @@ export default function FieldDetailNew() {
                     className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-4 h-9 gap-2 text-sm"
                   >
                     <Leaf className="h-4 w-4" />
-                    <span>Basic NDVI</span>
+                    <span>NDVI Básico</span>
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem>Basic NDVI</DropdownMenuItem>
-                  <DropdownMenuItem>Contrasted NDVI</DropdownMenuItem>
-                  <DropdownMenuItem>Average NDVI</DropdownMenuItem>
-                  <DropdownMenuItem>Heterogenity NDVI</DropdownMenuItem>
+                  <DropdownMenuItem>NDVI Básico</DropdownMenuItem>
+                  <DropdownMenuItem>NDVI Contrastado</DropdownMenuItem>
+                  <DropdownMenuItem>NDVI Médio</DropdownMenuItem>
+                  <DropdownMenuItem>NDVI Heterogeneidade</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -327,7 +327,7 @@ export default function FieldDetailNew() {
                 <div className="flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full bg-red-500" />
                   <span className="font-semibold text-gray-900">
-                    {currentCrop?.cropType || "Pasture"}
+                    {currentCrop?.cropType || "Pastagem"}
                   </span>
                 </div>
                 <Button variant="ghost" size="icon">
