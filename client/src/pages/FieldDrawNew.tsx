@@ -65,6 +65,7 @@ export default function FieldDrawNew() {
   const [suggestedFields, setSuggestedFields] = useState<SuggestedField[]>([]);
   const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(new Set());
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sincronizar ref com state
   useEffect(() => {
@@ -72,12 +73,26 @@ export default function FieldDrawNew() {
   }, [mode]);
 
   const createField = trpc.fields.create.useMutation({
-    onSuccess: (data) => {
-      toast.success("Campo criado com sucesso!");
-      setLocation(`/fields/${data.id}`);
+    onMutate: () => {
+      setIsSaving(true);
+      toast.loading("Salvando campo...", { id: "save-field" });
     },
-    onError: () => {
-      toast.error("Erro ao criar campo");
+    onSuccess: (data) => {
+      toast.success("Campo criado com sucesso! 🌾", { 
+        id: "save-field",
+        description: "Sincronizando dados de satélite...",
+        duration: 3000,
+      });
+      setTimeout(() => {
+        setLocation(`/fields/${data.id}`);
+      }, 1000);
+    },
+    onError: (error) => {
+      setIsSaving(false);
+      toast.error("Erro ao criar campo", { 
+        id: "save-field",
+        description: error.message || "Tente novamente",
+      });
     },
   });
 
