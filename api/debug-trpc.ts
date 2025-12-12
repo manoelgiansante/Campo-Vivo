@@ -14,13 +14,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     // Step 2: Test router import
     results.step = "importing appRouter";
-    const { appRouter } = await import("../../server/routers");
+    const { appRouter } = await import("./lib/routers");
     results.routerImported = true;
     results.routerProcedures = Object.keys((appRouter as any)._def?.procedures || {}).slice(0, 10);
     
     // Step 3: Test db import
     results.step = "importing db";
-    const db = await import("../../server/db");
+    const db = await import("./lib/db");
     results.dbImported = true;
     results.dbFunctions = Object.keys(db).slice(0, 10);
     

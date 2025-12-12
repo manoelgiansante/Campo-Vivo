@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { appRouter } from "../../server/routers";
-import { getUserByOpenId, upsertUser } from "../../server/db";
+import { appRouter } from "../lib/routers";
+import { getUserByOpenId, upsertUser } from "../lib/db";
 
 console.log("[tRPC] Handler module loaded");
 
