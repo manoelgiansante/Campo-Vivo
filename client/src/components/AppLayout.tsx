@@ -41,6 +41,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { ConnectionStatus } from "./OfflineIndicator";
 import { OfflineIndicator } from "./OfflineIndicator";
+import { NotificationsPanel } from "./NotificationsPanel";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -297,7 +298,10 @@ function AppLayoutContent({
                 </span>
               </div>
             </div>
-            <ConnectionStatus />
+            <div className="flex items-center gap-2">
+              <NotificationsPanel />
+              <ConnectionStatus />
+            </div>
           </div>
         )}
         <main className="flex-1 p-4 md:p-6">{children}</main>

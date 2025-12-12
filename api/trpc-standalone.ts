@@ -57,6 +57,28 @@ const fields = pgTable("fields", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Push notification subscriptions
+const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Notification history
+const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // alert, ndvi, weather, task
+  data: json("data"),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 type User = typeof users.$inferSelect;
 type Field = typeof fields.$inferSelect;
 
@@ -431,6 +453,122 @@ const appRouter = t.router({
           console.error("Erro ao buscar clima:", e);
           return null;
         }
+      }),
+  }),
+  
+  // ==================== NOTIFICAÇÕES ====================
+  notifications: t.router({
+    // Salvar subscription push
+    subscribe: protectedProcedure
+      .input(z.object({
+        endpoint: z.string(),
+        p256dh: z.string(),
+        auth: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        // Remover subscription antiga do mesmo endpoint
+        await database.delete(pushSubscriptions)
+          .where(eq(pushSubscriptions.endpoint, input.endpoint));
+        
+        // Criar nova subscription
+        await database.insert(pushSubscriptions).values({
+          userId: ctx.user.id,
+          endpoint: input.endpoint,
+          p256dh: input.p256dh,
+          auth: input.auth,
+        });
+        
+        return { success: true };
+      }),
+      
+    // Remover subscription
+    unsubscribe: protectedProcedure
+      .input(z.object({ endpoint: z.string() }))
+      .mutation(async ({ input }) => {
+        const database = await getDb();
+        await database.delete(pushSubscriptions)
+          .where(eq(pushSubscriptions.endpoint, input.endpoint));
+        return { success: true };
+      }),
+      
+    // Listar notificações do usuário
+    list: protectedProcedure
+      .input(z.object({
+        limit: z.number().optional().default(20),
+        unreadOnly: z.boolean().optional().default(false),
+      }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        let query = database
+          .select()
+          .from(notifications)
+          .where(eq(notifications.userId, ctx.user.id))
+          .orderBy(desc(notifications.createdAt))
+          .limit(input.limit);
+          
+        if (input.unreadOnly) {
+          query = database
+            .select()
+            .from(notifications)
+            .where(and(
+              eq(notifications.userId, ctx.user.id),
+              eq(notifications.read, false)
+            ))
+            .orderBy(desc(notifications.createdAt))
+            .limit(input.limit);
+        }
+        
+        return query;
+      }),
+      
+    // Marcar como lida
+    markAsRead: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        await database
+          .update(notifications)
+          .set({ read: true })
+          .where(and(
+            eq(notifications.id, input.id),
+            eq(notifications.userId, ctx.user.id)
+          ));
+        return { success: true };
+      }),
+      
+    // Marcar todas como lidas
+    markAllAsRead: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const database = await getDb();
+        await database
+          .update(notifications)
+          .set({ read: true })
+          .where(eq(notifications.userId, ctx.user.id));
+        return { success: true };
+      }),
+      
+    // Contar não lidas
+    unreadCount: protectedProcedure
+      .query(async ({ ctx }) => {
+        const database = await getDb();
+        const result = await database
+          .select()
+          .from(notifications)
+          .where(and(
+            eq(notifications.userId, ctx.user.id),
+            eq(notifications.read, false)
+          ));
+        return result.length;
+      }),
+      
+    // Obter VAPID public key
+    getPublicKey: publicProcedure
+      .query(() => {
+        return {
+          publicKey: process.env.VAPID_PUBLIC_KEY || "",
+        };
       }),
   }),
 });
