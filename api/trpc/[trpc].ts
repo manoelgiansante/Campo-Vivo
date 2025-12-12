@@ -1,6 +1,34 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "../../server/routers";
+import * as db from "../../server/db";
+
+// Helper to get or create a dev user
+async function getOrCreateDevUser(openId: string, name: string, email: string) {
+  try {
+    // Try to get existing user
+    let user = await db.getUserByOpenId(openId);
+    
+    if (!user) {
+      // Create new dev user
+      console.log(`[Auth] Creating dev user: ${openId}`);
+      await db.upsertUser({
+        openId,
+        name,
+        email,
+        loginMethod: "dev",
+        role: "user",
+        userType: "farmer",
+      });
+      user = await db.getUserByOpenId(openId);
+    }
+    
+    return user;
+  } catch (error) {
+    console.error("[Auth] Error getting/creating dev user:", error);
+    return null;
+  }
+}
 
 // Handler para Vercel Serverless Functions
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -59,47 +87,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         });
 
-        // Helper to create a dev user with all required fields
-        const createDevUser = (overrides: { id?: number; openId?: string; name?: string; email?: string } = {}) => ({
-          id: overrides.id ?? 1,
-          openId: overrides.openId ?? "dev-local-user",
-          name: overrides.name ?? "Usuário de Desenvolvimento",
-          email: overrides.email ?? "dev@campovivo.app",
-          loginMethod: "dev",
-          role: "user" as const,
-          userType: "farmer" as const,
-          phone: null,
-          company: null,
-          avatarUrl: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastSignedIn: new Date(),
-        });
-
         // Check for development mode user from cookie
-        const devUser = cookies["dev_user"];
-        if (devUser) {
+        const devUserCookie = cookies["dev_user"];
+        if (devUserCookie) {
           try {
-            const userData = JSON.parse(devUser);
-            return {
-              user: createDevUser({
-                id: userData.id,
-                openId: userData.openId,
-                name: userData.name,
-                email: userData.email,
-              }),
-            };
+            const userData = JSON.parse(devUserCookie);
+            const user = await getOrCreateDevUser(
+              userData.openId || "dev-cookie-user",
+              userData.name || "Usuário Cookie",
+              userData.email || "cookie@campovivo.app"
+            );
+            if (user) {
+              return { user };
+            }
           } catch (e) {
-            // Invalid cookie, continue without user
+            console.error("[Auth] Invalid dev_user cookie:", e);
           }
         }
 
         // In development mode without OAuth, create a default dev user
         // This allows the app to work without WorkOS configuration
         if (!process.env.WORKOS_CLIENT_ID) {
-          return {
-            user: createDevUser(),
-          };
+          const user = await getOrCreateDevUser(
+            "dev-local-user",
+            "Usuário de Desenvolvimento",
+            "dev@campovivo.app"
+          );
+          if (user) {
+            return { user };
+          }
         }
 
         // No authenticated user
