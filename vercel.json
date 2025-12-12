@@ -9,7 +9,7 @@
     }
   },
   "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc/[trpc]" },
+    { "source": "/api/trpc/:path*", "destination": "/api/trpc-standalone" },
     { "source": "/api/oauth/:path*", "destination": "/api/oauth/[...path]" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
