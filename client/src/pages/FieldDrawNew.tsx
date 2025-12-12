@@ -174,7 +174,7 @@ export default function FieldDrawNew() {
     }, 1000);
   }, []);
 
-  // Renderizar campos sugeridos no mapa
+  // Renderizar campos sugeridos no mapa (APENAS no modo select)
   useEffect(() => {
     if (!mapInstance) return;
 
@@ -195,7 +195,13 @@ export default function FieldDrawNew() {
       }
     });
 
-    // Adicionar novos layers
+    // NÃO adicionar campos sugeridos no modo draw - deixar mapa limpo para desenhar
+    if (mode === "draw") {
+      console.log("[FieldDrawNew] Modo draw - mapa limpo para desenho");
+      return;
+    }
+
+    // Adicionar novos layers apenas no modo select
     suggestedFields.forEach(field => {
       const isSelected = selectedFieldIds.has(field.id);
       const coords = [...field.coordinates, field.coordinates[0]] as [number, number][];
@@ -249,7 +255,7 @@ export default function FieldDrawNew() {
       `;
       el.onclick = (e) => {
         e.stopPropagation();
-        if (mode === "select") {
+        if (modeRef.current === "select") {
           toggleFieldSelection(field.id);
         }
       };
@@ -429,21 +435,25 @@ export default function FieldDrawNew() {
       }
     });
 
-    // Click listener para desenhar - usar click event do mapa
+    // Click listener para desenhar - SEMPRE ativo, verifica modo internamente
     const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
-      console.log("[FieldDrawNew] Map clicked, mode:", modeRef.current);
+      console.log("[FieldDrawNew] Map clicked at:", e.lngLat.lng, e.lngLat.lat, "mode:", modeRef.current);
+      
       if (modeRef.current === "draw") {
-        console.log("[FieldDrawNew] Adding point:", e.lngLat.lng, e.lngLat.lat);
-        setPoints(prev => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
+        const newPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        console.log("[FieldDrawNew] Adding point:", newPoint);
+        setPoints(prev => {
+          const updated = [...prev, newPoint];
+          console.log("[FieldDrawNew] Points now:", updated.length);
+          return updated;
+        });
       }
     };
     
+    // Registrar click handler
     map.on("click", handleMapClick);
+    console.log("[FieldDrawNew] Click handler registered");
     
-    // Cleanup
-    return () => {
-      map.off("click", handleMapClick);
-    };
   }, [setMap, getUserLocation, generateSuggestedFields]);
 
   const handleUndo = () => {
