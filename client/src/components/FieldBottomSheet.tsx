@@ -268,23 +268,26 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     (map: mapboxgl.Map) => {
       setMapInstance(map);
 
-      if (!(field as any)?.boundaries) return;
+      const drawFieldOnMap = () => {
+        if (!(field as any)?.boundaries) return;
 
-      try {
-        const boundariesData =
-          typeof (field as any).boundaries === "string"
-            ? JSON.parse((field as any).boundaries)
-            : (field as any).boundaries;
+        try {
+          const boundariesData =
+            typeof (field as any).boundaries === "string"
+              ? JSON.parse((field as any).boundaries)
+              : (field as any).boundaries;
 
-        if (!Array.isArray(boundariesData) || boundariesData.length < 3) return;
+          if (!Array.isArray(boundariesData) || boundariesData.length < 3) return;
 
-        const coordinates = boundariesData.map(
-          (p: any) => [p.lng || p.lon || p[0], p.lat || p[1]] as [number, number]
-        );
-        coordinates.push(coordinates[0]);
+          const coordinates = boundariesData.map(
+            (p: any) => [p.lng || p.lon || p[0], p.lat || p[1]] as [number, number]
+          );
+          coordinates.push(coordinates[0]);
 
-        map.on("load", () => {
-          if (map.getSource("field-preview")) return;
+          // Remove existing layers/sources first
+          if (map.getLayer("field-preview-fill")) map.removeLayer("field-preview-fill");
+          if (map.getLayer("field-preview-outline")) map.removeLayer("field-preview-outline");
+          if (map.getSource("field-preview")) map.removeSource("field-preview");
 
           map.addSource("field-preview", {
             type: "geojson",
@@ -313,7 +316,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
             type: "line",
             source: "field-preview",
             paint: {
-              "line-color": "#000",
+              "line-color": "#fff",
               "line-width": 2,
             },
           });
@@ -326,11 +329,18 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
               [Math.min(...lngs), Math.min(...lats)],
               [Math.max(...lngs), Math.max(...lats)],
             ],
-            { padding: 30 }
+            { padding: 30, duration: 0 }
           );
-        });
-      } catch (e) {
-        console.error("Error rendering field preview:", e);
+        } catch (e) {
+          console.error("Error rendering field preview:", e);
+        }
+      };
+
+      // Draw immediately if style loaded, otherwise wait
+      if (map.isStyleLoaded()) {
+        drawFieldOnMap();
+      } else {
+        map.once("style.load", drawFieldOnMap);
       }
     },
     [(field as any)?.boundaries, currentNdvi]
@@ -439,11 +449,36 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                       <MapboxMap
                         onMapReady={handleMapReady}
                         className="w-full h-full"
-                        initialCenter={[
-                          parseFloat(field?.longitude || "-54.608"),
-                          parseFloat(field?.latitude || "-20.474"),
-                        ]}
-                        initialZoom={14}
+                        initialCenter={(() => {
+                          // Calcular centro a partir dos boundaries se disponível
+                          try {
+                            const fieldData = field as any;
+                            if (fieldData?.boundaries) {
+                              const bounds = typeof fieldData.boundaries === 'string' 
+                                ? JSON.parse(fieldData.boundaries) 
+                                : fieldData.boundaries;
+                              if (Array.isArray(bounds) && bounds.length > 0) {
+                                const lngs = bounds.map((p: any) => p.lng || p.lon || p[0]);
+                                const lats = bounds.map((p: any) => p.lat || p[1]);
+                                return [
+                                  (Math.min(...lngs) + Math.max(...lngs)) / 2,
+                                  (Math.min(...lats) + Math.max(...lats)) / 2
+                                ] as [number, number];
+                              }
+                            }
+                            // Fallback para latitude/longitude do campo
+                            if (fieldData?.longitude && fieldData?.latitude) {
+                              return [
+                                parseFloat(fieldData.longitude),
+                                parseFloat(fieldData.latitude)
+                              ] as [number, number];
+                            }
+                          } catch (e) {
+                            console.error('Error calculating center:', e);
+                          }
+                          return [-54.608, -20.474] as [number, number];
+                        })()}
+                        initialZoom={15}
                       />
 
                       {/* NDVI Type Dropdown */}

@@ -429,12 +429,21 @@ export default function FieldDrawNew() {
       }
     });
 
-    // Click listener para desenhar
-    map.on("click", (e) => {
+    // Click listener para desenhar - usar click event do mapa
+    const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
+      console.log("[FieldDrawNew] Map clicked, mode:", modeRef.current);
       if (modeRef.current === "draw") {
+        console.log("[FieldDrawNew] Adding point:", e.lngLat.lng, e.lngLat.lat);
         setPoints(prev => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
       }
-    });
+    };
+    
+    map.on("click", handleMapClick);
+    
+    // Cleanup
+    return () => {
+      map.off("click", handleMapClick);
+    };
   }, [setMap, getUserLocation, generateSuggestedFields]);
 
   const handleUndo = () => {
