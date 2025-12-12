@@ -304,7 +304,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user = foundUser || null;
     }
     
-    // NO fallback to dev user - require real auth
+    // Se não tem usuário logado, criar/usar usuário demo para permitir testar o app
+    if (!user) {
+      const database = await getDb();
+      const demoOpenId = "demo-user-public";
+      let [demoUser] = await database.select().from(users).where(eq(users.openId, demoOpenId)).limit(1);
+      
+      if (!demoUser) {
+        [demoUser] = await database.insert(users).values({
+          openId: demoOpenId,
+          name: "Usuário Demo",
+          email: "demo@campovivo.app",
+          loginMethod: "demo",
+        }).returning();
+      }
+      user = demoUser;
+    }
 
     // Determine the correct endpoint from the URL
     const urlPath = req.url || "";
