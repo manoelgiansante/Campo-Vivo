@@ -21,19 +21,90 @@ import {
   MoreVertical,
   Leaf,
   Satellite,
-  Wheat
+  Wheat,
+  Upload
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { FieldImportDialog } from "@/components/FieldImportDialog";
+import { toast } from "sonner";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
+
+interface ImportedField {
+  name: string;
+  coordinates: [number, number][];
+  area?: number;
+  properties?: Record<string, any>;
+}
 
 export default function FieldsList() {
   const [, setLocation] = useLocation();
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapLayer, setMapLayer] = useState<MapLayer>("vegetation");
 
-  const { data: fields, isLoading } = trpc.fields.list.useQuery();
+  const { data: fields, isLoading, refetch } = trpc.fields.list.useQuery();
+  const createFieldMutation = trpc.fields.create.useMutation({
+    onSuccess: () => refetch(),
+  });
+
+  // Handle import from KML/GeoJSON
+  const handleImportFields = async (importedFields: ImportedField[]) => {
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const field of importedFields) {
+      try {
+        // Calculate center point
+        const lats = field.coordinates.map(c => c[1]);
+        const lngs = field.coordinates.map(c => c[0]);
+        const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+        const centerLng = lngs.reduce((a, b) => a + b, 0) / lngs.length;
+
+        // Calculate approximate area in hectares
+        const areaHectares = field.area || calculatePolygonArea(field.coordinates);
+
+        await createFieldMutation.mutateAsync({
+          name: field.name,
+          centerLat: centerLat.toString(),
+          centerLng: centerLng.toString(),
+          areaHectares: areaHectares.toString(),
+          polygonCoordinates: field.coordinates.map(c => ({ lat: c[1], lng: c[0] })),
+        });
+        successCount++;
+      } catch (err) {
+        console.error(`Erro ao importar ${field.name}:`, err);
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} campo(s) importado(s) com sucesso!`);
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} campo(s) falharam ao importar`);
+    }
+  };
+
+  // Calculate polygon area in hectares using Shoelace formula
+  const calculatePolygonArea = (coordinates: [number, number][]): number => {
+    if (coordinates.length < 3) return 0;
+    
+    let area = 0;
+    const n = coordinates.length;
+    
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area += coordinates[i][0] * coordinates[j][1];
+      area -= coordinates[j][0] * coordinates[i][1];
+    }
+    
+    area = Math.abs(area) / 2;
+    // Convert from degrees² to hectares (approximate)
+    // 1 degree ≈ 111km at equator, so 1 degree² ≈ 12321 km² = 1232100 ha
+    const hectares = area * 12321 * 100;
+    return Math.round(hectares * 10) / 10;
+  };
 
   // Calculate total area
   const totalArea = fields?.reduce((sum, f) => sum + (f.areaHectares || 0), 0) || 0;
@@ -67,6 +138,14 @@ export default function FieldsList() {
             <Button variant="ghost" size="icon" className="h-10 w-10">
               <Search className="h-5 w-5" />
             </Button>
+            <FieldImportDialog
+              onImport={handleImportFields}
+              trigger={
+                <Button variant="ghost" size="icon" className="h-10 w-10">
+                  <Upload className="h-5 w-5" />
+                </Button>
+              }
+            />
             <Button 
               variant="ghost" 
               size="icon" 
