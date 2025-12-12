@@ -22,11 +22,15 @@ import {
   Navigation,
   Leaf,
   Satellite,
-  Wheat
+  Wheat,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import mapboxgl from "mapbox-gl";
+import { toast } from "sonner";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
@@ -67,7 +71,15 @@ export default function MapView() {
   const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
   const [showFieldSheet, setShowFieldSheet] = useState(false);
 
-  const { data: fields } = trpc.fields.list.useQuery();
+  // Fetch fields with loading and error states
+  const { data: fields, isLoading: loadingFields, error: fieldsError, refetch } = trpc.fields.list.useQuery();
+  
+  // Fetch NDVI batch data for all fields (otimização)
+  const fieldIds = fields?.map(f => f.id) || [];
+  const { data: ndviBatch } = trpc.ndvi.getLatestBatch.useQuery(
+    { fieldIds },
+    { enabled: fieldIds.length > 0 }
+  );
 
   // Add fields to map when data loads
   useEffect(() => {
@@ -111,7 +123,11 @@ export default function MapView() {
           coordinates.push(coordinates[0]); // Close polygon
 
           const sourceId = `field-${field.id}`;
-          const ndviValue = 0.7; // Default NDVI value for visualization
+          // Usa NDVI real do banco de dados se disponível, senão usa valor do campo ou default
+          const batchData = (ndviBatch as Record<number, { ndviAverage: number | null }> | undefined)?.[field.id];
+          const realNdvi = batchData?.ndviAverage;
+          const fieldNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : null;
+          const ndviValue = realNdvi ?? fieldNdvi ?? 0.5;
           const fillColor = mapLayer === "vegetation" ? getNdviColor(ndviValue) : "#666666";
           const fillOpacity = mapLayer === "vegetation" ? 0.6 : 0.3;
 
@@ -226,7 +242,7 @@ export default function MapView() {
     } else {
       mapInstance.on("style.load", addFieldsToMap);
     }
-  }, [mapInstance, fields, mapLayer, setLocation]);
+  }, [mapInstance, fields, mapLayer, setLocation, ndviBatch]);
 
   // Função para converter valor NDVI em cor (conforme especificação OneSoil)
   const getNdviColor = (ndvi: number): string => {
@@ -302,6 +318,34 @@ export default function MapView() {
         initialCenter={savedPosition?.center ?? [-47.9292, -15.7801]}
         className="absolute inset-0"
       />
+
+      {/* Loading Indicator */}
+      {loadingFields && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20">
+          <div className="bg-gray-900/90 backdrop-blur-sm text-white px-4 py-2 rounded-full flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Carregando campos...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {fieldsError && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20">
+          <div className="bg-red-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-full flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            <span className="text-sm">Erro ao carregar campos</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-white hover:bg-white/20"
+              onClick={() => refetch()}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between pointer-events-none z-10">

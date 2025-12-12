@@ -879,11 +879,32 @@ export const appRouter = router({
     // Status da integração
     getIntegrationStatus: protectedProcedure
       .query(async () => {
+        const { getSchedulerStatus } = await import("./services/ndviScheduler");
+        const schedulerStatus = getSchedulerStatus();
+        
         return {
           agromonitoring: !!ENV.agromonitoringApiKey,
           sentinelHub: !!(ENV.sentinelHubClientId && ENV.sentinelHubClientSecret),
-          recommended: ENV.agromonitoringApiKey ? "agromonitoring" : "simulation"
+          recommended: ENV.agromonitoringApiKey ? "agromonitoring" : "simulation",
+          scheduler: schedulerStatus,
         };
+      }),
+    // Status detalhado do scheduler
+    getSchedulerStatus: protectedProcedure
+      .query(async () => {
+        const { getSchedulerStatus } = await import("./services/ndviScheduler");
+        return getSchedulerStatus();
+      }),
+    // Forçar sincronização imediata (admin)
+    forceSyncAll: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        // Verifica se é admin (opcional, pode remover se quiser permitir para todos)
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem forçar sincronização" });
+        }
+        const { forceSyncNow } = await import("./services/ndviScheduler");
+        const result = await forceSyncNow();
+        return result;
       }),
   }),
 

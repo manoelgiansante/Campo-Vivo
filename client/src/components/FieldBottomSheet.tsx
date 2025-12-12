@@ -102,8 +102,48 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     { enabled: !!fieldId && open }
   );
 
-  // Simular dados de NDVI history (o endpoint real pode não ter tipos gerados)
+  // Fetch NDVI history from database
+  const { data: ndviHistoryReal, isLoading: loadingNdvi, refetch: refetchNdvi } = (trpc.ndvi as any).getByField.useQuery(
+    { fieldId: fieldId!, limit: 30 },
+    { enabled: !!fieldId && open }
+  );
+
+  // NDVI sync mutation
+  const syncNdviMutation = (trpc.ndvi as any).fetchFromSatellite.useMutation({
+    onSuccess: () => {
+      toast.success("NDVI sincronizado com sucesso!");
+      refetchNdvi();
+    },
+    onError: (error: { message?: string }) => {
+      toast.error(error.message || "Erro ao sincronizar NDVI");
+    },
+  });
+
+  // Get current NDVI from field data
+  const currentNdviData = useMemo(() => {
+    const fieldData = field as any;
+    return {
+      ndvi: fieldData?.currentNdvi ? fieldData.currentNdvi / 100 : null,
+      lastSync: fieldData?.lastNdviSync,
+      agroPolygonId: fieldData?.agroPolygonId,
+    };
+  }, [field]);
+
+  // Use real NDVI data or generate mock if no data available
   const ndviHistory = useMemo(() => {
+    if (ndviHistoryReal && ndviHistoryReal.length > 0) {
+      return ndviHistoryReal.map((h: any) => ({
+        id: h.id || Math.random(),
+        fieldId,
+        captureDate: h.captureDate instanceof Date ? h.captureDate.toISOString() : h.captureDate,
+        ndviAverage: h.ndviAverage || h.ndvi || 0.5,
+        cloudCoverage: h.cloudCoverage || 0,
+        ndviMin: h.ndviMin || h.min,
+        ndviMax: h.ndviMax || h.max,
+        satellite: h.satellite,
+      }));
+    }
+    // Fallback mock data if no real data
     if (!fieldId) return [];
     const history: any[] = [];
     for (let i = 0; i < 10; i++) {
@@ -117,36 +157,35 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
       });
     }
     return history;
-  }, [fieldId]);
+  }, [fieldId, ndviHistoryReal]);
 
-  // Simular dados de crops
-  const crops = useMemo(() => {
-    if (!fieldId) return [];
-    return [
-      { id: 1, fieldId, cropType: "Soja", plantingDate: new Date(), status: "active" },
-      { id: 2, fieldId, cropType: "Milho", plantingDate: new Date(), status: "completed" },
-    ];
-  }, [fieldId]);
+  // Fetch real crops from database
+  const { data: cropsData } = trpc.crops.listByField.useQuery(
+    { fieldId: fieldId! },
+    { enabled: !!fieldId && open }
+  );
+  const crops = cropsData || [];
 
-  // Simular dados de notes
-  const notes = useMemo(() => {
-    if (!fieldId) return [];
-    return [
-      { 
-        id: 1, 
-        fieldId, 
-        title: "Inspeção de campo",
-        content: "Campo em boas condições", 
-        createdAt: new Date(),
-      },
-    ];
-  }, [fieldId]);
+  // Fetch real notes from database
+  const { data: notesData } = trpc.notes.listByField.useQuery(
+    { fieldId: fieldId! },
+    { enabled: !!fieldId && open }
+  );
+  const notes = notesData || [];
 
-  // Mutations (simulado)
+  // Real mutation for adding crops
+  const addCropMutation = trpc.crops.create.useMutation({
+    onSuccess: () => {
+      toast.success("Cultura adicionada!");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Erro ao adicionar cultura");
+    },
+  });
+
   const addCrop = {
     mutateAsync: async (data: any) => {
-      toast.success("Cultura adicionada!");
-      return data;
+      return addCropMutation.mutateAsync(data);
     },
   };
 
@@ -170,7 +209,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
       return mockData.reverse();
     }
 
-    return ndviHistory.map((n, index) => {
+    return ndviHistory.map((n: any, index: number) => {
       const prevNdvi = ndviHistory[index + 1]?.ndviAverage;
       const delta = prevNdvi && n.ndviAverage ? n.ndviAverage - prevNdvi : null;
 
@@ -189,7 +228,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
 
   // Filter cloudy days
   const filteredHistory = hideCloudyDays
-    ? formattedHistory.filter((h) => !h.cloudy)
+    ? formattedHistory.filter((h: any) => !h.cloudy)
     : formattedHistory;
 
   // Current NDVI value
@@ -385,8 +424,8 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                         <span className="text-xs text-gray-500">Tendência 30 dias:</span>
                         <NDVISparkline
                           data={filteredHistory
-                            .filter((h) => h.ndvi !== null)
-                            .map((h) => h.ndvi as number)}
+                            .filter((h: any) => h.ndvi !== null)
+                            .map((h: any) => h.ndvi as number)}
                           width={100}
                           height={24}
                         />
@@ -455,13 +494,36 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                   {/* History Section */}
                   <div className="px-4 mb-6">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-base font-semibold text-gray-900">Histórico</h3>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Ocultar dias nublados</span>
-                        <Switch
-                          checked={hideCloudyDays}
-                          onCheckedChange={setHideCloudyDays}
-                        />
+                        <h3 className="text-base font-semibold text-gray-900">Histórico NDVI</h3>
+                        {currentNdviData?.lastSync && (
+                          <span className="text-xs text-gray-400">
+                            Atualizado: {new Date(currentNdviData.lastSync).toLocaleDateString("pt-BR")}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => fieldId && syncNdviMutation.mutate({ fieldId })}
+                          disabled={syncNdviMutation.isPending}
+                          className="text-xs"
+                        >
+                          {syncNdviMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                          ) : (
+                            <TrendingUp className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          Atualizar
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">Nublados</span>
+                          <Switch
+                            checked={hideCloudyDays}
+                            onCheckedChange={setHideCloudyDays}
+                          />
+                        </div>
                       </div>
                     </div>
 

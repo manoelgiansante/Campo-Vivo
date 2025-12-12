@@ -216,6 +216,23 @@ export async function getFieldsByUserId(userId: number): Promise<Field[]> {
   }
 }
 
+// Retorna todos os campos que têm boundaries definidos (para scheduler NDVI)
+export async function getAllFieldsWithBoundaries(): Promise<Field[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const result = await db
+      .select()
+      .from(fields)
+      .where(and(eq(fields.isActive, true), sql`${fields.boundaries} IS NOT NULL`))
+      .orderBy(desc(fields.createdAt));
+    return result;
+  } catch (error) {
+    console.error("[getAllFieldsWithBoundaries] Error:", error);
+    return [];
+  }
+}
+
 export async function updateField(id: number, data: Partial<InsertField>) {
   const db = await getDb();
   if (!db) return;
