@@ -197,7 +197,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
   const healthStatus = getHealthStatus(currentNdvi);
 
   // Area in hectares
-  const areaHectares = parseFloat(field?.areaHectares || "0") / 100;
+  const areaHectares = (Number(field?.areaHectares) || 0) / 100;
 
   // Selected crops from database
   const existingCrops = useMemo(() => {
@@ -229,13 +229,13 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     (map: mapboxgl.Map) => {
       setMapInstance(map);
 
-      if (!(field as any)?.polygonCoordinates) return;
+      if (!(field as any)?.boundaries) return;
 
       try {
         const boundariesData =
-          typeof (field as any).polygonCoordinates === "string"
-            ? JSON.parse((field as any).polygonCoordinates)
-            : (field as any).polygonCoordinates;
+          typeof (field as any).boundaries === "string"
+            ? JSON.parse((field as any).boundaries)
+            : (field as any).boundaries;
 
         if (!Array.isArray(boundariesData) || boundariesData.length < 3) return;
 
@@ -294,7 +294,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
         console.error("Error rendering field preview:", e);
       }
     },
-    [(field as any)?.polygonCoordinates, currentNdvi]
+    [(field as any)?.boundaries, currentNdvi]
   );
 
   // Navigate to full detail page
@@ -401,8 +401,8 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                         onMapReady={handleMapReady}
                         className="w-full h-full"
                         initialCenter={[
-                          parseFloat(field?.centerLng || "-54.608"),
-                          parseFloat(field?.centerLat || "-20.474"),
+                          parseFloat(field?.longitude || "-54.608"),
+                          parseFloat(field?.latitude || "-20.474"),
                         ]}
                         initialZoom={14}
                       />

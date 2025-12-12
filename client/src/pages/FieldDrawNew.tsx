@@ -80,12 +80,20 @@ export default function FieldDrawNew() {
     onSuccess: (data) => {
       toast.success("Campo criado com sucesso! 🌾", { 
         id: "save-field",
-        description: "Sincronizando dados de satélite...",
+        description: "O campo foi salvo e aparecerá no mapa.",
         duration: 3000,
       });
+      setIsSaving(false);
+      setShowNameDialog(false);
+      setFieldName("");
+      // Limpar estados
+      setPoints([]);
+      setSelectedFieldIds(new Set());
+      setSuggestedFields([]);
+      // Voltar para o mapa principal sem redirecionar para uma cidade
       setTimeout(() => {
-        setLocation(`/fields/${data.id}`);
-      }, 1000);
+        setLocation("/map");
+      }, 1500);
     },
     onError: (error) => {
       setIsSaving(false);

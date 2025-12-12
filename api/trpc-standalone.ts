@@ -42,17 +42,23 @@ const users = pgTable("users", {
 const fields = pgTable("fields", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
+  farmId: integer("farm_id"),
   name: varchar("name", { length: 255 }).notNull(),
-  area: text("area"),
-  areaHectares: text("area_hectares"),
-  centerLat: text("center_lat"),
-  centerLng: text("center_lng"),
+  description: text("description"),
+  areaHectares: integer("area_hectares"),
+  latitude: varchar("latitude", { length: 20 }),
+  longitude: varchar("longitude", { length: 20 }),
+  boundaries: json("boundaries"),
+  address: text("address"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }).default("Brasil"),
   soilType: varchar("soil_type", { length: 100 }),
   irrigationType: varchar("irrigation_type", { length: 50 }),
-  notes: text("notes"),
-  polygonCoordinates: json("polygon_coordinates"),
-  agroPolygonId: varchar("agro_polygon_id", { length: 100 }),
   isActive: boolean("is_active").default(true),
+  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
+  lastNdviSync: timestamp("last_ndvi_sync"),
+  currentNdvi: integer("current_ndvi"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -212,52 +218,51 @@ const appRouter = t.router({
     create: protectedProcedure
       .input(z.object({
         name: z.string(),
-        area: z.string().optional(),
+        description: z.string().optional(),
         areaHectares: z.number().optional(),
-        centerLat: z.number().optional(),
-        centerLng: z.number().optional(),
         latitude: z.string().optional(),
         longitude: z.string().optional(),
         soilType: z.string().optional(),
         irrigationType: z.string().optional(),
-        notes: z.string().optional(),
-        polygonCoordinates: z.any().optional(),
         boundaries: z.string().optional(),
+        farmId: z.number().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const database = await getDb();
         
-        // Aceitar tanto centerLat/centerLng quanto latitude/longitude
-        const lat = input.centerLat?.toString() || input.latitude;
-        const lng = input.centerLng?.toString() || input.longitude;
-        
-        // Aceitar tanto polygonCoordinates quanto boundaries
-        let coords = input.polygonCoordinates;
-        if (!coords && input.boundaries) {
+        // Parse boundaries para JSON se for string
+        let boundariesJson = null;
+        if (input.boundaries) {
           try {
-            coords = JSON.parse(input.boundaries);
+            boundariesJson = JSON.parse(input.boundaries);
           } catch {
-            coords = input.boundaries;
+            boundariesJson = input.boundaries;
           }
         }
         
         const [newField] = await database.insert(fields).values({
           userId: ctx.user.id,
           name: input.name,
-          area: input.area,
-          areaHectares: input.areaHectares?.toString(),
-          centerLat: lat,
-          centerLng: lng,
+          description: input.description,
+          areaHectares: input.areaHectares,
+          latitude: input.latitude,
+          longitude: input.longitude,
           soilType: input.soilType,
           irrigationType: input.irrigationType,
-          notes: input.notes,
-          polygonCoordinates: coords,
+          boundaries: boundariesJson,
+          farmId: input.farmId,
+          address: input.address,
+          city: input.city,
+          state: input.state,
         }).returning();
         
         // Sincronizar NDVI automaticamente se tiver coordenadas
-        if (coords && process.env.AGROMONITORING_API_KEY) {
+        if (boundariesJson && process.env.AGROMONITORING_API_KEY) {
           try {
-            const agroPolygonId = await createAgroPolygon(newField.name, coords);
+            const agroPolygonId = await createAgroPolygon(newField.name, boundariesJson);
             if (agroPolygonId) {
               await database.update(fields)
                 .set({ agroPolygonId })
@@ -568,6 +573,150 @@ const appRouter = t.router({
       .query(() => {
         return {
           publicKey: process.env.VAPID_PUBLIC_KEY || "",
+        };
+      }),
+  }),
+  
+  // ==================== CROPS ====================
+  crops: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      // Retorna lista simulada de culturas
+      return [
+        { id: 1, fieldId: 1, cropType: "Soja", variety: "Intacta RR2", status: "growing", plantingDate: new Date("2024-10-15"), expectedHarvestDate: new Date("2025-02-15"), areaHectares: 120 },
+        { id: 2, fieldId: 2, cropType: "Milho", variety: "AG 1051", status: "planted", plantingDate: new Date("2024-11-01"), expectedHarvestDate: new Date("2025-04-01"), areaHectares: 80 },
+      ];
+    }),
+    
+    listByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ input }) => {
+        // Retorna culturas simuladas para o campo
+        return [
+          { id: 1, fieldId: input.fieldId, cropType: "Soja", variety: "Intacta RR2", status: "growing", plantingDate: new Date(), expectedHarvestDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) },
+        ];
+      }),
+      
+    create: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        cropType: z.string(),
+        variety: z.string().optional(),
+        plantingDate: z.date().optional(),
+        expectedHarvestDate: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return { id: Math.floor(Math.random() * 1000), ...input, status: "planted" };
+      }),
+  }),
+  
+  // ==================== NOTES ====================
+  notes: t.router({
+    listByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ input }) => {
+        return [
+          { id: 1, fieldId: input.fieldId, title: "Observação", content: "Campo com boa aparência", noteType: "observation", createdAt: new Date() },
+        ];
+      }),
+      
+    create: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        title: z.string().optional(),
+        content: z.string(),
+        noteType: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return { id: Math.floor(Math.random() * 1000), ...input, createdAt: new Date() };
+      }),
+  }),
+  
+  // ==================== FARMS ====================
+  farms: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return [
+        { id: 1, userId: ctx.user.id, name: "Fazenda Principal", totalAreaHectares: 500, createdAt: new Date() },
+      ];
+    }),
+    
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        totalAreaHectares: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return { id: Math.floor(Math.random() * 1000), ...input, createdAt: new Date() };
+      }),
+      
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
+      }),
+  }),
+  
+  // ==================== DASHBOARD ====================
+  dashboard: t.router({
+    summary: protectedProcedure.query(async ({ ctx }) => {
+      const database = await getDb();
+      const userFields = await database
+        .select()
+        .from(fields)
+        .where(and(eq(fields.userId, ctx.user.id), eq(fields.isActive, true)));
+        
+      const totalArea = userFields.reduce((sum, f) => sum + (f.areaHectares || 0), 0);
+      
+      return {
+        totalFields: userFields.length,
+        totalAreaHectares: totalArea,
+        avgNdvi: 0.72,
+        recentFields: userFields.slice(0, 5),
+        alerts: [
+          { id: 1, type: "weather", title: "Previsão de chuva", description: "Chuva esperada nos próximos 3 dias", severity: "info", createdAt: new Date() },
+        ],
+        tasks: [
+          { id: 1, title: "Verificar irrigação", status: "pending", dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+        ],
+        notes: [],
+      };
+    }),
+  }),
+  
+  // ==================== ALERTS ====================
+  alerts: t.router({
+    getAlerts: protectedProcedure.query(async ({ ctx }) => {
+      return [
+        { id: 1, userId: ctx.user.id, type: "weather", title: "Alerta de Chuva", description: "Previsão de chuva forte amanhã", severity: "warning", read: false, createdAt: new Date() },
+        { id: 2, userId: ctx.user.id, type: "ndvi", title: "NDVI Baixo", description: "Campo Leste apresenta NDVI abaixo do esperado", severity: "info", read: false, createdAt: new Date() },
+      ];
+    }),
+    
+    dismissAlert: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
+      }),
+  }),
+  
+  // ==================== REPORTS ====================
+  reports: t.router({
+    generate: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        type: z.string(),
+        dateRange: z.object({
+          start: z.date(),
+          end: z.date(),
+        }).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return {
+          id: Math.floor(Math.random() * 1000),
+          fieldId: input.fieldId,
+          type: input.type,
+          url: `/reports/${input.fieldId}/${input.type}.pdf`,
+          createdAt: new Date(),
         };
       }),
   }),

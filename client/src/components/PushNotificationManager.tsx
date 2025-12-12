@@ -28,8 +28,8 @@ export function PushNotificationManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
 
-  const registerMutation = trpc.pushNotifications.registerToken.useMutation();
-  const unregisterMutation = trpc.pushNotifications.unregisterToken.useMutation();
+  const subscribeMutation = trpc.notifications.subscribe.useMutation();
+  const unsubscribeMutation = trpc.notifications.unsubscribe.useMutation();
 
   useEffect(() => {
     // Check if push notifications are supported
@@ -72,13 +72,12 @@ export function PushNotificationManager() {
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
       });
 
-      // Send subscription to server - store as JSON string token
+      // Send subscription to server
       const subscriptionJSON = subscription.toJSON();
-      const token = JSON.stringify(subscriptionJSON);
-      await registerMutation.mutateAsync({
-        token,
-        platform: "web",
-        deviceName: navigator.userAgent.slice(0, 50),
+      await subscribeMutation.mutateAsync({
+        endpoint: subscriptionJSON.endpoint || '',
+        p256dh: subscriptionJSON.keys?.p256dh || '',
+        auth: subscriptionJSON.keys?.auth || '',
       });
 
       setIsSubscribed(true);
@@ -98,10 +97,9 @@ export function PushNotificationManager() {
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
-        const token = JSON.stringify(subscription.toJSON());
         await subscription.unsubscribe();
-        await unregisterMutation.mutateAsync({
-          token,
+        await unsubscribeMutation.mutateAsync({
+          endpoint: subscription.endpoint,
         });
       }
 
@@ -158,8 +156,8 @@ export function NotificationToggle() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const registerMutation = trpc.pushNotifications.registerToken.useMutation();
-  const unregisterMutation = trpc.pushNotifications.unregisterToken.useMutation();
+  const subscribeMutation = trpc.notifications.subscribe.useMutation();
+  const unsubscribeMutation = trpc.notifications.unsubscribe.useMutation();
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -181,9 +179,8 @@ export function NotificationToggle() {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
-          const token = JSON.stringify(subscription.toJSON());
           await subscription.unsubscribe();
-          await unregisterMutation.mutateAsync({ token });
+          await unsubscribeMutation.mutateAsync({ endpoint: subscription.endpoint });
         }
         setIsSubscribed(false);
         toast.success('Notificações desativadas');
@@ -205,11 +202,11 @@ export function NotificationToggle() {
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
         });
 
-        const token = JSON.stringify(subscription.toJSON());
-        await registerMutation.mutateAsync({
-          token,
-          platform: "web",
-          deviceName: navigator.userAgent.slice(0, 50),
+        const subscriptionJSON = subscription.toJSON();
+        await subscribeMutation.mutateAsync({
+          endpoint: subscriptionJSON.endpoint || '',
+          p256dh: subscriptionJSON.keys?.p256dh || '',
+          auth: subscriptionJSON.keys?.auth || '',
         });
 
         setIsSubscribed(true);

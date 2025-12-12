@@ -21,9 +21,9 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export default function Alerts() {
-  const { data: alerts, isLoading, refetch } = trpc.weather.getAlerts.useQuery();
+  const { data: alerts, isLoading, refetch } = trpc.alerts.getAlerts.useQuery();
   
-  const dismissMutation = trpc.weather.dismissAlert.useMutation({
+  const dismissMutation = trpc.alerts.dismissAlert.useMutation({
     onSuccess: () => {
       toast.success("Alerta dispensado");
       refetch();
@@ -33,8 +33,8 @@ export default function Alerts() {
     },
   });
 
-  const activeAlerts = alerts?.filter(a => !a.isDismissed) || [];
-  const dismissedAlerts = alerts?.filter(a => a.isDismissed) || [];
+  const activeAlerts = alerts?.filter((a: any) => !a.isDismissed) || [];
+  const dismissedAlerts = alerts?.filter((a: any) => a.isDismissed) || [];
 
   if (isLoading) {
     return <AlertsSkeleton />;
@@ -57,7 +57,7 @@ export default function Alerts() {
         <h2 className="text-lg font-semibold">Alertas Ativos</h2>
         {activeAlerts.length > 0 ? (
           <div className="space-y-3">
-            {activeAlerts.map((alert) => (
+            {activeAlerts.map((alert: any) => (
               <Card 
                 key={alert.id} 
                 className={`${
@@ -135,7 +135,7 @@ export default function Alerts() {
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-muted-foreground">Alertas Dispensados</h2>
           <div className="space-y-3">
-            {dismissedAlerts.slice(0, 5).map((alert) => (
+            {dismissedAlerts.slice(0, 5).map((alert: any) => (
               <Card key={alert.id} className="opacity-60">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
