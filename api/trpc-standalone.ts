@@ -365,6 +365,73 @@ const appRouter = t.router({
           return [];
         }
       }),
+      
+    // Buscar imagens de satélite
+    images: protectedProcedure
+      .input(z.object({ fieldId: z.number(), days: z.number().default(30) }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+          
+        if (!field) throw new Error("Campo não encontrado");
+        
+        if (!process.env.AGROMONITORING_API_KEY || !field.agroPolygonId) {
+          // Retornar imagens simuladas
+          return Array.from({ length: 5 }, (_, i) => ({
+            date: new Date(Date.now() - i * 5 * 24 * 60 * 60 * 1000).toISOString(),
+            truecolor: null,
+            ndvi: null,
+            cloudCoverage: Math.random() * 30,
+          }));
+        }
+        
+        try {
+          const images = await getAgroSatelliteImages(field.agroPolygonId, input.days);
+          return images.map(img => ({
+            date: new Date(img.dt * 1000).toISOString(),
+            truecolor: img.image?.truecolor || null,
+            ndvi: img.image?.ndvi || null,
+            cloudCoverage: img.cl,
+          }));
+        } catch (e) {
+          console.error("Erro ao buscar imagens:", e);
+          return [];
+        }
+      }),
+  }),
+  
+  // Router de clima
+  weather: t.router({
+    forecast: protectedProcedure
+      .input(z.object({ lat: z.number(), lon: z.number() }))
+      .query(async ({ input }) => {
+        if (!process.env.AGROMONITORING_API_KEY) {
+          // Dados simulados
+          return {
+            current: { temp: 28, humidity: 65, description: "Parcialmente nublado" },
+            forecast: Array.from({ length: 5 }, (_, i) => ({
+              date: new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString(),
+              tempMin: 18 + Math.random() * 5,
+              tempMax: 28 + Math.random() * 5,
+              humidity: 50 + Math.random() * 30,
+              rain: Math.random() > 0.7 ? Math.random() * 20 : 0,
+              description: Math.random() > 0.5 ? "Ensolarado" : "Parcialmente nublado",
+            })),
+          };
+        }
+        
+        try {
+          const data = await getAgroWeather(input.lat, input.lon);
+          return data;
+        } catch (e) {
+          console.error("Erro ao buscar clima:", e);
+          return null;
+        }
+      }),
   }),
 });
 
@@ -449,6 +516,55 @@ async function getAgroNdviHistory(polygonId: string, startDate: Date, endDate: D
   
   if (!response.ok) return [];
   return response.json();
+}
+
+async function getAgroSatelliteImages(polygonId: string, days: number): Promise<any[]> {
+  const apiKey = process.env.AGROMONITORING_API_KEY;
+  if (!apiKey) return [];
+  
+  const end = Math.floor(Date.now() / 1000);
+  const start = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+  
+  const response = await fetch(
+    `${AGRO_BASE_URL}/image/search?polyid=${polygonId}&start=${start}&end=${end}&appid=${apiKey}`
+  );
+  
+  if (!response.ok) return [];
+  return response.json();
+}
+
+async function getAgroWeather(lat: number, lon: number): Promise<any> {
+  const apiKey = process.env.AGROMONITORING_API_KEY;
+  if (!apiKey) return null;
+  
+  // Clima atual
+  const currentRes = await fetch(
+    `${AGRO_BASE_URL}/weather?lat=${lat}&lon=${lon}&appid=${apiKey}`
+  );
+  
+  // Previsão
+  const forecastRes = await fetch(
+    `${AGRO_BASE_URL}/weather/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}`
+  );
+  
+  const current = currentRes.ok ? await currentRes.json() : null;
+  const forecast = forecastRes.ok ? await forecastRes.json() : [];
+  
+  return {
+    current: current ? {
+      temp: current.main?.temp ? current.main.temp - 273.15 : null,
+      humidity: current.main?.humidity,
+      description: current.weather?.[0]?.description || "N/A",
+    } : null,
+    forecast: Array.isArray(forecast) ? forecast.slice(0, 5).map((f: any) => ({
+      date: new Date(f.dt * 1000).toISOString(),
+      tempMin: f.main?.temp_min ? f.main.temp_min - 273.15 : null,
+      tempMax: f.main?.temp_max ? f.main.temp_max - 273.15 : null,
+      humidity: f.main?.humidity,
+      rain: f.rain?.["3h"] || 0,
+      description: f.weather?.[0]?.description || "N/A",
+    })) : [],
+  };
 }
 
 export type AppRouter = typeof appRouter;

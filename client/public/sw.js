@@ -1,14 +1,120 @@
-// Service Worker for Push Notifications
+// Service Worker for Push Notifications and Offline Support
 // Campo Vivo - Agricultural Management App
+
+const CACHE_NAME = 'campovivo-v1';
+const OFFLINE_CACHE = 'campovivo-offline-v1';
+
+// Assets to cache immediately
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/logo.png',
+];
+
+// API routes to cache for offline
+const API_CACHE_ROUTES = [
+  '/api/trpc/fields.list',
+  '/api/trpc/auth.me',
+];
 
 self.addEventListener('install', (event) => {
   console.log('Service Worker installed');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(STATIC_ASSETS).catch(err => {
+        console.log('Cache addAll failed:', err);
+      });
+    })
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   console.log('Service Worker activated');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME && cacheName !== OFFLINE_CACHE) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+// Fetch handler with cache strategy
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  
+  // Skip non-GET requests
+  if (request.method !== 'GET') return;
+  
+  // API requests - Network first, then cache
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Clone and cache successful responses
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(OFFLINE_CACHE).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Return cached response if offline
+          return caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            // Return offline fallback for API
+            return new Response(JSON.stringify({ 
+              error: { message: 'Você está offline' } 
+            }), {
+              headers: { 'Content-Type': 'application/json' }
+            });
+          });
+        })
+    );
+    return;
+  }
+  
+  // Static assets - Cache first, then network
+  event.respondWith(
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        // Update cache in background
+        fetch(request).then((response) => {
+          if (response.ok) {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, response);
+            });
+          }
+        }).catch(() => {});
+        return cachedResponse;
+      }
+      
+      return fetch(request).then((response) => {
+        if (response.ok) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
+        }
+        return response;
+      }).catch(() => {
+        // Return offline page for navigation requests
+        if (request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
+      });
+    })
+  );
 });
 
 self.addEventListener('push', (event) => {
