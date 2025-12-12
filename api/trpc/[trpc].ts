@@ -59,18 +59,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         });
 
-        // Check for development mode user
+        // Helper to create a dev user with all required fields
+        const createDevUser = (overrides: { id?: number; openId?: string; name?: string; email?: string } = {}) => ({
+          id: overrides.id ?? 1,
+          openId: overrides.openId ?? "dev-local-user",
+          name: overrides.name ?? "Usuário de Desenvolvimento",
+          email: overrides.email ?? "dev@campovivo.app",
+          loginMethod: "dev",
+          role: "user" as const,
+          userType: "farmer" as const,
+          phone: null,
+          company: null,
+          avatarUrl: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          lastSignedIn: new Date(),
+        });
+
+        // Check for development mode user from cookie
         const devUser = cookies["dev_user"];
         if (devUser) {
           try {
             const userData = JSON.parse(devUser);
             return {
-              user: {
-                id: userData.id || 1,
-                openId: userData.openId || "dev-user",
-                name: userData.name || "Dev User",
-                email: userData.email || "dev@example.com",
-              },
+              user: createDevUser({
+                id: userData.id,
+                openId: userData.openId,
+                name: userData.name,
+                email: userData.email,
+              }),
             };
           } catch (e) {
             // Invalid cookie, continue without user
@@ -78,14 +95,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // In development mode without OAuth, create a default dev user
-        if (process.env.NODE_ENV !== "production" || !process.env.WORKOS_CLIENT_ID) {
+        // This allows the app to work without WorkOS configuration
+        if (!process.env.WORKOS_CLIENT_ID) {
           return {
-            user: {
-              id: 1,
-              openId: "dev-local-user",
-              name: "Usuário de Desenvolvimento",
-              email: "dev@campovivo.app",
-            },
+            user: createDevUser(),
           };
         }
 

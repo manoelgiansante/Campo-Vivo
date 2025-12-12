@@ -23,10 +23,17 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db) {
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      console.warn("[Database] DATABASE_URL not set");
+      return null;
+    }
     try {
-      _client = postgres(process.env.DATABASE_URL);
+      console.log("[Database] Connecting to PostgreSQL...");
+      _client = postgres(dbUrl);
       _db = drizzle(_client);
+      console.log("[Database] Connected successfully");
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -123,9 +130,19 @@ export async function updateUserProfile(userId: number, data: Partial<InsertUser
 // ==================== FIELD FUNCTIONS ====================
 export async function createField(field: InsertField): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(fields).values(field).returning({ id: fields.id });
-  return result[0].id;
+  if (!db) {
+    console.error("[createField] Database not available");
+    throw new Error("Database not available");
+  }
+  try {
+    console.log("[createField] Creating field:", JSON.stringify(field));
+    const result = await db.insert(fields).values(field).returning({ id: fields.id });
+    console.log("[createField] Field created with id:", result[0].id);
+    return result[0].id;
+  } catch (error) {
+    console.error("[createField] Error:", error);
+    throw error;
+  }
 }
 
 export async function getFieldById(id: number): Promise<Field | undefined> {
@@ -137,8 +154,19 @@ export async function getFieldById(id: number): Promise<Field | undefined> {
 
 export async function getFieldsByUserId(userId: number): Promise<Field[]> {
   const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(fields).where(and(eq(fields.userId, userId), eq(fields.isActive, true))).orderBy(desc(fields.createdAt));
+  if (!db) {
+    console.warn("[getFieldsByUserId] Database not available");
+    return [];
+  }
+  try {
+    console.log("[getFieldsByUserId] Fetching fields for user:", userId);
+    const result = await db.select().from(fields).where(and(eq(fields.userId, userId), eq(fields.isActive, true))).orderBy(desc(fields.createdAt));
+    console.log("[getFieldsByUserId] Found", result.length, "fields");
+    return result;
+  } catch (error) {
+    console.error("[getFieldsByUserId] Error:", error);
+    return [];
+  }
 }
 
 export async function updateField(id: number, data: Partial<InsertField>) {
