@@ -225,7 +225,8 @@ export default function ProfileOneSoil() {
   return (
     <div className="container mx-auto py-8 px-4 max-w-md">
       <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-green-700">🌾 CampoVivo</h1>
+        <img src="/logo.png" alt="CampoVivo" className="h-20 w-20 mx-auto mb-2 object-contain" />
+        <h1 className="text-2xl font-bold text-green-700">CampoVivo</h1>
         <p className="text-gray-600">Gestão inteligente de fazendas</p>
       </div>
 

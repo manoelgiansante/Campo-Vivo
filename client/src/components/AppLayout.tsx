@@ -81,10 +81,8 @@ export default function AppLayout({
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-primary/5 to-background p-4">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full bg-card rounded-2xl shadow-lg border">
           <div className="flex flex-col items-center gap-4">
-            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Leaf className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-center">
+            <img src="/logo.png" alt="CampoVivo" className="h-24 w-24 object-contain" />
+            <h1 className="text-2xl font-bold tracking-tight text-center text-green-700">
               CampoVivo
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
@@ -196,10 +194,8 @@ function AppLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Leaf className="h-4 w-4 text-primary" />
-                  </div>
-                  <span className="font-semibold tracking-tight truncate text-primary">
+                  <img src="/logo.png" alt="CampoVivo" className="h-8 w-8 object-contain shrink-0" />
+                  <span className="font-semibold tracking-tight truncate text-green-700">
                     CampoVivo
                   </span>
                 </div>
