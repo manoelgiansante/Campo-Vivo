@@ -1,294 +1,314 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json } from "drizzle-orm/mysql-core";
+import { integer, pgEnum, pgTable, text, timestamp, varchar, boolean, json, serial } from "drizzle-orm/pg-core";
+
+// ==================== ENUMS ====================
+export const roleEnum = pgEnum("role", ["user", "admin"]);
+export const userTypeEnum = pgEnum("user_type", ["farmer", "agronomist", "consultant"]);
+export const irrigationTypeEnum = pgEnum("irrigation_type", ["none", "drip", "sprinkler", "pivot", "flood"]);
+export const cropStatusEnum = pgEnum("crop_status", ["planned", "planted", "growing", "harvested", "failed"]);
+export const noteTypeEnum = pgEnum("note_type", ["observation", "problem", "task", "harvest", "application"]);
+export const severityEnum = pgEnum("severity", ["low", "medium", "high", "critical"]);
+export const alertTypeEnum = pgEnum("alert_type", ["rain", "frost", "heat", "wind", "drought", "spray_window"]);
+export const alertSeverityEnum = pgEnum("alert_severity", ["info", "warning", "critical"]);
+export const healthStatusEnum = pgEnum("health_status", ["excellent", "good", "moderate", "poor", "critical"]);
+export const suggestedByEnum = pgEnum("suggested_by", ["user", "system"]);
+export const taskTypeEnum = pgEnum("task_type", ["planting", "irrigation", "fertilization", "spraying", "harvest", "maintenance", "inspection", "other"]);
+export const priorityEnum = pgEnum("priority", ["low", "medium", "high", "urgent"]);
+export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed", "cancelled"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["weather", "task", "ndvi", "system", "crop"]);
+export const syncActionEnum = pgEnum("sync_action", ["create", "update", "delete"]);
+export const syncStatusEnum = pgEnum("sync_status", ["pending", "synced", "failed"]);
+export const permissionEnum = pgEnum("permission", ["view", "edit", "admin"]);
+export const platformEnum = pgEnum("platform", ["ios", "android", "web"]);
 
 // ==================== USERS ====================
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  openId: varchar("open_id", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  userType: mysqlEnum("userType", ["farmer", "agronomist", "consultant"]).default("farmer").notNull(),
+  loginMethod: varchar("login_method", { length: 64 }),
+  role: roleEnum("role").default("user").notNull(),
+  userType: userTypeEnum("user_type").default("farmer").notNull(),
   phone: varchar("phone", { length: 20 }),
   company: varchar("company", { length: 255 }),
-  avatarUrl: text("avatarUrl"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),
 });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // ==================== FARMS (Fazendas/Grupos de Campos) ====================
-export const farms = mysqlTable("farms", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const farms = pgTable("farms", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   address: text("address"),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   country: varchar("country", { length: 100 }).default("Brasil"),
-  totalAreaHectares: int("totalAreaHectares"),
-  color: varchar("color", { length: 7 }).default("#22C55E"), // Hex color for UI
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  totalAreaHectares: integer("total_area_hectares"),
+  color: varchar("color", { length: 7 }).default("#22C55E"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type Farm = typeof farms.$inferSelect;
 export type InsertFarm = typeof farms.$inferInsert;
 
 // ==================== FIELDS (Campos Agrícolas) ====================
-export const fields = mysqlTable("fields", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  farmId: int("farmId"), // Link to farm (optional grouping)
+export const fields = pgTable("fields", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  farmId: integer("farm_id"),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  areaHectares: int("areaHectares"), // área em hectares * 100 para precisão
+  areaHectares: integer("area_hectares"),
   latitude: varchar("latitude", { length: 20 }),
   longitude: varchar("longitude", { length: 20 }),
-  boundaries: json("boundaries"), // GeoJSON polygon coordinates
+  boundaries: json("boundaries"),
   address: text("address"),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   country: varchar("country", { length: 100 }).default("Brasil"),
-  soilType: varchar("soilType", { length: 100 }),
-  irrigationType: mysqlEnum("irrigationType", ["none", "drip", "sprinkler", "pivot", "flood"]).default("none"),
-  isActive: boolean("isActive").default(true),
+  soilType: varchar("soil_type", { length: 100 }),
+  irrigationType: irrigationTypeEnum("irrigation_type").default("none"),
+  isActive: boolean("is_active").default(true),
   // Agromonitoring integration
-  agroPolygonId: varchar("agroPolygonId", { length: 50 }), // ID do polígono no Agromonitoring
-  lastNdviSync: timestamp("lastNdviSync"), // Última sincronização de NDVI
-  currentNdvi: int("currentNdvi"), // NDVI atual (0-100, onde 100 = 1.0)
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
+  lastNdviSync: timestamp("last_ndvi_sync"),
+  currentNdvi: integer("current_ndvi"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type Field = typeof fields.$inferSelect;
 export type InsertField = typeof fields.$inferInsert;
 
 // ==================== CROPS (Cultivos) ====================
-export const crops = mysqlTable("crops", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  userId: int("userId").notNull(),
-  cropType: varchar("cropType", { length: 100 }).notNull(), // soja, milho, trigo, etc.
+export const crops = pgTable("crops", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
+  cropType: varchar("crop_type", { length: 100 }).notNull(),
   variety: varchar("variety", { length: 100 }),
-  plantingDate: timestamp("plantingDate"),
-  expectedHarvestDate: timestamp("expectedHarvestDate"),
-  actualHarvestDate: timestamp("actualHarvestDate"),
-  status: mysqlEnum("status", ["planned", "planted", "growing", "harvested", "failed"]).default("planned"),
-  areaHectares: int("areaHectares"),
-  expectedYield: int("expectedYield"), // kg/hectare esperado
-  actualYield: int("actualYield"), // kg/hectare real
+  plantingDate: timestamp("planting_date"),
+  expectedHarvestDate: timestamp("expected_harvest_date"),
+  actualHarvestDate: timestamp("actual_harvest_date"),
+  status: cropStatusEnum("status").default("planned"),
+  areaHectares: integer("area_hectares"),
+  expectedYield: integer("expected_yield"),
+  actualYield: integer("actual_yield"),
   notes: text("notes"),
-  season: varchar("season", { length: 20 }), // 2024/2025
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  season: varchar("season", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type Crop = typeof crops.$inferSelect;
 export type InsertCrop = typeof crops.$inferInsert;
 
 // ==================== FIELD NOTES (Notas de Campo) ====================
-export const fieldNotes = mysqlTable("fieldNotes", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  userId: int("userId").notNull(),
+export const fieldNotes = pgTable("field_notes", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
   title: varchar("title", { length: 255 }),
   content: text("content").notNull(),
-  noteType: mysqlEnum("noteType", ["observation", "problem", "task", "harvest", "application"]).default("observation"),
+  noteType: noteTypeEnum("note_type").default("observation"),
   latitude: varchar("latitude", { length: 20 }),
   longitude: varchar("longitude", { length: 20 }),
-  photos: json("photos"), // array of photo URLs
-  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]),
-  isResolved: boolean("isResolved").default(false),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  photos: json("photos"),
+  severity: severityEnum("severity"),
+  isResolved: boolean("is_resolved").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type FieldNote = typeof fieldNotes.$inferSelect;
 export type InsertFieldNote = typeof fieldNotes.$inferInsert;
 
 // ==================== WEATHER DATA (Dados Climáticos) ====================
-export const weatherData = mysqlTable("weatherData", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
+export const weatherData = pgTable("weather_data", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
   date: timestamp("date").notNull(),
-  temperatureMin: int("temperatureMin"), // celsius * 10
-  temperatureMax: int("temperatureMax"), // celsius * 10
-  temperatureAvg: int("temperatureAvg"), // celsius * 10
-  humidity: int("humidity"), // percentage
-  precipitation: int("precipitation"), // mm * 10
-  windSpeed: int("windSpeed"), // km/h * 10
-  windDirection: varchar("windDirection", { length: 10 }),
-  uvIndex: int("uvIndex"),
-  condition: varchar("condition", { length: 50 }), // sunny, cloudy, rainy, etc.
-  iconCode: varchar("iconCode", { length: 10 }),
-  isForecast: boolean("isForecast").default(false),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  temperatureMin: integer("temperature_min"),
+  temperatureMax: integer("temperature_max"),
+  temperatureAvg: integer("temperature_avg"),
+  humidity: integer("humidity"),
+  precipitation: integer("precipitation"),
+  windSpeed: integer("wind_speed"),
+  windDirection: varchar("wind_direction", { length: 10 }),
+  uvIndex: integer("uv_index"),
+  condition: varchar("condition", { length: 50 }),
+  iconCode: varchar("icon_code", { length: 10 }),
+  isForecast: boolean("is_forecast").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type WeatherData = typeof weatherData.$inferSelect;
 export type InsertWeatherData = typeof weatherData.$inferInsert;
 
 // ==================== WEATHER ALERTS (Alertas Climáticos) ====================
-export const weatherAlerts = mysqlTable("weatherAlerts", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  userId: int("userId").notNull(),
-  alertType: mysqlEnum("alertType", ["rain", "frost", "heat", "wind", "drought", "spray_window"]).notNull(),
+export const weatherAlerts = pgTable("weather_alerts", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
+  alertType: alertTypeEnum("alert_type").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message"),
-  severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("info"),
-  isRead: boolean("isRead").default(false),
-  isDismissed: boolean("isDismissed").default(false),
-  validFrom: timestamp("validFrom"),
-  validUntil: timestamp("validUntil"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  severity: alertSeverityEnum("severity").default("info"),
+  isRead: boolean("is_read").default(false),
+  isDismissed: boolean("is_dismissed").default(false),
+  validFrom: timestamp("valid_from"),
+  validUntil: timestamp("valid_until"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type WeatherAlert = typeof weatherAlerts.$inferSelect;
 export type InsertWeatherAlert = typeof weatherAlerts.$inferInsert;
 
 // ==================== NDVI DATA (Índices de Vegetação) ====================
-export const ndviData = mysqlTable("ndviData", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  captureDate: timestamp("captureDate").notNull(),
-  ndviAverage: int("ndviAverage"), // NDVI * 1000 (-1000 to 1000)
-  ndviMin: int("ndviMin"),
-  ndviMax: int("ndviMax"),
-  healthStatus: mysqlEnum("healthStatus", ["excellent", "good", "moderate", "poor", "critical"]),
-  cloudCoverage: int("cloudCoverage"), // percentage
-  imageUrl: text("imageUrl"),
-  thumbnailUrl: text("thumbnailUrl"),
-  problemAreas: json("problemAreas"), // array of problem zone coordinates
+export const ndviData = pgTable("ndvi_data", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  captureDate: timestamp("capture_date").notNull(),
+  ndviAverage: integer("ndvi_average"),
+  ndviMin: integer("ndvi_min"),
+  ndviMax: integer("ndvi_max"),
+  healthStatus: healthStatusEnum("health_status"),
+  cloudCoverage: integer("cloud_coverage"),
+  imageUrl: text("image_url"),
+  thumbnailUrl: text("thumbnail_url"),
+  problemAreas: json("problem_areas"),
   source: varchar("source", { length: 50 }).default("sentinel-2"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type NdviData = typeof ndviData.$inferSelect;
 export type InsertNdviData = typeof ndviData.$inferInsert;
 
 // ==================== CROP ROTATION PLANS (Planos de Rotação) ====================
-export const cropRotationPlans = mysqlTable("cropRotationPlans", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  userId: int("userId").notNull(),
-  season: varchar("season", { length: 20 }).notNull(), // 2024/2025
-  plannedCrop: varchar("plannedCrop", { length: 100 }).notNull(),
-  previousCrop: varchar("previousCrop", { length: 100 }),
-  isConfirmed: boolean("isConfirmed").default(false),
+export const cropRotationPlans = pgTable("crop_rotation_plans", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
+  season: varchar("season", { length: 20 }).notNull(),
+  plannedCrop: varchar("planned_crop", { length: 100 }).notNull(),
+  previousCrop: varchar("previous_crop", { length: 100 }),
+  isConfirmed: boolean("is_confirmed").default(false),
   notes: text("notes"),
-  suggestedBy: mysqlEnum("suggestedBy", ["user", "system"]).default("user"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  suggestedBy: suggestedByEnum("suggested_by").default("user"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type CropRotationPlan = typeof cropRotationPlans.$inferSelect;
 export type InsertCropRotationPlan = typeof cropRotationPlans.$inferInsert;
 
 // ==================== TASKS (Tarefas) ====================
-export const tasks = mysqlTable("tasks", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId"),
-  userId: int("userId").notNull(),
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id"),
+  userId: integer("user_id").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  taskType: mysqlEnum("taskType", ["planting", "irrigation", "fertilization", "spraying", "harvest", "maintenance", "inspection", "other"]).default("other"),
-  priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium"),
-  status: mysqlEnum("status", ["pending", "in_progress", "completed", "cancelled"]).default("pending"),
-  dueDate: timestamp("dueDate"),
-  completedAt: timestamp("completedAt"),
-  assignedTo: int("assignedTo"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  taskType: taskTypeEnum("task_type").default("other"),
+  priority: priorityEnum("priority").default("medium"),
+  status: taskStatusEnum("status").default("pending"),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  assignedTo: integer("assigned_to"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = typeof tasks.$inferInsert;
 
 // ==================== NOTIFICATIONS (Notificações) ====================
-export const notifications = mysqlTable("notifications", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message"),
-  notificationType: mysqlEnum("notificationType", ["weather", "task", "ndvi", "system", "crop"]).default("system"),
-  relatedFieldId: int("relatedFieldId"),
-  isRead: boolean("isRead").default(false),
-  actionUrl: varchar("actionUrl", { length: 500 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  notificationType: notificationTypeEnum("notification_type").default("system"),
+  relatedFieldId: integer("related_field_id"),
+  isRead: boolean("is_read").default(false),
+  actionUrl: varchar("action_url", { length: 500 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
 
 // ==================== OFFLINE SYNC QUEUE (Fila de Sincronização Offline) ====================
-export const offlineSyncQueue = mysqlTable("offlineSyncQueue", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  entityType: varchar("entityType", { length: 50 }).notNull(), // field, note, crop, etc.
-  entityId: int("entityId"),
-  action: mysqlEnum("action", ["create", "update", "delete"]).notNull(),
+export const offlineSyncQueue = pgTable("offline_sync_queue", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  entityType: varchar("entity_type", { length: 50 }).notNull(),
+  entityId: integer("entity_id"),
+  action: syncActionEnum("action").notNull(),
   payload: json("payload"),
-  syncStatus: mysqlEnum("syncStatus", ["pending", "synced", "failed"]).default("pending"),
-  errorMessage: text("errorMessage"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  syncedAt: timestamp("syncedAt"),
+  syncStatus: syncStatusEnum("sync_status").default("pending"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  syncedAt: timestamp("synced_at"),
 });
 
 export type OfflineSyncQueue = typeof offlineSyncQueue.$inferSelect;
 export type InsertOfflineSyncQueue = typeof offlineSyncQueue.$inferInsert;
 
 // ==================== FIELD SHARES (Compartilhamento de Campos) ====================
-export const fieldShares = mysqlTable("fieldShares", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  ownerUserId: int("ownerUserId").notNull(),
-  sharedWithUserId: int("sharedWithUserId"), // Se for compartilhado com usuário específico
-  sharedWithEmail: varchar("sharedWithEmail", { length: 320 }), // Se for convite por email
-  permission: mysqlEnum("permission", ["view", "edit", "admin"]).default("view"),
-  shareToken: varchar("shareToken", { length: 64 }), // Token para link público
-  isPublic: boolean("isPublic").default(false),
-  expiresAt: timestamp("expiresAt"),
-  acceptedAt: timestamp("acceptedAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+export const fieldShares = pgTable("field_shares", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  ownerUserId: integer("owner_user_id").notNull(),
+  sharedWithUserId: integer("shared_with_user_id"),
+  sharedWithEmail: varchar("shared_with_email", { length: 320 }),
+  permission: permissionEnum("permission").default("view"),
+  shareToken: varchar("share_token", { length: 64 }),
+  isPublic: boolean("is_public").default(false),
+  expiresAt: timestamp("expires_at"),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type FieldShare = typeof fieldShares.$inferSelect;
 export type InsertFieldShare = typeof fieldShares.$inferInsert;
 
 // ==================== PUSH TOKENS (Tokens de Notificação Push) ====================
-export const pushTokens = mysqlTable("pushTokens", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const pushTokens = pgTable("push_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
   token: varchar("token", { length: 500 }).notNull(),
-  platform: mysqlEnum("platform", ["ios", "android", "web"]).notNull(),
-  deviceName: varchar("deviceName", { length: 100 }),
-  isActive: boolean("isActive").default(true),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  platform: platformEnum("platform").notNull(),
+  deviceName: varchar("device_name", { length: 100 }),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type PushToken = typeof pushTokens.$inferSelect;
 export type InsertPushToken = typeof pushTokens.$inferInsert;
 
 // ==================== NDVI HISTORY (Histórico de NDVI por Satélite) ====================
-export const ndviHistory = mysqlTable("ndviHistory", {
-  id: int("id").autoincrement().primaryKey(),
-  fieldId: int("fieldId").notNull(),
-  userId: int("userId").notNull(),
-  ndviValue: int("ndviValue").notNull(), // NDVI * 100 (ex: 72 = 0.72)
-  ndviMin: int("ndviMin"), // Mínimo * 100
-  ndviMax: int("ndviMax"), // Máximo * 100
-  cloudCoverage: int("cloudCoverage"), // Percentual de nuvens (0-100)
-  satellite: varchar("satellite", { length: 50 }), // "Sentinel-2", "Landsat-8", etc.
-  imageUrl: varchar("imageUrl", { length: 500 }), // URL da imagem NDVI
-  acquisitionDate: timestamp("acquisitionDate").notNull(), // Data da imagem do satélite
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+export const ndviHistory = pgTable("ndvi_history", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
+  ndviValue: integer("ndvi_value").notNull(),
+  ndviMin: integer("ndvi_min"),
+  ndviMax: integer("ndvi_max"),
+  cloudCoverage: integer("cloud_coverage"),
+  satellite: varchar("satellite", { length: 50 }),
+  imageUrl: varchar("image_url", { length: 500 }),
+  acquisitionDate: timestamp("acquisition_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type NdviHistory = typeof ndviHistory.$inferSelect;

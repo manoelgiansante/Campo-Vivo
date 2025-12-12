@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, gte, lte, sql, inArray, isNull, or } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser, users,
   InsertField, fields, Field,
@@ -19,11 +20,13 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL);
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -87,7 +90,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -120,8 +124,8 @@ export async function updateUserProfile(userId: number, data: Partial<InsertUser
 export async function createField(field: InsertField): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(fields).values(field);
-  return result[0].insertId;
+  const result = await db.insert(fields).values(field).returning({ id: fields.id });
+  return result[0].id;
 }
 
 export async function getFieldById(id: number): Promise<Field | undefined> {
@@ -153,8 +157,8 @@ export async function deleteField(id: number) {
 export async function createCrop(crop: InsertCrop): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(crops).values(crop);
-  return result[0].insertId;
+  const result = await db.insert(crops).values(crop).returning({ id: crops.id });
+  return result[0].id;
 }
 
 export async function getCropsByFieldId(fieldId: number): Promise<Crop[]> {
@@ -192,8 +196,8 @@ export async function getCropById(id: number): Promise<Crop | undefined> {
 export async function createFieldNote(note: InsertFieldNote): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(fieldNotes).values(note);
-  return result[0].insertId;
+  const result = await db.insert(fieldNotes).values(note).returning({ id: fieldNotes.id });
+  return result[0].id;
 }
 
 export async function getFieldNotesByFieldId(fieldId: number): Promise<FieldNote[]> {
@@ -231,8 +235,8 @@ export async function getFieldNoteById(id: number): Promise<FieldNote | undefine
 export async function createWeatherData(data: InsertWeatherData): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(weatherData).values(data);
-  return result[0].insertId;
+  const result = await db.insert(weatherData).values(data).returning({ id: weatherData.id });
+  return result[0].id;
 }
 
 export async function getWeatherByFieldId(fieldId: number, days: number = 5): Promise<WeatherData[]> {
@@ -249,8 +253,8 @@ export async function getWeatherByFieldId(fieldId: number, days: number = 5): Pr
 export async function createWeatherAlert(alert: InsertWeatherAlert): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(weatherAlerts).values(alert);
-  return result[0].insertId;
+  const result = await db.insert(weatherAlerts).values(alert).returning({ id: weatherAlerts.id });
+  return result[0].id;
 }
 
 export async function getWeatherAlertsByUserId(userId: number): Promise<WeatherAlert[]> {
@@ -271,8 +275,8 @@ export async function dismissWeatherAlert(id: number) {
 export async function createNdviData(data: InsertNdviData): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(ndviData).values(data);
-  return result[0].insertId;
+  const result = await db.insert(ndviData).values(data).returning({ id: ndviData.id });
+  return result[0].id;
 }
 
 export async function getNdviByFieldId(fieldId: number, limit: number = 10): Promise<NdviData[]> {
@@ -298,8 +302,8 @@ export async function getLatestNdviByFieldId(fieldId: number): Promise<NdviData 
 export async function createCropRotationPlan(plan: InsertCropRotationPlan): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(cropRotationPlans).values(plan);
-  return result[0].insertId;
+  const result = await db.insert(cropRotationPlans).values(plan).returning({ id: cropRotationPlans.id });
+  return result[0].id;
 }
 
 export async function getCropRotationByFieldId(fieldId: number): Promise<CropRotationPlan[]> {
@@ -327,8 +331,8 @@ export async function getCropRotationPlanById(id: number): Promise<CropRotationP
 export async function createTask(task: InsertTask): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(tasks).values(task);
-  return result[0].insertId;
+  const result = await db.insert(tasks).values(task).returning({ id: tasks.id });
+  return result[0].id;
 }
 
 export async function getTasksByUserId(userId: number): Promise<Task[]> {
@@ -370,8 +374,8 @@ export async function getTaskById(id: number): Promise<Task | undefined> {
 export async function createNotification(notification: InsertNotification): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(notifications).values(notification);
-  return result[0].insertId;
+  const result = await db.insert(notifications).values(notification).returning({ id: notifications.id });
+  return result[0].id;
 }
 
 export async function getNotificationsByUserId(userId: number, limit: number = 20): Promise<Notification[]> {
@@ -431,8 +435,8 @@ export async function getDashboardStats(userId: number) {
 export async function createFarm(farm: InsertFarm): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(farms).values(farm);
-  return result[0].insertId;
+  const result = await db.insert(farms).values(farm).returning({ id: farms.id });
+  return result[0].id;
 }
 
 export async function getFarmById(id: number): Promise<Farm | undefined> {
@@ -478,8 +482,8 @@ export async function assignFieldToFarm(fieldId: number, farmId: number | null) 
 export async function createFieldShare(share: InsertFieldShare): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(fieldShares).values(share);
-  return result[0].insertId;
+  const result = await db.insert(fieldShares).values(share).returning({ id: fieldShares.id });
+  return result[0].id;
 }
 
 export async function getFieldSharesByFieldId(fieldId: number): Promise<FieldShare[]> {
@@ -534,8 +538,8 @@ export async function savePushToken(token: InsertPushToken): Promise<number> {
     return existing[0].id;
   }
   
-  const result = await db.insert(pushTokens).values(token);
-  return result[0].insertId;
+  const result = await db.insert(pushTokens).values(token).returning({ id: pushTokens.id });
+  return result[0].id;
 }
 
 export async function getPushTokensByUserId(userId: number): Promise<PushToken[]> {
@@ -554,8 +558,8 @@ export async function deactivatePushToken(token: string) {
 export async function createNdviHistory(data: InsertNdviHistory): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(ndviHistory).values(data);
-  return result[0].insertId;
+  const result = await db.insert(ndviHistory).values(data).returning({ id: ndviHistory.id });
+  return result[0].id;
 }
 
 export async function getNdviHistoryByFieldId(fieldId: number, days: number = 30): Promise<NdviHistory[]> {
