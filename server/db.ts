@@ -21,25 +21,66 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
+let _connectionFailed = false;
+
+// In-memory storage for demo mode when database is unavailable
+const demoStorage = {
+  users: new Map<string, any>(),
+  fields: new Map<number, any>(),
+  nextFieldId: 1,
+};
+
+export function isDemoMode() {
+  return _connectionFailed || !process.env.DATABASE_URL;
+}
 
 export async function getDb() {
+  if (_connectionFailed) return null;
+  
   if (!_db) {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
-      console.warn("[Database] DATABASE_URL not set");
+      console.warn("[Database] DATABASE_URL not set - running in demo mode");
+      _connectionFailed = true;
       return null;
     }
     try {
       console.log("[Database] Connecting to PostgreSQL...");
-      _client = postgres(dbUrl);
+      _client = postgres(dbUrl, { 
+        connect_timeout: 10,
+        idle_timeout: 20,
+        max_lifetime: 60 * 30,
+      });
+      // Test the connection
+      await _client`SELECT 1`;
       _db = drizzle(_client);
       console.log("[Database] Connected successfully");
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+    } catch (error: any) {
+      console.error("[Database] Failed to connect:", error?.message || error);
+      _connectionFailed = true;
       _db = null;
     }
   }
   return _db;
+}
+
+// Demo mode helpers
+export function getDemoUser(openId: string) {
+  return demoStorage.users.get(openId);
+}
+
+export function setDemoUser(openId: string, user: any) {
+  demoStorage.users.set(openId, user);
+}
+
+export function getDemoFields(userId: number) {
+  return Array.from(demoStorage.fields.values()).filter(f => f.userId === userId && f.isActive !== false);
+}
+
+export function createDemoField(field: any): number {
+  const id = demoStorage.nextFieldId++;
+  demoStorage.fields.set(id, { ...field, id, createdAt: new Date(), updatedAt: new Date(), isActive: true });
+  return id;
 }
 
 // ==================== USER FUNCTIONS ====================
@@ -131,8 +172,9 @@ export async function updateUserProfile(userId: number, data: Partial<InsertUser
 export async function createField(field: InsertField): Promise<number> {
   const db = await getDb();
   if (!db) {
-    console.error("[createField] Database not available");
-    throw new Error("Database not available");
+    // Demo mode: store in memory
+    console.log("[createField] Demo mode - storing in memory");
+    return createDemoField(field);
   }
   try {
     console.log("[createField] Creating field:", JSON.stringify(field));
@@ -147,7 +189,11 @@ export async function createField(field: InsertField): Promise<number> {
 
 export async function getFieldById(id: number): Promise<Field | undefined> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    // Demo mode
+    const demoField = Array.from((globalThis as any).__demoFields?.values() || []).find((f: any) => f.id === id);
+    return demoField as Field | undefined;
+  }
   const result = await db.select().from(fields).where(eq(fields.id, id)).limit(1);
   return result[0];
 }
@@ -155,8 +201,9 @@ export async function getFieldById(id: number): Promise<Field | undefined> {
 export async function getFieldsByUserId(userId: number): Promise<Field[]> {
   const db = await getDb();
   if (!db) {
-    console.warn("[getFieldsByUserId] Database not available");
-    return [];
+    // Demo mode: return from memory
+    console.log("[getFieldsByUserId] Demo mode - returning from memory");
+    return getDemoFields(userId) as Field[];
   }
   try {
     console.log("[getFieldsByUserId] Fetching fields for user:", userId);
