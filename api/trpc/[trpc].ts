@@ -3,15 +3,32 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "../../server/routers";
 import * as db from "../../server/db";
 
+// Fallback dev user when database is not available
+const createFallbackDevUser = (openId: string, name: string, email: string) => ({
+  id: 1,
+  openId,
+  name,
+  email,
+  loginMethod: "dev",
+  role: "user" as const,
+  userType: "farmer" as const,
+  phone: null,
+  company: null,
+  avatarUrl: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  lastSignedIn: new Date(),
+});
+
 // Helper to get or create a dev user
 async function getOrCreateDevUser(openId: string, name: string, email: string) {
   try {
-    // Try to get existing user
+    // Try to get existing user from database
     let user = await db.getUserByOpenId(openId);
     
     if (!user) {
-      // Create new dev user
-      console.log(`[Auth] Creating dev user: ${openId}`);
+      // Create new dev user in database
+      console.log(`[Auth] Creating dev user in DB: ${openId}`);
       await db.upsertUser({
         openId,
         name,
@@ -23,10 +40,19 @@ async function getOrCreateDevUser(openId: string, name: string, email: string) {
       user = await db.getUserByOpenId(openId);
     }
     
-    return user;
+    if (user) {
+      console.log(`[Auth] User found/created: ${user.id} - ${user.name}`);
+      return user;
+    }
+    
+    // If still no user, use fallback
+    console.log(`[Auth] Using fallback user for: ${openId}`);
+    return createFallbackDevUser(openId, name, email);
   } catch (error) {
     console.error("[Auth] Error getting/creating dev user:", error);
-    return null;
+    // Return fallback user on error
+    console.log(`[Auth] Using fallback user due to error for: ${openId}`);
+    return createFallbackDevUser(openId, name, email);
   }
 }
 
@@ -97,9 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               userData.name || "Usuário Cookie",
               userData.email || "cookie@campovivo.app"
             );
-            if (user) {
-              return { user };
-            }
+            return { user };
           } catch (e) {
             console.error("[Auth] Invalid dev_user cookie:", e);
           }
@@ -113,9 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             "Usuário de Desenvolvimento",
             "dev@campovivo.app"
           );
-          if (user) {
-            return { user };
-          }
+          return { user };
         }
 
         // No authenticated user
