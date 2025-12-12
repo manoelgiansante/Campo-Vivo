@@ -189,6 +189,21 @@ export const appRouter = router({
             ...input,
             userId: ctx.user.id,
           });
+          
+          // Sincronizar NDVI automaticamente se houver boundaries
+          if (input.boundaries && agromonitoring.isAgromonitoringConfigured()) {
+            const field = await db.getFieldById(id);
+            if (field) {
+              try {
+                await agromonitoring.syncFieldNdvi(field);
+                console.log(`[fields.create] NDVI sincronizado para campo ${id}`);
+              } catch (e) {
+                console.error(`[fields.create] Erro ao sincronizar NDVI inicial:`, e);
+                // Não falha a criação do campo se NDVI falhar
+              }
+            }
+          }
+          
           return { id, success: true };
         } catch (error) {
           console.error("[fields.create] Error:", error);

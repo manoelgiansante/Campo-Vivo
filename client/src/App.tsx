@@ -14,6 +14,7 @@ import NotesNew from "./pages/NotesNew";
 import ProfileNew from "./pages/ProfileNew";
 import FarmsOneSoil from "./pages/FarmsOneSoil";
 import FieldShareOneSoil from "./pages/FieldShareOneSoil";
+import AuthPage from "./pages/AuthPage";
 
 // Pro features pages
 import WeatherCharts from "./pages/WeatherCharts";
@@ -106,6 +107,14 @@ function Router() {
             <NotesNew />
           </MobileLayout>
         )}
+      </Route>
+
+      {/* Auth - Login/Signup */}
+      <Route path="/login">
+        {() => <AuthPage />}
+      </Route>
+      <Route path="/auth">
+        {() => <AuthPage />}
       </Route>
 
       {/* Profile */}

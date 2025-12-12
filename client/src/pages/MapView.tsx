@@ -228,12 +228,17 @@ export default function MapView() {
     }
   }, [mapInstance, fields, mapLayer, setLocation]);
 
-  const getNdviColor = (value: number): string => {
-    if (value < 0.3) return "#EF4444";
-    if (value < 0.5) return "#F59E0B";
-    if (value < 0.7) return "#EAB308";
-    if (value < 0.85) return "#84CC16";
-    return "#22C55E";
+  // Função para converter valor NDVI em cor (conforme especificação OneSoil)
+  const getNdviColor = (ndvi: number): string => {
+    if (ndvi < 0) return '#1a1a2e';      // Água/sombra
+    if (ndvi < 0.2) return '#b91c1c';    // Vermelho - solo exposto
+    if (ndvi < 0.3) return '#dc2626';    // Vermelho claro
+    if (ndvi < 0.4) return '#f97316';    // Laranja
+    if (ndvi < 0.5) return '#facc15';    // Amarelo
+    if (ndvi < 0.6) return '#a3e635';    // Verde-amarelo
+    if (ndvi < 0.7) return '#4ade80';    // Verde claro
+    if (ndvi < 0.8) return '#22c55e';    // Verde
+    return '#15803d';                     // Verde escuro
   };
 
   // Carregar posição salva
@@ -343,12 +348,27 @@ export default function MapView() {
         </div>
       </div>
 
-      {/* NDVI Scale (left side) */}
+      {/* NDVI Scale Legend (bottom) - OneSoil Style */}
       {mapLayer === "vegetation" && (
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <div className="w-3 h-32 rounded-full overflow-hidden" style={{
-            background: "linear-gradient(to bottom, #22C55E, #EAB308, #EF4444)"
-          }} />
+        <div className="absolute bottom-32 left-4 right-4 pointer-events-none z-10">
+          <div className="bg-gray-900/80 backdrop-blur-sm rounded-xl p-3 max-w-md mx-auto">
+            <div className="flex items-center justify-between text-xs text-white/80 mb-2">
+              <span>Baixo índice</span>
+              <span className="text-white font-medium">Índice de Vegetação</span>
+              <span>Alto índice</span>
+            </div>
+            <div className="h-3 rounded-full overflow-hidden" style={{
+              background: "linear-gradient(to right, #b91c1c, #dc2626, #f97316, #facc15, #a3e635, #4ade80, #22c55e, #15803d)"
+            }} />
+            <div className="flex justify-between text-[10px] text-white/60 mt-1">
+              <span>0.0</span>
+              <span>0.2</span>
+              <span>0.4</span>
+              <span>0.6</span>
+              <span>0.8</span>
+              <span>1.0</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -359,7 +379,7 @@ export default function MapView() {
           className="pointer-events-auto bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-6 h-10 gap-2"
         >
           <Leaf className="h-4 w-4" />
-          <span>Vegetation</span>
+          <span>Vegetação</span>
         </Button>
       </div>
 
@@ -379,20 +399,20 @@ export default function MapView() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Camada do mapa</SheetTitle>
+            <SheetTitle>Camada do Mapa</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 mb-6">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Imagem de satélite"
+                label="Satélite"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Cultivo"
+                label="Cultivos"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
@@ -424,7 +444,7 @@ export default function MapView() {
                   onClick={() => setNdviType("average")}
                 />
                 <NdviOption
-                  label="NDVI Heterogeneidade"
+                  label="Heterogeneidade"
                   active={ndviType === "heterogenity"}
                   onClick={() => setNdviType("heterogenity")}
                 />

@@ -59,7 +59,7 @@ export default function FarmsOneSoil() {
       resetForm();
       refetch();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error("Erro ao criar fazenda: " + error.message);
     },
   });
@@ -71,7 +71,7 @@ export default function FarmsOneSoil() {
       resetForm();
       refetch();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error("Erro ao atualizar: " + error.message);
     },
   });
@@ -81,7 +81,7 @@ export default function FarmsOneSoil() {
       toast.success("Fazenda removida!");
       refetch();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error("Erro ao remover: " + error.message);
     },
   });
@@ -173,7 +173,7 @@ export default function FarmsOneSoil() {
 
       {/* Farms List */}
       <div className="p-4 space-y-3">
-        {farms?.map((farm) => (
+        {farms?.map((farm: any) => (
           <div
             key={farm.id}
             className="bg-white rounded-xl shadow-sm overflow-hidden"
@@ -186,7 +186,7 @@ export default function FarmsOneSoil() {
                 >
                   <div 
                     className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: `${farm.color}20` }}
+                    style={{ backgroundColor: `${farm.color || "#22C55E"}20` }}
                   >
                     <Building2 className="h-6 w-6" style={{ color: farm.color || "#22C55E" }} />
                   </div>

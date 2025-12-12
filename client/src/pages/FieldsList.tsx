@@ -128,7 +128,7 @@ export default function FieldsList() {
           className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-6 h-10 gap-2 shadow-lg"
         >
           <Leaf className="h-4 w-4" />
-          <span>Vegetation</span>
+          <span>Vegetação</span>
         </Button>
       </div>
 
@@ -136,20 +136,20 @@ export default function FieldsList() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Camada do mapa</SheetTitle>
+            <SheetTitle>Camada do Mapa</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 justify-center">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Imagem de satélite"
+                label="Satélite"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Cultivo"
+                label="Cultivos"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
@@ -168,7 +168,7 @@ export default function FieldsList() {
                 <NdviOption label="NDVI Básico" active={true} onClick={() => {}} />
                 <NdviOption label="NDVI Contrastado" active={false} onClick={() => {}} />
                 <NdviOption label="NDVI Médio" active={false} onClick={() => {}} />
-                <NdviOption label="NDVI Heterogeneidade" active={false} onClick={() => {}} />
+                <NdviOption label="Heterogeneidade" active={false} onClick={() => {}} />
               </div>
             )}
           </div>

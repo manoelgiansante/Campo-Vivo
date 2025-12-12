@@ -31,23 +31,16 @@ export function ExportReportDialog({
   const [includeNotes, setIncludeNotes] = useState(true);
   const [includeCrops, setIncludeCrops] = useState(true);
 
-  const generateReport = trpc.reports.generateFieldReport.useMutation({
-    onSuccess: (data) => {
-      // Open HTML in new window for printing/saving as PDF
-      const newWindow = window.open("", "_blank");
-      if (newWindow) {
-        newWindow.document.write(data.htmlContent);
-        newWindow.document.close();
-        
-        // Auto-trigger print dialog for PDF save
-        setTimeout(() => {
-          newWindow.print();
-        }, 500);
+  const generateReport = trpc.reports.generate.useMutation({
+    onSuccess: (data: any) => {
+      // Open report URL
+      if (data.url) {
+        window.open(data.url, "_blank");
       }
-      toast.success("Relatório gerado! Use Ctrl+P para salvar como PDF.");
+      toast.success("Relatório gerado com sucesso!");
       onOpenChange(false);
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error("Erro ao gerar relatório: " + error.message);
     },
   });
@@ -55,10 +48,7 @@ export function ExportReportDialog({
   const handleExport = () => {
     generateReport.mutate({
       fieldId,
-      includeNdvi,
-      includeWeather,
-      includeNotes,
-      includeCrops,
+      type: "full",
     });
   };
 

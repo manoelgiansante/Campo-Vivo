@@ -204,6 +204,77 @@ const appRouter = t.router({
     }),
   }),
   
+  // ==================== AI ====================
+  ai: t.router({
+    chat: protectedProcedure
+      .input(z.object({
+        messages: z.array(z.object({
+          role: z.enum(["user", "assistant", "system"]),
+          content: z.string(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        // Simulação de resposta da IA
+        const lastMessage = input.messages[input.messages.length - 1];
+        const userMessage = lastMessage?.content || "";
+        
+        // Respostas simuladas baseadas em palavras-chave
+        let response = "Olá! Sou o assistente agrícola do CampoVivo. Como posso ajudar você hoje?";
+        
+        if (userMessage.toLowerCase().includes("ndvi")) {
+          response = "O NDVI (Índice de Vegetação por Diferença Normalizada) varia de -1 a 1. Valores acima de 0.6 indicam vegetação saudável. Valores entre 0.3 e 0.6 indicam vegetação moderada. Abaixo de 0.3 pode indicar estresse ou solo exposto.";
+        } else if (userMessage.toLowerCase().includes("irrigação") || userMessage.toLowerCase().includes("irrigar")) {
+          response = "A irrigação ideal depende do tipo de cultura, solo e clima. Monitore a umidade do solo e considere irrigar quando atingir 50-60% da capacidade de campo. Evite irrigar nas horas mais quentes do dia.";
+        } else if (userMessage.toLowerCase().includes("pragas") || userMessage.toLowerCase().includes("doença")) {
+          response = "Para manejo integrado de pragas: 1) Monitore regularmente suas lavouras, 2) Identifique corretamente a praga/doença, 3) Use controle biológico quando possível, 4) Aplique defensivos apenas quando necessário e siga as recomendações técnicas.";
+        } else if (userMessage.toLowerCase().includes("soja")) {
+          response = "A soja é uma das principais culturas do Brasil. Período de plantio ideal: outubro a dezembro. Espaçamento recomendado: 45-50cm entre linhas. Profundidade de semeadura: 3-5cm. Necessidade hídrica: 450-800mm durante o ciclo.";
+        } else if (userMessage.toLowerCase().includes("milho")) {
+          response = "O milho pode ser plantado em duas safras: verão (outubro-novembro) e safrinha (janeiro-março). Espaçamento: 70-90cm entre linhas. População: 60-80 mil plantas/ha. Adubação de base com NPK é essencial para bons rendimentos.";
+        }
+        
+        return {
+          choices: [{
+            message: {
+              role: "assistant" as const,
+              content: response,
+            },
+          }],
+        };
+      }),
+  }),
+  
+  // ==================== USER ====================
+  user: t.router({
+    updateProfile: protectedProcedure
+      .input(z.object({
+        name: z.string().optional(),
+        email: z.string().optional(),
+        phone: z.string().optional(),
+        company: z.string().optional(),
+        userType: z.enum(["farmer", "agronomist", "consultant"]).optional(),
+        avatarUrl: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        const updateData: Record<string, any> = { updatedAt: new Date() };
+        if (input.name !== undefined) updateData.name = input.name;
+        if (input.email !== undefined) updateData.email = input.email;
+        if (input.phone !== undefined) updateData.phone = input.phone;
+        if (input.company !== undefined) updateData.company = input.company;
+        if (input.userType !== undefined) updateData.userType = input.userType;
+        if (input.avatarUrl !== undefined) updateData.avatarUrl = input.avatarUrl;
+        
+        await database
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, ctx.user.id));
+          
+        return { success: true };
+      }),
+  }),
+  
   fields: t.router({
     list: protectedProcedure.query(async ({ ctx }) => {
       const database = await getDb();
@@ -287,6 +358,42 @@ const appRouter = t.router({
           .where(and(eq(fields.id, input.id), eq(fields.userId, ctx.user.id)))
           .limit(1);
         return field || null;
+      }),
+      
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        areaHectares: z.number().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        soilType: z.string().optional(),
+        irrigationType: z.string().optional(),
+        boundaries: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        const { id, ...updateData } = input;
+        
+        let boundariesJson = undefined;
+        if (input.boundaries) {
+          try {
+            boundariesJson = JSON.parse(input.boundaries);
+          } catch {
+            boundariesJson = input.boundaries;
+          }
+        }
+        
+        await database
+          .update(fields)
+          .set({ 
+            ...updateData, 
+            boundaries: boundariesJson !== undefined ? boundariesJson : undefined,
+            updatedAt: new Date() 
+          })
+          .where(and(eq(fields.id, id), eq(fields.userId, ctx.user.id)));
+        return { success: true };
       }),
       
     delete: protectedProcedure
@@ -429,6 +536,37 @@ const appRouter = t.router({
           return [];
         }
       }),
+      
+    // Buscar NDVI de múltiplos campos de uma vez
+    getLatestBatch: protectedProcedure
+      .input(z.object({ fieldIds: z.array(z.number()) }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const result: Record<number, { ndvi: number; date: string } | null> = {};
+        
+        for (const fieldId of input.fieldIds) {
+          const [field] = await database
+            .select()
+            .from(fields)
+            .where(and(eq(fields.id, fieldId), eq(fields.userId, ctx.user.id)))
+            .limit(1);
+            
+          if (field?.currentNdvi) {
+            result[fieldId] = {
+              ndvi: field.currentNdvi / 100, // Assumindo que está armazenado como inteiro
+              date: field.lastNdviSync?.toISOString() || new Date().toISOString(),
+            };
+          } else {
+            // Retorna valor simulado se não houver NDVI real
+            result[fieldId] = {
+              ndvi: 0.5 + Math.random() * 0.3,
+              date: new Date().toISOString(),
+            };
+          }
+        }
+        
+        return result;
+      }),
   }),
   
   // Router de clima
@@ -458,6 +596,70 @@ const appRouter = t.router({
           console.error("Erro ao buscar clima:", e);
           return null;
         }
+      }),
+      
+    getByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+          
+        if (!field) throw new Error("Campo não encontrado");
+        
+        const lat = field.latitude ? parseFloat(field.latitude) : -15.7801;
+        const lon = field.longitude ? parseFloat(field.longitude) : -47.9292;
+        
+        // Dados simulados de clima
+        return {
+          current: {
+            temp: 25 + Math.random() * 10,
+            humidity: 50 + Math.random() * 40,
+            windSpeed: 5 + Math.random() * 15,
+            description: "Parcialmente nublado",
+            icon: "02d",
+          },
+          forecast: Array.from({ length: 7 }, (_, i) => ({
+            date: new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString(),
+            tempMin: 18 + Math.random() * 5,
+            tempMax: 28 + Math.random() * 8,
+            humidity: 50 + Math.random() * 30,
+            rain: Math.random() > 0.6 ? Math.random() * 30 : 0,
+            description: ["Ensolarado", "Parcialmente nublado", "Nublado", "Chuva leve"][Math.floor(Math.random() * 4)],
+            icon: ["01d", "02d", "03d", "10d"][Math.floor(Math.random() * 4)],
+          })),
+          hourly: Array.from({ length: 24 }, (_, i) => ({
+            time: new Date(Date.now() + i * 60 * 60 * 1000).toISOString(),
+            temp: 20 + Math.random() * 15,
+            humidity: 40 + Math.random() * 50,
+            rain: Math.random() > 0.8 ? Math.random() * 5 : 0,
+          })),
+        };
+      }),
+      
+    getAlerts: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async () => {
+        // Alertas meteorológicos simulados
+        const hasAlert = Math.random() > 0.5;
+        if (!hasAlert) return [];
+        
+        return [
+          {
+            id: 1,
+            type: Math.random() > 0.5 ? "rain" : "heat",
+            title: Math.random() > 0.5 ? "Alerta de Chuva Forte" : "Alerta de Calor",
+            description: Math.random() > 0.5 
+              ? "Previsão de chuva intensa nas próximas 24 horas" 
+              : "Temperaturas acima de 35°C esperadas",
+            severity: Math.random() > 0.5 ? "warning" : "info",
+            startsAt: new Date().toISOString(),
+            endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          },
+        ];
       }),
   }),
   
@@ -619,15 +821,30 @@ const appRouter = t.router({
         ];
       }),
       
+    listAll: protectedProcedure
+      .query(async ({ ctx }) => {
+        return [
+          { id: 1, fieldId: 1, title: "Observação de campo", content: "Campo com boa aparência geral", noteType: "observation", severity: "info", createdAt: new Date() },
+          { id: 2, fieldId: 1, title: "Praga detectada", content: "Detectada presença de lagarta", noteType: "pest", severity: "warning", createdAt: new Date() },
+        ];
+      }),
+      
     create: protectedProcedure
       .input(z.object({
         fieldId: z.number(),
         title: z.string().optional(),
         content: z.string(),
         noteType: z.string().optional(),
+        severity: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         return { id: Math.floor(Math.random() * 1000), ...input, createdAt: new Date() };
+      }),
+      
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
       }),
   }),
   
@@ -647,6 +864,20 @@ const appRouter = t.router({
       }))
       .mutation(async ({ input }) => {
         return { id: Math.floor(Math.random() * 1000), ...input, createdAt: new Date() };
+      }),
+      
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        totalAreaHectares: z.number().optional(),
+        color: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+      }))
+      .mutation(async () => {
+        return { success: true };
       }),
       
     delete: protectedProcedure
@@ -718,6 +949,159 @@ const appRouter = t.router({
           url: `/reports/${input.fieldId}/${input.type}.pdf`,
           createdAt: new Date(),
         };
+      }),
+      
+    generateFieldReport: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        reportType: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        return {
+          success: true,
+          url: `/reports/${input.fieldId}/${input.reportType}.pdf`,
+        };
+      }),
+  }),
+  
+  // ==================== SHARING ====================
+  sharing: t.router({
+    getShares: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async () => {
+        return [];
+      }),
+      
+    getByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ input }) => {
+        return [
+          { id: 1, fieldId: input.fieldId, email: "user@example.com", permission: "view", createdAt: new Date() },
+        ];
+      }),
+      
+    create: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        email: z.string(),
+        permission: z.string(),
+        expiresAt: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return { id: Math.floor(Math.random() * 1000), ...input, createdAt: new Date() };
+      }),
+      
+    getShareLink: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        permission: z.string(),
+        expiresAt: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const token = Math.random().toString(36).substring(2, 15);
+        return { 
+          id: Math.floor(Math.random() * 1000),
+          link: `${process.env.APP_URL || 'https://campovivo.app'}/share/${token}`,
+          token,
+          expiresAt: input.expiresAt,
+        };
+      }),
+      
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
+      }),
+      
+    shareField: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        email: z.string(),
+        permission: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        return { id: Math.floor(Math.random() * 1000), ...input };
+      }),
+      
+    revokeShare: protectedProcedure
+      .input(z.object({ shareId: z.number() }))
+      .mutation(async () => {
+        return { success: true };
+      }),
+  }),
+  
+  // ==================== TASKS ====================
+  tasks: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return [
+        { 
+          id: 1, 
+          userId: ctx.user.id, 
+          title: "Irrigar campo norte", 
+          description: "Realizar irrigação conforme cronograma",
+          taskType: "irrigation",
+          priority: "high",
+          status: "pending",
+          dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+        },
+        { 
+          id: 2, 
+          userId: ctx.user.id, 
+          title: "Aplicar fertilizante", 
+          description: "Aplicar NPK no campo sul",
+          taskType: "fertilization",
+          priority: "medium",
+          status: "pending",
+          dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+        },
+      ];
+    }),
+    
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        taskType: z.string(),
+        priority: z.string(),
+        dueDate: z.string().optional(),
+        fieldId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return { 
+          id: Math.floor(Math.random() * 1000), 
+          userId: ctx.user.id,
+          ...input, 
+          status: "pending",
+          createdAt: new Date(),
+        };
+      }),
+      
+    complete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
+      }),
+      
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        taskType: z.string().optional(),
+        priority: z.string().optional(),
+        status: z.string().optional(),
+        dueDate: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return { success: true, ...input };
+      }),
+      
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async () => {
+        return { success: true };
       }),
   }),
 });

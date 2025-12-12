@@ -36,8 +36,8 @@ export default function FieldDetailNew() {
   const { setMap } = useMapbox();
 
   const { data: field, isLoading } = trpc.fields.getById.useQuery({ id: fieldId });
-  const { data: ndviHistory } = trpc.ndvi.getByField.useQuery(
-    { fieldId, limit: 10 },
+  const { data: ndviHistory } = trpc.ndvi.history.useQuery(
+    { fieldId, days: 30 },
     { enabled: !!fieldId }
   );
   const { data: crops } = trpc.crops.listByField.useQuery(
@@ -137,9 +137,9 @@ export default function FieldDetailNew() {
     { date: new Date(2024, 10, 22), ndvi: 0.74, cloudy: false },
   ];
 
-  const historyData = ndviHistory?.length ? ndviHistory.map(n => ({
-    date: new Date(n.captureDate),
-    ndvi: n.ndviAverage ? n.ndviAverage / 100 : null,
+  const historyData = ndviHistory?.length ? ndviHistory.map((n: any) => ({
+    date: new Date(n.captureDate || n.date),
+    ndvi: n.ndviAverage ? n.ndviAverage / 100 : (n.ndvi || null),
     cloudy: n.cloudCoverage ? n.cloudCoverage > 50 : false,
   })) : mockHistory;
 
@@ -278,8 +278,8 @@ export default function FieldDetailNew() {
             {/* Timeline */}
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
               {historyData
-                .filter(h => !hideCloudy || !h.cloudy)
-                .map((item, index) => (
+                .filter((h: any) => !hideCloudy || !h.cloudy)
+                .map((item: any, index: number) => (
                   <button
                     key={index}
                     onClick={() => setSelectedDate(index)}
