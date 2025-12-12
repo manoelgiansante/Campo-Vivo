@@ -1,18 +1,18 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build:all",
+  "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist",
   "functions": {
-    "api-dist/**/*.js": {
+    "api/**/*.js": {
       "memory": 1024,
       "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api-dist/trpc" },
-    { "source": "/api/health", "destination": "/api-dist/health" },
-    { "source": "/api/db-test", "destination": "/api-dist/db-test" },
-    { "source": "/api/oauth/:path*", "destination": "/api-dist/oauth" },
+    { "source": "/api/trpc/:path*", "destination": "/api/trpc" },
+    { "source": "/api/health", "destination": "/api/health" },
+    { "source": "/api/db-test", "destination": "/api/db-test" },
+    { "source": "/api/oauth/:path*", "destination": "/api/oauth" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
