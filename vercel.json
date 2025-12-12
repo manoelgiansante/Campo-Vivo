@@ -1,18 +1,16 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build:vercel",
+  "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/**/*.js": {
+    "api/**/*.ts": {
       "memory": 1024,
       "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc" },
-    { "source": "/api/health", "destination": "/api/health" },
-    { "source": "/api/db-test", "destination": "/api/db-test" },
-    { "source": "/api/oauth/:path*", "destination": "/api/oauth" },
+    { "source": "/api/trpc/:path*", "destination": "/api/trpc/[trpc]" },
+    { "source": "/api/oauth/:path*", "destination": "/api/oauth/[...path]" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
