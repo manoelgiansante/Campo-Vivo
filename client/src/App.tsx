@@ -5,23 +5,19 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MobileLayout } from "./components/MobileLayout";
 
-// OneSoil-style pages
-import MapViewNew from "./pages/MapViewNew";
+// Pages
+import MapView from "./pages/MapView";
 import FieldsListNew from "./pages/FieldsListNew";
-import FieldDetailOneSoil from "./pages/FieldDetailOneSoil";
-import FieldDrawOneSoil from "./pages/FieldDrawOneSoil";
-import FieldDrawPro from "./pages/FieldDrawPro";
-import NotesOneSoil from "./pages/NotesOneSoil";
-import ProfileOneSoil from "./pages/ProfileOneSoil";
+import FieldDetailNew from "./pages/FieldDetailNew";
+import FieldDrawNew from "./pages/FieldDrawNew";
+import NotesNew from "./pages/NotesNew";
+import ProfileNew from "./pages/ProfileNew";
 import FarmsOneSoil from "./pages/FarmsOneSoil";
-import FarmDetailOneSoil from "./pages/FarmDetailOneSoil";
 import FieldShareOneSoil from "./pages/FieldShareOneSoil";
 
-// New Pro features pages
+// Pro features pages
 import WeatherCharts from "./pages/WeatherCharts";
 import SatelliteCompare from "./pages/SatelliteCompare";
-import PrescriptionMap from "./pages/PrescriptionMap";
-import FieldImport from "./pages/FieldImport";
 import PlansPage from "./pages/PlansPage";
 
 function Router() {
@@ -31,14 +27,14 @@ function Router() {
       <Route path="/">
         {() => (
           <MobileLayout fullScreen>
-            <MapViewNew />
+            <MapView />
           </MobileLayout>
         )}
       </Route>
       <Route path="/map">
         {() => (
           <MobileLayout fullScreen>
-            <MapViewNew />
+            <MapView />
           </MobileLayout>
         )}
       </Route>
@@ -54,21 +50,21 @@ function Router() {
       <Route path="/fields/new">
         {() => (
           <MobileLayout hideNav fullScreen>
-            <FieldDrawOneSoil />
+            <FieldDrawNew />
           </MobileLayout>
         )}
       </Route>
       <Route path="/fields/draw">
         {() => (
           <MobileLayout hideNav fullScreen>
-            <FieldDrawPro />
+            <FieldDrawNew />
           </MobileLayout>
         )}
       </Route>
       <Route path="/fields/:id">
         {() => (
           <MobileLayout>
-            <FieldDetailOneSoil />
+            <FieldDetailNew />
           </MobileLayout>
         )}
       </Route>
@@ -93,20 +89,6 @@ function Router() {
           </MobileLayout>
         )}
       </Route>
-      <Route path="/fields/:id/prescription">
-        {() => (
-          <MobileLayout>
-            <PrescriptionMap />
-          </MobileLayout>
-        )}
-      </Route>
-      <Route path="/fields/import">
-        {() => (
-          <MobileLayout>
-            <FieldImport />
-          </MobileLayout>
-        )}
-      </Route>
 
       {/* Farms */}
       <Route path="/farms">
@@ -116,19 +98,12 @@ function Router() {
           </MobileLayout>
         )}
       </Route>
-      <Route path="/farms/:id">
-        {() => (
-          <MobileLayout>
-            <FarmDetailOneSoil />
-          </MobileLayout>
-        )}
-      </Route>
 
       {/* Notes */}
       <Route path="/notes">
         {() => (
           <MobileLayout>
-            <NotesOneSoil />
+            <NotesNew />
           </MobileLayout>
         )}
       </Route>
@@ -137,7 +112,7 @@ function Router() {
       <Route path="/profile">
         {() => (
           <MobileLayout>
-            <ProfileOneSoil />
+            <ProfileNew />
           </MobileLayout>
         )}
       </Route>
