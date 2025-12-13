@@ -313,3 +313,54 @@ export const ndviHistory = pgTable("ndvi_history", {
 
 export type NdviHistory = typeof ndviHistory.$inferSelect;
 export type InsertNdviHistory = typeof ndviHistory.$inferInsert;
+
+// ==================== CHAT MESSAGES (Mensagens do Chat com Agrônomo IA) ====================
+export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant", "system"]);
+
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  fieldId: integer("field_id"),
+  role: chatRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+// ==================== PEST ALERTS (Alertas de Pragas) ====================
+export const pestRiskLevelEnum = pgEnum("pest_risk_level", ["low", "medium", "high", "critical"]);
+
+export const pestAlerts = pgTable("pest_alerts", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("field_id").notNull(),
+  userId: integer("user_id").notNull(),
+  pestType: varchar("pest_type", { length: 100 }).notNull(),
+  pestNamePt: varchar("pest_name_pt", { length: 100 }).notNull(),
+  riskLevel: pestRiskLevelEnum("risk_level").notNull(),
+  probability: integer("probability").notNull(),
+  predictedDate: timestamp("predicted_date").notNull(),
+  recommendations: text("recommendations"),
+  isRead: boolean("is_read").default(false),
+  isDismissed: boolean("is_dismissed").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PestAlert = typeof pestAlerts.$inferSelect;
+export type InsertPestAlert = typeof pestAlerts.$inferInsert;
+
+// ==================== PUSH SUBSCRIPTIONS (Web Push Subscriptions) ====================
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type InsertPushSubscription = typeof pushSubscriptions.$inferInsert;
