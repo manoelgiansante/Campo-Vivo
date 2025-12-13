@@ -179,19 +179,31 @@ export default function FieldsList() {
 }
 
 function FieldCard({ field, onClick }: { field: any; onClick: () => void }) {
-  // Generate a simple NDVI value for display (in real app, this would come from satellite data)
-  const ndviValue = field.ndviValue || 0.74;
-  const ndviPercent = Math.min(100, Math.max(0, ndviValue * 100));
+  // Use real NDVI value from database if available
+  const ndviValue = field.currentNdvi 
+    ? field.currentNdvi / 100  // Convert from stored format (0-100) to display format (0-1)
+    : null;
+  const ndviPercent = ndviValue ? Math.min(100, Math.max(0, ndviValue * 100)) : 50;
+
+  // Get NDVI color based on value
+  const getNdviColor = (value: number): string => {
+    if (value < 0.2) return "#ef4444";
+    if (value < 0.4) return "#f59e0b";
+    if (value < 0.5) return "#eab308";
+    if (value < 0.6) return "#84cc16";
+    if (value < 0.7) return "#22c55e";
+    return "#16a34a";
+  };
 
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+      className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors shadow-sm"
     >
       {/* Field Thumbnail */}
       <div className="h-14 w-14 rounded-lg bg-gray-200 flex items-center justify-center overflow-hidden shrink-0">
         {field.boundaries ? (
-          <FieldThumbnail boundaries={field.boundaries} />
+          <FieldThumbnail boundaries={field.boundaries} ndviValue={ndviValue} />
         ) : (
           <Leaf className="h-6 w-6 text-green-600" />
         )}
@@ -207,30 +219,23 @@ function FieldCard({ field, onClick }: { field: any; onClick: () => void }) {
 
       {/* NDVI Indicator */}
       <div className="flex items-center gap-2 shrink-0">
-        <div className="w-16 h-2 rounded-full overflow-hidden bg-gray-200">
-          <div 
-            className="h-full rounded-full"
-            style={{
-              width: `${ndviPercent}%`,
-              background: `linear-gradient(to right, #EF4444, #EAB308 50%, #22C55E)`,
-            }}
-          />
-          <div 
-            className="relative -mt-2"
-            style={{ marginLeft: `${ndviPercent}%`, transform: 'translateX(-50%)' }}
-          >
-            <div className="w-0.5 h-3 bg-gray-800" />
-          </div>
+        <div className="w-16 h-2 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 relative">
+          {ndviValue !== null && (
+            <div 
+              className="absolute top-0 w-1 h-full bg-gray-800 rounded-full"
+              style={{ left: `${ndviPercent}%`, transform: 'translateX(-50%)' }}
+            />
+          )}
         </div>
         <span className="text-sm font-medium text-gray-700 w-10 text-right">
-          {ndviValue.toFixed(2).replace('.', ',')}
+          {ndviValue !== null ? ndviValue.toFixed(2).replace('.', ',') : '--'}
         </span>
       </div>
     </button>
   );
 }
 
-function FieldThumbnail({ boundaries }: { boundaries: any }) {
+function FieldThumbnail({ boundaries, ndviValue }: { boundaries: any; ndviValue: number | null }) {
   // Simple SVG representation of field shape
   try {
     const coords = typeof boundaries === 'string' ? JSON.parse(boundaries) : boundaries;
@@ -256,13 +261,27 @@ function FieldThumbnail({ boundaries }: { boundaries: any }) {
       return `${x},${y}`;
     }).join(' ');
 
+    // Get color based on NDVI value
+    const getNdviColor = (value: number | null): string => {
+      if (value === null) return "#94a3b8"; // Gray if no NDVI
+      if (value < 0.2) return "#ef4444";
+      if (value < 0.4) return "#f59e0b";
+      if (value < 0.5) return "#eab308";
+      if (value < 0.6) return "#84cc16";
+      if (value < 0.7) return "#22c55e";
+      return "#16a34a";
+    };
+
+    const fillColor = getNdviColor(ndviValue);
+    const strokeColor = ndviValue !== null ? "#ffffff" : "#64748b";
+
     return (
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
         <polygon
           points={points}
-          fill="#22C55E"
-          stroke="#166534"
-          strokeWidth="1"
+          fill={fillColor}
+          stroke={strokeColor}
+          strokeWidth="1.5"
         />
       </svg>
     );
