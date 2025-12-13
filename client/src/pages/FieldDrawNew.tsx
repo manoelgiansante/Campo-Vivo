@@ -179,10 +179,8 @@ export default function FieldDrawNew() {
       }
       
       setSuggestedFields(fields);
-      // Pré-selecionar todos os campos quando em modo select
-      if (modeRef.current === "select") {
-        setSelectedFieldIds(new Set(fields.map(f => f.id)));
-      }
+      // NÃO pré-selecionar mais - deixar usuário escolher manualmente
+      // Os campos começam não selecionados (cinza)
       setIsLoadingFields(false);
     }, 1000);
   }, []);
@@ -256,22 +254,30 @@ export default function FieldDrawNew() {
 
       // Label marker
       const el = document.createElement("div");
+      el.style.cssText = "touch-action: manipulation; -webkit-tap-highlight-color: transparent;";
       el.innerHTML = `
         <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-lg cursor-pointer transition-all ${
           isSelected 
             ? 'bg-green-500 text-white' 
             : 'bg-white/90 text-gray-800 hover:bg-white'
-        }">
+        }" style="touch-action: manipulation;">
           ${isSelected ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<span class="text-sm">+</span>'}
           <span class="font-medium text-sm">${field.area} ha</span>
         </div>
       `;
-      el.onclick = (e) => {
+      
+      // Handler para touch e click
+      const handleSelect = (e: Event) => {
+        e.preventDefault();
         e.stopPropagation();
+        console.log("[FieldDrawNew] Campo clicado:", field.id, "modo:", modeRef.current);
         if (modeRef.current === "select") {
           toggleFieldSelection(field.id);
         }
       };
+      
+      el.addEventListener("click", handleSelect);
+      el.addEventListener("touchend", handleSelect);
 
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(field.center)
@@ -402,15 +408,14 @@ export default function FieldDrawNew() {
   // Limpar quando mudar de modo
   useEffect(() => {
     if (mode === "draw") {
-      // Limpar seleção de campos sugeridos
+      // Ao entrar no modo draw, limpar seleção de campos sugeridos
       setSelectedFieldIds(new Set());
     } else if (mode === "select") {
-      // Limpar pontos desenhados
+      // Ao entrar no modo select, limpar pontos desenhados
+      // MAS não pré-selecionar campos - deixar usuário escolher
       setPoints([]);
-      // Pré-selecionar todos os campos
-      setSelectedFieldIds(new Set(suggestedFields.map(f => f.id)));
     }
-  }, [mode, suggestedFields]);
+  }, [mode]);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
