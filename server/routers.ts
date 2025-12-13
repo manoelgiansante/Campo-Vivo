@@ -248,6 +248,32 @@ export const appRouter = router({
         await db.deleteField(input.id);
         return { success: true };
       }),
+    // Detectar campos em uma área (usando OneSoil/OSM)
+    detectInArea: protectedProcedure
+      .input(z.object({
+        centerLng: z.number(),
+        centerLat: z.number(),
+        radiusKm: z.number().optional().default(5),
+      }))
+      .query(async ({ input }) => {
+        const { detectFieldsInArea } = await import("./services/fieldDetection");
+        const fields = await detectFieldsInArea(
+          [input.centerLng, input.centerLat],
+          input.radiusKm
+        );
+        return fields;
+      }),
+    // Detectar campo em um ponto específico (clique no mapa)
+    detectAtPoint: protectedProcedure
+      .input(z.object({
+        lng: z.number(),
+        lat: z.number(),
+      }))
+      .query(async ({ input }) => {
+        const { detectFieldAtPoint } = await import("./services/fieldDetection");
+        const field = await detectFieldAtPoint([input.lng, input.lat]);
+        return field;
+      }),
   }),
 
   // ==================== CROPS ====================

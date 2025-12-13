@@ -13,13 +13,19 @@ import {
   X, 
   Navigation,
   Undo2,
-  MapPin
+  MapPin,
+  MousePointer,
+  PenTool,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
+
+type DrawMode = "select" | "draw";
 
 // Obter posição salva do mapa ou usar padrão
 const getSavedMapPosition = (): { center: [number, number]; zoom: number } | null => {
@@ -46,8 +52,20 @@ const getSavedMapPosition = (): { center: [number, number]; zoom: number } | nul
   return null;
 };
 
+interface DetectedField {
+  id: string;
+  name?: string;
+  coordinates: [number, number][];
+  center: [number, number];
+  areaHectares: number;
+  source: 'onesoil' | 'osm' | 'car';
+  crop?: string;
+  ndvi?: number;
+}
+
 export default function FieldDrawNew() {
   const [, setLocation] = useLocation();
+  const [mode, setMode] = useState<DrawMode>("draw");
   const [points, setPoints] = useState<[number, number][]>([]);
   const [area, setArea] = useState<number>(0);
   const [showNameDialog, setShowNameDialog] = useState(false);
@@ -56,6 +74,11 @@ export default function FieldDrawNew() {
   const { setMap, getUserLocation } = useMapbox();
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Detection state
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectedFields, setDetectedFields] = useState<DetectedField[]>([]);
+  const [selectedDetectedField, setSelectedDetectedField] = useState<DetectedField | null>(null);
 
   const createField = trpc.fields.create.useMutation({
     onMutate: () => {
@@ -72,7 +95,7 @@ export default function FieldDrawNew() {
       setShowNameDialog(false);
       setFieldName("");
       setPoints([]);
-      // Redirecionar para o detalhe do campo criado
+      setSelectedDetectedField(null);
       setTimeout(() => {
         setLocation(`/fields/${data.id}`);
       }, 1000);
@@ -111,22 +134,21 @@ export default function FieldDrawNew() {
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
-    // Remove existing polygon/line
-    if (mapInstance.getLayer("draw-polygon")) {
-      mapInstance.removeLayer("draw-polygon");
-    }
-    if (mapInstance.getLayer("draw-line")) {
-      mapInstance.removeLayer("draw-line");
-    }
-    if (mapInstance.getSource("draw-polygon")) {
-      mapInstance.removeSource("draw-polygon");
-    }
-    if (mapInstance.getSource("draw-line")) {
-      mapInstance.removeSource("draw-line");
-    }
+    // Remove existing layers
+    ["draw-polygon", "draw-line", "detected-fields-fill", "detected-fields-outline", "selected-field-fill", "selected-field-outline"].forEach(layerId => {
+      if (mapInstance.getLayer(layerId)) {
+        mapInstance.removeLayer(layerId);
+      }
+    });
+    ["draw-polygon", "draw-line", "detected-fields", "selected-field"].forEach(sourceId => {
+      if (mapInstance.getSource(sourceId)) {
+        mapInstance.removeSource(sourceId);
+      }
+    });
 
-    if (points.length > 0) {
-      // Add markers for each point - pontos brancos com borda verde
+    // Draw mode - show points and polygon being drawn
+    if (mode === "draw" && points.length > 0) {
+      // Add markers for each point
       points.forEach((point, index) => {
         const el = document.createElement("div");
         el.className = "w-4 h-4 bg-white rounded-full border-[3px] border-green-500 shadow-lg cursor-move";
@@ -151,11 +173,11 @@ export default function FieldDrawNew() {
         markersRef.current.push(marker);
       });
 
-      // Desenhar linha se tiver 2+ pontos
+      // Draw line between points
       if (points.length >= 2) {
         const lineCoords = points.length >= 3 
-          ? [...points, points[0]]  // Fecha o polígono
-          : points;  // Apenas linha entre pontos
+          ? [...points, points[0]]
+          : points;
 
         mapInstance.addSource("draw-line", {
           type: "geojson",
@@ -180,7 +202,7 @@ export default function FieldDrawNew() {
         });
       }
 
-      // Draw polygon fill if we have at least 3 points
+      // Draw polygon fill
       if (points.length >= 3) {
         const closedPoints = [...points, points[0]];
         
@@ -207,19 +229,116 @@ export default function FieldDrawNew() {
         });
       }
     }
-  }, [points, mapInstance]);
+
+    // Select mode - show detected fields
+    if (mode === "select" && detectedFields.length > 0) {
+      const features = detectedFields.map(field => ({
+        type: "Feature" as const,
+        properties: { id: field.id, area: field.areaHectares },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[...field.coordinates, field.coordinates[0]]],
+        },
+      }));
+
+      mapInstance.addSource("detected-fields", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features,
+        },
+      });
+
+      mapInstance.addLayer({
+        id: "detected-fields-fill",
+        type: "fill",
+        source: "detected-fields",
+        paint: {
+          "fill-color": "#94a3b8",
+          "fill-opacity": 0.4,
+        },
+      });
+
+      mapInstance.addLayer({
+        id: "detected-fields-outline",
+        type: "line",
+        source: "detected-fields",
+        paint: {
+          "line-color": "#64748b",
+          "line-width": 2,
+        },
+      });
+    }
+
+    // Show selected detected field
+    if (selectedDetectedField) {
+      mapInstance.addSource("selected-field", {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [[...selectedDetectedField.coordinates, selectedDetectedField.coordinates[0]]],
+          },
+        },
+      });
+
+      mapInstance.addLayer({
+        id: "selected-field-fill",
+        type: "fill",
+        source: "selected-field",
+        paint: {
+          "fill-color": "#22c55e",
+          "fill-opacity": 0.5,
+        },
+      });
+
+      mapInstance.addLayer({
+        id: "selected-field-outline",
+        type: "line",
+        source: "selected-field",
+        paint: {
+          "line-color": "#16a34a",
+          "line-width": 3,
+        },
+      });
+    }
+  }, [points, mapInstance, mode, detectedFields, selectedDetectedField]);
+
+  // Detect fields in area
+  const handleDetectFields = useCallback(async (center: [number, number]) => {
+    setIsDetecting(true);
+    try {
+      const response = await fetch(`/api/trpc/fields.detectInArea?input=${encodeURIComponent(JSON.stringify({
+        centerLng: center[0],
+        centerLat: center[1],
+        radiusKm: 2,
+      }))}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.result?.data) {
+          setDetectedFields(data.result.data);
+        }
+      }
+    } catch (error) {
+      console.error("Error detecting fields:", error);
+    } finally {
+      setIsDetecting(false);
+    }
+  }, []);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
     setMapInstance(map);
 
-    // Tentar usar posição salva primeiro
+    // Set initial position
     const savedPos = getSavedMapPosition();
     if (savedPos && savedPos.center && !isNaN(savedPos.center[0]) && !isNaN(savedPos.center[1])) {
       map.setCenter(savedPos.center);
       map.setZoom(Math.max(savedPos.zoom, 15));
     } else {
-      // Tentar geolocalização
       getUserLocation()
         .then(([lng, lat]) => {
           if (!isNaN(lng) && !isNaN(lat)) {
@@ -236,7 +355,7 @@ export default function FieldDrawNew() {
         });
     }
 
-    // Click listener para desenhar
+    // Click handler for drawing
     map.on("click", (e: mapboxgl.MapMouseEvent) => {
       const newPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       setPoints(prev => [...prev, newPoint]);
@@ -250,6 +369,8 @@ export default function FieldDrawNew() {
 
   const handleClear = () => {
     setPoints([]);
+    setSelectedDetectedField(null);
+    setArea(0);
   };
 
   const handleFinish = () => {
