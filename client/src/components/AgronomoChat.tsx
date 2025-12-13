@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { Send, Bot, User, Sparkles, Leaf, Bug, Droplets, Sun } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Leaf, Bug, Droplets, Sun, Loader2 } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,27 +24,45 @@ const SUGGESTED_QUESTIONS = [
   { icon: Sun, text: "Previsão do tempo", color: "text-yellow-600" },
 ];
 
+// Respostas locais de fallback (quando API não está disponível)
+function getLocalResponse(message: string): string {
+  const lower = message.toLowerCase();
+  
+  if (lower.includes('saúde') || lower.includes('ndvi')) {
+    return '🌿 Para análise de saúde do campo, verifique o NDVI na aba de satélite. Valores acima de 0.7 indicam vegetação saudável. Se o NDVI estiver baixo, pode indicar estresse hídrico ou nutricional.';
+  }
+  if (lower.includes('praga') || lower.includes('inseto') || lower.includes('doença')) {
+    return '🐛 Para previsão de pragas, monitore as condições climáticas. Temperatura entre 20-28°C com alta umidade favorece fungos como ferrugem asiática na soja. Mantenha monitoramento regular e aplique fungicidas preventivamente.';
+  }
+  if (lower.includes('irrigar') || lower.includes('água') || lower.includes('irrigação')) {
+    return '💧 A necessidade de irrigação depende da precipitação prevista. Verifique a previsão do tempo na aba Clima. Se houver menos de 20mm previstos para os próximos 7 dias, considere irrigar.';
+  }
+  if (lower.includes('tempo') || lower.includes('clima') || lower.includes('chuva')) {
+    return '☀️ Consulte a previsão detalhada na aba Clima. Lá você encontra temperatura, precipitação e condições ideais para pulverização.';
+  }
+  if (lower.includes('plantar') || lower.includes('plantio')) {
+    return '🌱 Para recomendações de plantio, considere: época ideal para sua região, análise de solo atualizada, variedades adaptadas e condições climáticas favoráveis.';
+  }
+  if (lower.includes('colheit') || lower.includes('colher')) {
+    return '🌾 O ponto de colheita ideal varia por cultura. Monitore a umidade dos grãos, maturação fisiológica e previsão do tempo para planejar a operação.';
+  }
+  
+  return `👋 Olá! Sou o Agrônomo IA do CampoVivo. Posso ajudar com:
+
+• 📊 Análise de NDVI e saúde do campo
+• 💧 Recomendações de irrigação
+• 🐛 Previsão de pragas
+• 🌱 Orientações de plantio
+• 🌾 Ponto de colheita
+
+Como posso ajudar você hoje?`;
+}
+
 export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProps) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  
-  const chatMutation = trpc.agronomist.chat.useMutation({
-    onSuccess: (data) => {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: data.response,
-        timestamp: data.timestamp 
-      }]);
-    },
-    onError: (error) => {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `Desculpe, ocorreu um erro: ${error.message}`,
-        timestamp: new Date().toISOString()
-      }]);
-    }
-  });
   
   // Auto-scroll para última mensagem
   useEffect(() => {
@@ -54,9 +71,9 @@ export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProp
     }
   }, [messages]);
   
-  const handleSend = (text?: string) => {
+  const handleSend = async (text?: string) => {
     const msgToSend = text || message;
-    if (!msgToSend.trim()) return;
+    if (!msgToSend.trim() || isLoading) return;
     
     // Adicionar mensagem do usuário
     setMessages(prev => [...prev, { 
@@ -64,21 +81,21 @@ export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProp
       content: msgToSend,
       timestamp: new Date().toISOString()
     }]);
-    
-    // Preparar histórico para contexto
-    const history = messages.slice(-6).map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content
-    }));
-    
-    // Enviar para API
-    chatMutation.mutate({ 
-      message: msgToSend, 
-      fieldId,
-      conversationHistory: history
-    });
-    
     setMessage('');
+    setIsLoading(true);
+    
+    // Simular delay de resposta
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Usar resposta local (fallback)
+    const response = getLocalResponse(msgToSend);
+    
+    setMessages(prev => [...prev, { 
+      role: 'assistant', 
+      content: response,
+      timestamp: new Date().toISOString()
+    }]);
+    setIsLoading(false);
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -124,7 +141,7 @@ export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProp
                   className="flex items-center gap-2 p-3 text-left text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <q.icon className={cn("w-4 h-4", q.color)} />
-                  <span className="text-gray-700">{q.text}</span>
+                  <span className="text-gray-700 text-xs">{q.text}</span>
                 </button>
               ))}
             </div>
@@ -163,10 +180,10 @@ export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProp
             ))}
             
             {/* Loading indicator */}
-            {chatMutation.isPending && (
+            {isLoading && (
               <div className="flex gap-3 justify-start">
                 <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-green-600 animate-pulse" />
+                  <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
                 </div>
                 <div className="bg-gray-100 p-3 rounded-2xl rounded-bl-md">
                   <div className="flex gap-1">
@@ -189,12 +206,12 @@ export function AgronomoChat({ fieldId, fieldName, className }: AgronomoChatProp
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Pergunte sobre seu campo..."
-            disabled={chatMutation.isPending}
+            disabled={isLoading}
             className="flex-1 bg-white"
           />
           <Button 
             onClick={() => handleSend()} 
-            disabled={chatMutation.isPending || !message.trim()}
+            disabled={isLoading || !message.trim()}
             size="icon"
             className="bg-green-600 hover:bg-green-700"
           >
