@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback } from "react";
 import { Drawer } from "vaul";
 import { MapboxMap } from "@/components/MapboxMap";
 import { NDVIChart, NDVISparkline } from "@/components/NDVIChart";
+import { AgronomoChat } from "@/components/AgronomoChat";
+import { FieldHealthCard } from "@/components/FieldHealthCard";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -721,6 +723,23 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                     </div>
                   </div>
 
+                  {/* Health Score & Pest Alerts */}
+                  <div className="px-4 mb-6">
+                    <FieldHealthCard 
+                      ndvi={currentNdvi}
+                      ndviTrend={
+                        filteredHistory.length >= 2 && filteredHistory[0]?.delta
+                          ? filteredHistory[0].delta > 0 ? "up" : filteredHistory[0].delta < 0 ? "down" : "stable"
+                          : undefined
+                      }
+                      weather={{
+                        temperature: 26,
+                        humidity: 65,
+                        precipitation: 5
+                      }}
+                    />
+                  </div>
+
                   {/* Crop Section */}
                   <div className="px-4 mb-6">
                     <div className="bg-gray-50 rounded-2xl p-4">
@@ -817,6 +836,14 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                         Adicionar anotação
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Agrônomo Virtual */}
+                  <div className="px-4 mb-6">
+                    <AgronomoChat 
+                      fieldId={fieldId || undefined} 
+                      fieldName={field?.name || ""}
+                    />
                   </div>
 
                   {/* Quick Actions */}
