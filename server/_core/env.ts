@@ -14,4 +14,6 @@ export const ENV = {
   sentinelHubClientSecret: process.env.SENTINEL_HUB_CLIENT_SECRET ?? "",
   // Agromonitoring API for NDVI (free tier available)
   agromonitoringApiKey: process.env.AGROMONITORING_API_KEY ?? "",
+  // Groq API for AI Agronomist (free tier available)
+  groqApiKey: process.env.GROQ_API_KEY ?? "",
 };

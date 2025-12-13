@@ -8,6 +8,7 @@ import { TRPCError } from "@trpc/server";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
 import * as agromonitoring from "./services/agromonitoring";
+import { pestsRouter, healthRouter, agronomistRouter } from "./services/advancedRoutes";
 
 // Helper function to generate mock weather forecast
 function generateMockForecast() {
@@ -1878,6 +1879,11 @@ export const appRouter = router({
         };
       }),
   }),
+
+  // ==================== ADVANCED ROUTES (CampoVivo 2.0) ====================
+  pests: pestsRouter,
+  health: healthRouter,
+  agronomist: agronomistRouter,
 });
 
 // Helper function to generate PDF HTML for field report
