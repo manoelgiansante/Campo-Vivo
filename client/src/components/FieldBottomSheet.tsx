@@ -102,6 +102,12 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     { enabled: !!fieldId && open }
   );
 
+  // Fetch weather data for field
+  const { data: weatherData } = (trpc.ndvi as any).getFieldWeather.useQuery(
+    { fieldId: fieldId! },
+    { enabled: !!fieldId && open }
+  );
+
   // Fetch NDVI history from database
   const { data: ndviHistoryReal, isLoading: loadingNdvi, refetch: refetchNdvi } = (trpc.ndvi as any).getByField.useQuery(
     { fieldId: fieldId!, limit: 30 },
@@ -525,6 +531,51 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                       </button>
                     </div>
                   </div>
+
+                  {/* Weather Section - OneSoil Style */}
+                  {weatherData?.current && (
+                    <div className="px-4 mb-4">
+                      <div className="bg-gradient-to-r from-blue-50 to-sky-50 rounded-2xl p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white/80 rounded-xl shadow-sm">
+                              {weatherData.current.cloudCover > 70 ? (
+                                <Cloud className="h-6 w-6 text-gray-500" />
+                              ) : weatherData.current.precipitation > 0 ? (
+                                <Droplets className="h-6 w-6 text-blue-500" />
+                              ) : (
+                                <Sun className="h-6 w-6 text-yellow-500" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-3xl font-bold text-gray-900">
+                                {Math.round(weatherData.current.temperature)}°
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {weatherData.current.description || 'Parcialmente nublado'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right text-sm text-gray-600 space-y-0.5">
+                            <div>💨 {weatherData.current.windSpeed} m/s</div>
+                            <div>💧 {weatherData.current.humidity}%</div>
+                            <div>☁️ {weatherData.current.cloudCover}%</div>
+                            <div>📊 {weatherData.current.pressure} mm</div>
+                          </div>
+                        </div>
+                        {weatherData.forecast?.[1] && (
+                          <div className="mt-3 pt-3 border-t border-blue-100 flex items-center justify-between">
+                            <span className="text-sm text-gray-600">
+                              Amanhã: {Math.round(weatherData.forecast[1].tempMin)}° - {Math.round(weatherData.forecast[1].tempMax)}°
+                            </span>
+                            <span className="text-sm text-blue-600">
+                              {weatherData.forecast[1].precipitationProbability}% chance de chuva
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* History Section */}
                   <div className="px-4 mb-6">
