@@ -31,60 +31,6 @@ function generateMockForecast() {
   return forecast;
 }
 
-// Helper function to generate mock satellite images
-function generateMockSatelliteImages(days: number) {
-  const images = [];
-  const today = new Date();
-  // Gerar uma imagem a cada ~5 dias
-  for (let i = 0; i < Math.floor(days / 5); i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i * 5);
-    images.push({
-      date,
-      cloudCoverage: Math.floor(Math.random() * 40),
-      dataCoverage: 85 + Math.floor(Math.random() * 15),
-      ndviUrl: null, // URL seria da API real
-      trueColorUrl: null,
-      statsUrl: null,
-    });
-  }
-  return images;
-}
-
-// Helper function to generate mock weather
-function generateMockWeather() {
-  const weatherCodes: Record<number, string> = {
-    0: 'Céu limpo',
-    1: 'Predominantemente limpo',
-    2: 'Parcialmente nublado',
-    3: 'Nublado',
-    45: 'Neblina',
-    61: 'Chuva leve',
-    63: 'Chuva moderada',
-    80: 'Pancadas de chuva',
-  };
-  
-  const code = [0, 1, 2, 3, 61][Math.floor(Math.random() * 5)];
-  
-  return {
-    current: {
-      temperature: 22 + Math.floor(Math.random() * 12),
-      humidity: 60 + Math.floor(Math.random() * 30),
-      precipitation: code > 60 ? Math.floor(Math.random() * 10) : 0,
-      weatherCode: code,
-      windSpeed: 3 + Math.floor(Math.random() * 12),
-      pressure: 755 + Math.floor(Math.random() * 20),
-      cloudCover: code === 0 ? 10 : code === 3 ? 90 : 50 + Math.floor(Math.random() * 30),
-      description: weatherCodes[code] || 'Parcialmente nublado',
-    },
-    forecast: [
-      { date: new Date().toISOString().split('T')[0], tempMax: 30, tempMin: 20, precipitationProbability: 20 },
-      { date: new Date(Date.now() + 86400000).toISOString().split('T')[0], tempMax: 28, tempMin: 19, precipitationProbability: 40 },
-      { date: new Date(Date.now() + 172800000).toISOString().split('T')[0], tempMax: 26, tempMin: 18, precipitationProbability: 60 },
-    ],
-  };
-}
-
 export const appRouter = router({
   system: systemRouter,
 
@@ -519,6 +465,95 @@ export const appRouter = router({
 
   // ==================== WEATHER ====================
   weather: router({
+    // Get current weather using Open-Meteo (FREE API)
+    getCurrent: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        // Get field center coordinates from boundaries
+        let lat = -23.5505;
+        let lon = -46.6333;
+        
+        if (field.boundaries) {
+          try {
+            const coords = typeof field.boundaries === 'string' 
+              ? JSON.parse(field.boundaries) 
+              : field.boundaries;
+            if (Array.isArray(coords) && coords.length > 0) {
+              const sumLat = coords.reduce((sum: number, c: any) => sum + (c.lat || c[1] || 0), 0);
+              const sumLon = coords.reduce((sum: number, c: any) => sum + (c.lng || c.lon || c[0] || 0), 0);
+              lat = sumLat / coords.length;
+              lon = sumLon / coords.length;
+            }
+          } catch (e) {
+            console.error("Error parsing boundaries:", e);
+          }
+        }
+        
+        try {
+          // Open-Meteo API is FREE and doesn't require API key
+          const response = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,cloud_cover&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=America/Sao_Paulo&forecast_days=7`
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Open-Meteo API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          // Weather code to description
+          const getWeatherDescription = (code: number): { text: string, icon: string } => {
+            if (code === 0) return { text: 'Céu limpo', icon: 'sun' };
+            if (code <= 3) return { text: 'Parcialmente nublado', icon: 'cloud-sun' };
+            if (code <= 49) return { text: 'Nublado', icon: 'cloud' };
+            if (code <= 69) return { text: 'Chuva', icon: 'cloud-rain' };
+            if (code <= 79) return { text: 'Neve', icon: 'snowflake' };
+            if (code <= 99) return { text: 'Tempestade', icon: 'cloud-lightning' };
+            return { text: 'Variável', icon: 'cloud' };
+          };
+          
+          const currentWeather = getWeatherDescription(data.current.weather_code);
+          
+          return {
+            current: {
+              temp: Math.round(data.current.temperature_2m),
+              humidity: data.current.relative_humidity_2m,
+              windSpeed: Math.round(data.current.wind_speed_10m),
+              precipitation: data.current.precipitation,
+              cloudCover: data.current.cloud_cover,
+              description: currentWeather.text,
+              icon: currentWeather.icon,
+            },
+            daily: data.daily.time.slice(0, 7).map((date: string, i: number) => ({
+              date,
+              tempMax: Math.round(data.daily.temperature_2m_max[i]),
+              tempMin: Math.round(data.daily.temperature_2m_min[i]),
+              precipitation: data.daily.precipitation_sum[i],
+              ...getWeatherDescription(data.daily.weather_code[i]),
+            })),
+          };
+        } catch (error) {
+          console.error("Weather API error:", error);
+          // Return mock data on error
+          return {
+            current: {
+              temp: 25,
+              humidity: 65,
+              windSpeed: 12,
+              precipitation: 0,
+              cloudCover: 30,
+              description: 'Parcialmente nublado',
+              icon: 'cloud-sun',
+            },
+            daily: [],
+          };
+        }
+      }),
     getByField: protectedProcedure
       .input(z.object({ fieldId: z.number(), days: z.number().optional() }))
       .query(async ({ ctx, input }) => {
@@ -960,7 +995,7 @@ export const appRouter = router({
         const result = await forceSyncNow();
         return result;
       }),
-    // Buscar imagens de satélite com NDVI para um campo
+    // Buscar imagens de satélite com URLs das tiles NDVI
     getSatelliteImages: protectedProcedure
       .input(z.object({ 
         fieldId: z.number(),
@@ -973,14 +1008,12 @@ export const appRouter = router({
         }
         
         if (!field.agroPolygonId || !ENV.agromonitoringApiKey) {
-          // Retornar dados mock se não tiver configurado
-          return generateMockSatelliteImages(input.days);
+          return { images: [], configured: false };
         }
         
         try {
           const endDate = new Date();
-          const startDate = new Date();
-          startDate.setDate(startDate.getDate() - input.days);
+          const startDate = new Date(endDate.getTime() - input.days * 24 * 60 * 60 * 1000);
           
           const images = await agromonitoring.searchSatelliteImages(
             field.agroPolygonId,
@@ -988,21 +1021,26 @@ export const appRouter = router({
             endDate
           );
           
-          return images.map(img => ({
-            date: new Date(img.dt * 1000),
-            cloudCoverage: img.cl,
-            dataCoverage: img.dc,
-            ndviUrl: img.image?.ndvi || img.tile?.ndvi || null,
-            trueColorUrl: img.image?.truecolor || img.tile?.truecolor || null,
-            statsUrl: img.stats?.ndvi || null,
-          }));
+          return {
+            images: images.map(img => ({
+              date: new Date(img.dt * 1000),
+              cloudCoverage: img.cl,
+              dataCoverage: img.dc,
+              ndviTileUrl: img.tile?.ndvi || null,
+              ndviImageUrl: img.image?.ndvi || null,
+              truecolorTileUrl: img.tile?.truecolor || null,
+              truecolorImageUrl: img.image?.truecolor || null,
+              ndviStatsUrl: img.stats?.ndvi || null,
+            })),
+            configured: true
+          };
         } catch (error) {
-          console.error("Erro ao buscar imagens de satélite:", error);
-          return generateMockSatelliteImages(input.days);
+          console.error("Erro ao buscar imagens:", error);
+          return { images: [], configured: true, error: "Erro ao buscar imagens" };
         }
       }),
-    // Buscar clima para um campo
-    getFieldWeather: protectedProcedure
+    // Buscar a imagem NDVI mais recente para exibir no mapa (OneSoil style)
+    getLatestNdviImage: protectedProcedure
       .input(z.object({ fieldId: z.number() }))
       .query(async ({ ctx, input }) => {
         const field = await db.getFieldById(input.fieldId);
@@ -1010,41 +1048,120 @@ export const appRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
         }
         
-        const lat = parseFloat(field.latitude ?? "-20.47");
-        const lon = parseFloat(field.longitude ?? "-54.6");
-        
-        // Tentar buscar clima real via Open-Meteo (gratuito)
-        try {
-          const response = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,surface_pressure,cloud_cover&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Sao_Paulo&forecast_days=3`
-          );
-          
-          if (response.ok) {
-            const data = await response.json();
-            return {
-              current: {
-                temperature: data.current.temperature_2m,
-                humidity: data.current.relative_humidity_2m,
-                precipitation: data.current.precipitation,
-                weatherCode: data.current.weather_code,
-                windSpeed: data.current.wind_speed_10m,
-                pressure: Math.round(data.current.surface_pressure * 0.75006), // hPa to mmHg
-                cloudCover: data.current.cloud_cover,
-              },
-              forecast: data.daily.time.map((date: string, i: number) => ({
-                date,
-                tempMax: data.daily.temperature_2m_max[i],
-                tempMin: data.daily.temperature_2m_min[i],
-                precipitationProbability: data.daily.precipitation_probability_max[i],
-              })),
-            };
-          }
-        } catch (error) {
-          console.error("Erro ao buscar clima:", error);
+        if (!field.agroPolygonId || !ENV.agromonitoringApiKey) {
+          return { 
+            configured: false, 
+            imageUrl: null, 
+            tileUrl: null,
+            message: "Agromonitoring não configurado"
+          };
         }
         
-        // Fallback para dados mock
-        return generateMockWeather();
+        try {
+          const endDate = new Date();
+          const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+          
+          const images = await agromonitoring.searchSatelliteImages(
+            field.agroPolygonId,
+            startDate,
+            endDate
+          );
+          
+          // Pegar a imagem mais recente com menor cobertura de nuvem
+          const sortedImages = images
+            .filter(img => img.cl < 30) // Menos de 30% nuvens
+            .sort((a, b) => b.dt - a.dt); // Mais recente primeiro
+          
+          if (sortedImages.length === 0) {
+            return {
+              configured: true,
+              imageUrl: null,
+              tileUrl: null,
+              message: "Nenhuma imagem disponível com baixa cobertura de nuvens"
+            };
+          }
+          
+          const latestImage = sortedImages[0];
+          return {
+            configured: true,
+            imageUrl: latestImage.image?.ndvi || null,
+            tileUrl: latestImage.tile?.ndvi || null,
+            truecolorUrl: latestImage.image?.truecolor || null,
+            date: new Date(latestImage.dt * 1000),
+            cloudCoverage: latestImage.cl,
+            dataCoverage: latestImage.dc,
+          };
+        } catch (error) {
+          console.error("Erro ao buscar imagem NDVI:", error);
+          return { 
+            configured: true, 
+            imageUrl: null, 
+            tileUrl: null,
+            error: "Erro ao buscar imagem" 
+          };
+        }
+      }),
+    // Histórico para timeline com thumbnails
+    history: protectedProcedure
+      .input(z.object({ 
+        fieldId: z.number(),
+        days: z.number().optional().default(60)
+      }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        // Buscar do banco local
+        const history = await db.getNdviHistoryByFieldId(input.fieldId, input.days);
+        
+        // Se tem Agromonitoring configurado, enriquecer com URLs de imagem
+        if (field.agroPolygonId && ENV.agromonitoringApiKey) {
+          try {
+            const endDate = new Date();
+            const startDate = new Date(endDate.getTime() - input.days * 24 * 60 * 60 * 1000);
+            
+            const images = await agromonitoring.searchSatelliteImages(
+              field.agroPolygonId,
+              startDate,
+              endDate
+            );
+            
+            // Mapear imagens por data
+            const imagesByDate = new Map<string, typeof images[0]>();
+            images.forEach(img => {
+              const dateKey = new Date(img.dt * 1000).toISOString().split('T')[0];
+              imagesByDate.set(dateKey, img);
+            });
+            
+            return history.map(h => {
+              const dateKey = h.acquisitionDate?.toISOString().split('T')[0] || '';
+              const img = imagesByDate.get(dateKey);
+              return {
+                date: h.acquisitionDate,
+                ndvi: h.ndviValue / 100,
+                min: h.ndviMin ? h.ndviMin / 100 : null,
+                max: h.ndviMax ? h.ndviMax / 100 : null,
+                cloudCoverage: h.cloudCoverage,
+                thumbnailUrl: img?.image?.ndvi || null,
+                tileUrl: img?.tile?.ndvi || null,
+              };
+            });
+          } catch (error) {
+            console.error("Erro ao buscar imagens para timeline:", error);
+          }
+        }
+        
+        return history.map(h => ({
+          date: h.acquisitionDate,
+          ndvi: h.ndviValue / 100,
+          min: h.ndviMin ? h.ndviMin / 100 : null,
+          max: h.ndviMax ? h.ndviMax / 100 : null,
+          cloudCoverage: h.cloudCoverage,
+          thumbnailUrl: null,
+          tileUrl: null,
+        }));
       }),
   }),
 

@@ -102,11 +102,23 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     { enabled: !!fieldId && open }
   );
 
-  // Fetch weather data for field
-  const { data: weatherData } = (trpc.ndvi as any).getFieldWeather.useQuery(
+  // Fetch current weather
+  const { data: currentWeather } = (trpc as any).weather?.getCurrent?.useQuery(
     { fieldId: fieldId! },
     { enabled: !!fieldId && open }
-  );
+  ) || { data: null };
+
+  // Fetch latest NDVI image for map overlay
+  const { data: ndviImage } = (trpc as any).ndvi?.getLatestNdviImage?.useQuery(
+    { fieldId: fieldId! },
+    { enabled: !!fieldId && open }
+  ) || { data: null };
+
+  // Fetch NDVI history with thumbnails
+  const { data: ndviHistoryWithImages } = (trpc as any).ndvi?.history?.useQuery(
+    { fieldId: fieldId!, days: 60 },
+    { enabled: !!fieldId && open }
+  ) || { data: null };
 
   // Fetch NDVI history from database
   const { data: ndviHistoryReal, isLoading: loadingNdvi, refetch: refetchNdvi } = (trpc.ndvi as any).getByField.useQuery(
@@ -195,8 +207,28 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
     },
   };
 
-  // Format history data
+  // Format history data (with thumbnail support from Agromonitoring)
   const formattedHistory = useMemo(() => {
+    // Prefer history with images if available
+    if (ndviHistoryWithImages?.length) {
+      return ndviHistoryWithImages.map((n: any, index: number) => {
+        const prevNdvi = ndviHistoryWithImages[index + 1]?.ndvi;
+        const delta = prevNdvi && n.ndvi ? n.ndvi - prevNdvi : null;
+
+        return {
+          date: new Date(n.date).toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+          }),
+          fullDate: new Date(n.date),
+          ndvi: n.ndvi,
+          cloudy: (n.cloudCoverage ?? 0) > 50,
+          delta,
+          thumbnailUrl: n.thumbnailUrl || null,
+        };
+      });
+    }
+
     if (!ndviHistory?.length) {
       // Generate mock data if no real data
       const mockData = [];
@@ -210,6 +242,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
           ndvi: i < 2 ? null : 0.3 + Math.random() * 0.4,
           cloudy: i < 2,
           delta: i < 3 ? null : (Math.random() - 0.3) * 0.1,
+          thumbnailUrl: null,
         });
       }
       return mockData.reverse();
@@ -228,9 +261,10 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
         ndvi: n.ndviAverage,
         cloudy: (n.cloudCoverage ?? 0) > 50,
         delta,
+        thumbnailUrl: null,
       };
     });
-  }, [ndviHistory]);
+  }, [ndviHistory, ndviHistoryWithImages]);
 
   // Filter cloudy days
   const filteredHistory = hideCloudyDays
@@ -290,10 +324,20 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
           );
           coordinates.push(coordinates[0]);
 
+          // Calculate bounds for the field
+          const lngs = coordinates.map((c) => c[0]);
+          const lats = coordinates.map((c) => c[1]);
+          const minLng = Math.min(...lngs);
+          const maxLng = Math.max(...lngs);
+          const minLat = Math.min(...lats);
+          const maxLat = Math.max(...lats);
+
           // Remove existing layers/sources first
           if (map.getLayer("field-preview-fill")) map.removeLayer("field-preview-fill");
           if (map.getLayer("field-preview-outline")) map.removeLayer("field-preview-outline");
+          if (map.getLayer("ndvi-image-layer")) map.removeLayer("ndvi-image-layer");
           if (map.getSource("field-preview")) map.removeSource("field-preview");
+          if (map.getSource("ndvi-image")) map.removeSource("ndvi-image");
 
           map.addSource("field-preview", {
             type: "geojson",
@@ -307,15 +351,40 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
             },
           });
 
-          map.addLayer({
-            id: "field-preview-fill",
-            type: "fill",
-            source: "field-preview",
-            paint: {
-              "fill-color": getNdviColor(currentNdvi),
-              "fill-opacity": 0.7,
-            },
-          });
+          // Add NDVI image layer if available (OneSoil-style pixel overlay)
+          if (ndviImage?.imageUrl) {
+            map.addSource("ndvi-image", {
+              type: "image",
+              url: ndviImage.imageUrl,
+              coordinates: [
+                [minLng, maxLat], // top-left
+                [maxLng, maxLat], // top-right
+                [maxLng, minLat], // bottom-right
+                [minLng, minLat], // bottom-left
+              ],
+            });
+
+            map.addLayer({
+              id: "ndvi-image-layer",
+              type: "raster",
+              source: "ndvi-image",
+              paint: {
+                "raster-opacity": 0.85,
+                "raster-fade-duration": 0,
+              },
+            });
+          } else {
+            // Fallback to solid color fill if no image
+            map.addLayer({
+              id: "field-preview-fill",
+              type: "fill",
+              source: "field-preview",
+              paint: {
+                "fill-color": getNdviColor(currentNdvi),
+                "fill-opacity": 0.7,
+              },
+            });
+          }
 
           map.addLayer({
             id: "field-preview-outline",
@@ -328,12 +397,10 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
           });
 
           // Fit to bounds
-          const lngs = coordinates.map((c) => c[0]);
-          const lats = coordinates.map((c) => c[1]);
           map.fitBounds(
             [
-              [Math.min(...lngs), Math.min(...lats)],
-              [Math.max(...lngs), Math.max(...lats)],
+              [minLng, minLat],
+              [maxLng, maxLat],
             ],
             { padding: 30, duration: 0 }
           );
@@ -349,7 +416,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
         map.once("style.load", drawFieldOnMap);
       }
     },
-    [(field as any)?.boundaries, currentNdvi]
+    [(field as any)?.boundaries, currentNdvi, ndviImage]
   );
 
   // Navigate to full detail page
@@ -532,45 +599,69 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                     </div>
                   </div>
 
-                  {/* Weather Section - OneSoil Style */}
-                  {weatherData?.current && (
-                    <div className="px-4 mb-4">
-                      <div className="bg-gradient-to-r from-blue-50 to-sky-50 rounded-2xl p-4">
-                        <div className="flex items-start justify-between">
+                  {/* Weather Section - OneSoil style */}
+                  {currentWeather && (
+                    <div className="px-4 mb-6">
+                      <div className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="p-2 bg-white/80 rounded-xl shadow-sm">
-                              {weatherData.current.cloudCover > 70 ? (
-                                <Cloud className="h-6 w-6 text-gray-500" />
-                              ) : weatherData.current.precipitation > 0 ? (
-                                <Droplets className="h-6 w-6 text-blue-500" />
-                              ) : (
-                                <Sun className="h-6 w-6 text-yellow-500" />
-                              )}
+                            <div className="p-2 bg-blue-100 rounded-xl">
+                              {currentWeather.current?.icon === 'sun' && <Sun className="h-5 w-5 text-yellow-500" />}
+                              {currentWeather.current?.icon === 'cloud-sun' && <Cloud className="h-5 w-5 text-gray-500" />}
+                              {currentWeather.current?.icon === 'cloud' && <Cloud className="h-5 w-5 text-gray-600" />}
+                              {currentWeather.current?.icon === 'cloud-rain' && <Droplets className="h-5 w-5 text-blue-500" />}
+                              {!currentWeather.current?.icon && <Sun className="h-5 w-5 text-yellow-500" />}
                             </div>
                             <div>
-                              <div className="text-3xl font-bold text-gray-900">
-                                {Math.round(weatherData.current.temperature)}°
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                {weatherData.current.description || 'Parcialmente nublado'}
-                              </div>
+                              <h3 className="font-semibold text-gray-900">Clima agora</h3>
+                              <p className="text-xs text-gray-500">{currentWeather.current?.description}</p>
                             </div>
                           </div>
-                          <div className="text-right text-sm text-gray-600 space-y-0.5">
-                            <div>💨 {weatherData.current.windSpeed} m/s</div>
-                            <div>💧 {weatherData.current.humidity}%</div>
-                            <div>☁️ {weatherData.current.cloudCover}%</div>
-                            <div>📊 {weatherData.current.pressure} mm</div>
+                          <div className="text-right">
+                            <p className="text-3xl font-bold text-gray-900">{currentWeather.current?.temp}°</p>
                           </div>
                         </div>
-                        {weatherData.forecast?.[1] && (
-                          <div className="mt-3 pt-3 border-t border-blue-100 flex items-center justify-between">
-                            <span className="text-sm text-gray-600">
-                              Amanhã: {Math.round(weatherData.forecast[1].tempMin)}° - {Math.round(weatherData.forecast[1].tempMax)}°
-                            </span>
-                            <span className="text-sm text-blue-600">
-                              {weatherData.forecast[1].precipitationProbability}% chance de chuva
-                            </span>
+
+                        {/* Weather Details */}
+                        <div className="grid grid-cols-3 gap-3 mb-3">
+                          <div className="bg-white/60 rounded-xl p-2 text-center">
+                            <Droplets className="h-4 w-4 text-blue-500 mx-auto mb-1" />
+                            <p className="text-xs text-gray-500">Umidade</p>
+                            <p className="text-sm font-semibold">{currentWeather.current?.humidity}%</p>
+                          </div>
+                          <div className="bg-white/60 rounded-xl p-2 text-center">
+                            <svg className="h-4 w-4 text-gray-500 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                            </svg>
+                            <p className="text-xs text-gray-500">Vento</p>
+                            <p className="text-sm font-semibold">{currentWeather.current?.windSpeed} km/h</p>
+                          </div>
+                          <div className="bg-white/60 rounded-xl p-2 text-center">
+                            <Cloud className="h-4 w-4 text-gray-400 mx-auto mb-1" />
+                            <p className="text-xs text-gray-500">Nuvens</p>
+                            <p className="text-sm font-semibold">{currentWeather.current?.cloudCover}%</p>
+                          </div>
+                        </div>
+
+                        {/* 7-day Forecast */}
+                        {currentWeather.daily && currentWeather.daily.length > 0 && (
+                          <div className="border-t border-blue-100 pt-3">
+                            <p className="text-xs text-gray-500 mb-2">Próximos dias</p>
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                              {currentWeather.daily.slice(0, 7).map((day: any, i: number) => (
+                                <div key={i} className="flex-shrink-0 bg-white/60 rounded-lg p-2 text-center min-w-[60px]">
+                                  <p className="text-[10px] text-gray-500">
+                                    {i === 0 ? 'Hoje' : new Date(day.date).toLocaleDateString('pt-BR', { weekday: 'short' })}
+                                  </p>
+                                  {day.icon === 'sun' && <Sun className="h-4 w-4 text-yellow-500 mx-auto my-1" />}
+                                  {day.icon === 'cloud-sun' && <Cloud className="h-4 w-4 text-gray-400 mx-auto my-1" />}
+                                  {day.icon === 'cloud' && <Cloud className="h-4 w-4 text-gray-500 mx-auto my-1" />}
+                                  {day.icon === 'cloud-rain' && <Droplets className="h-4 w-4 text-blue-500 mx-auto my-1" />}
+                                  <p className="text-xs font-medium">{day.tempMax}°</p>
+                                  <p className="text-[10px] text-gray-400">{day.tempMin}°</p>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -624,6 +715,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                           cloudy={item.cloudy}
                           selected={selectedHistoryIndex === index}
                           onClick={() => setSelectedHistoryIndex(index)}
+                          thumbnailUrl={item.thumbnailUrl}
                         />
                       ))}
                     </div>
@@ -727,28 +819,6 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
                     </div>
                   </div>
 
-                  {/* Weather Preview */}
-                  <div className="px-4 mb-6">
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-4">
-                      <h3 className="font-semibold text-gray-900 mb-3">
-                        Previsão do Tempo
-                      </h3>
-                      <div className="grid grid-cols-3 gap-2">
-                        <WeatherCard day="Hoje" icon="sun" temp={28} />
-                        <WeatherCard day="Amanhã" icon="cloud" temp={26} />
-                        <WeatherCard day="Sáb" icon="rain" temp={24} />
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full mt-2 text-blue-600"
-                        onClick={() => setLocation(`/fields/${fieldId}/weather`)}
-                      >
-                        Ver previsão completa
-                      </Button>
-                    </div>
-                  </div>
-
                   {/* Quick Actions */}
                   <div className="px-4 pb-4">
                     <div className="grid grid-cols-2 gap-3">
@@ -778,7 +848,7 @@ export function FieldBottomSheet({ fieldId, open, onOpenChange }: FieldBottomShe
   );
 }
 
-// History Card Component
+// History Card Component with thumbnail support (OneSoil-style)
 function HistoryCard({
   date,
   ndvi,
@@ -786,6 +856,7 @@ function HistoryCard({
   cloudy,
   selected,
   onClick,
+  thumbnailUrl,
 }: {
   date: string;
   ndvi: number | null;
@@ -793,6 +864,7 @@ function HistoryCard({
   cloudy: boolean;
   selected: boolean;
   onClick: () => void;
+  thumbnailUrl?: string | null;
 }) {
   return (
     <button
@@ -801,14 +873,20 @@ function HistoryCard({
         selected ? "ring-2 ring-green-500 ring-offset-2" : ""
       }`}
     >
-      {/* Thumbnail */}
+      {/* Thumbnail - shows real NDVI image if available */}
       <div
-        className="h-14 relative flex items-center justify-center"
+        className="h-14 relative flex items-center justify-center bg-cover bg-center"
         style={{
           backgroundColor: cloudy || ndvi === null ? "#e5e7eb" : getNdviColor(ndvi),
+          backgroundImage: thumbnailUrl ? `url(${thumbnailUrl})` : undefined,
         }}
       >
-        {cloudy && <Cloud className="h-6 w-6 text-gray-400" />}
+        {cloudy && !thumbnailUrl && <Cloud className="h-6 w-6 text-gray-400" />}
+        {thumbnailUrl && cloudy && (
+          <div className="absolute inset-0 bg-gray-500/50 flex items-center justify-center">
+            <Cloud className="h-6 w-6 text-white" />
+          </div>
+        )}
       </div>
 
       {/* Info */}
@@ -840,31 +918,6 @@ function HistoryCard({
         )}
       </div>
     </button>
-  );
-}
-
-// Weather Card Component
-function WeatherCard({
-  day,
-  icon,
-  temp,
-}: {
-  day: string;
-  icon: "sun" | "cloud" | "rain";
-  temp: number;
-}) {
-  const icons = {
-    sun: <Sun className="h-6 w-6 text-yellow-500" />,
-    cloud: <Cloud className="h-6 w-6 text-gray-400" />,
-    rain: <Droplets className="h-6 w-6 text-blue-500" />,
-  };
-
-  return (
-    <div className="bg-white/60 rounded-xl p-2 text-center">
-      <p className="text-xs text-gray-500 mb-1">{day}</p>
-      {icons[icon]}
-      <p className="text-sm font-semibold text-gray-900 mt-1">{temp}°</p>
-    </div>
   );
 }
 
