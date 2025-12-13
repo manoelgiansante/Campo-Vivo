@@ -47,10 +47,22 @@ export function MapboxMap({
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
+    // Validar coordenadas iniciais
+    let validCenter: [number, number] = [-47.9292, -15.7801]; // Brasília como fallback
+    if (
+      initialCenter &&
+      Array.isArray(initialCenter) &&
+      initialCenter.length === 2 &&
+      !isNaN(initialCenter[0]) &&
+      !isNaN(initialCenter[1])
+    ) {
+      validCenter = initialCenter;
+    }
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: getStyleUrl(style),
-      center: initialCenter,
+      center: validCenter,
       zoom: initialZoom,
       interactive,
       attributionControl: true,

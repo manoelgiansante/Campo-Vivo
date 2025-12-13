@@ -35,12 +35,25 @@ interface SuggestedField {
 }
 
 // Obter posição salva do mapa ou usar padrão
-const getSavedMapPosition = () => {
+const getSavedMapPosition = (): { center: [number, number]; zoom: number } | null => {
   try {
     const saved = localStorage.getItem('campovivo_map_position');
     if (saved) {
       const pos = JSON.parse(saved);
-      return { center: [pos.lng, pos.lat] as [number, number], zoom: pos.zoom || 15 };
+      // Suporta ambos formatos: {center: [lng, lat]} ou {lng, lat}
+      let center: [number, number];
+      if (pos.center && Array.isArray(pos.center)) {
+        center = pos.center;
+      } else if (typeof pos.lng === 'number' && typeof pos.lat === 'number') {
+        center = [pos.lng, pos.lat];
+      } else {
+        return null;
+      }
+      // Validar que coordenadas são números válidos
+      if (isNaN(center[0]) || isNaN(center[1])) {
+        return null;
+      }
+      return { center, zoom: pos.zoom || 15 };
     }
   } catch (e) {
     console.error('Erro ao carregar posição do mapa:', e);
@@ -405,23 +418,32 @@ export default function FieldDrawNew() {
 
     // Tentar usar posição salva primeiro
     const savedPos = getSavedMapPosition();
-    if (savedPos) {
+    if (savedPos && savedPos.center && !isNaN(savedPos.center[0]) && !isNaN(savedPos.center[1])) {
+      console.log("[FieldDrawNew] Usando posição salva:", savedPos.center);
       map.setCenter(savedPos.center);
       map.setZoom(savedPos.zoom);
       // Carregar campos sugeridos após posicionar
       setTimeout(() => generateSuggestedFields(map), 500);
     } else {
       // Tentar geolocalização
+      console.log("[FieldDrawNew] Tentando geolocalização...");
       getUserLocation()
         .then(([lng, lat]) => {
-          map.flyTo({
-            center: [lng, lat],
-            zoom: 16,
-            duration: 2000,
-          });
-          setTimeout(() => generateSuggestedFields(map), 2500);
+          if (!isNaN(lng) && !isNaN(lat)) {
+            console.log("[FieldDrawNew] Geolocalização obtida:", lng, lat);
+            map.flyTo({
+              center: [lng, lat],
+              zoom: 16,
+              duration: 2000,
+            });
+            setTimeout(() => generateSuggestedFields(map), 2500);
+          } else {
+            throw new Error("Coordenadas inválidas");
+          }
         })
-        .catch(() => {
+        .catch((err) => {
+          console.log("[FieldDrawNew] Usando posição padrão. Erro:", err);
+          // Coordenadas padrão válidas (Campo Grande, MS)
           map.setCenter([-54.6, -20.47]);
           map.setZoom(14);
           setTimeout(() => generateSuggestedFields(map), 500);
