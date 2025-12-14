@@ -1,8 +1,34 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { drizzle } from 'drizzle-orm/mysql2';
-import mysql from 'mysql2/promise';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
-import { fields } from '../../drizzle/schema';
+import { pgTable, serial, integer, varchar, text, boolean, timestamp, json, pgEnum } from 'drizzle-orm/pg-core';
+
+// Schema simplificado para fields
+const irrigationTypeEnum = pgEnum("irrigation_type", ["none", "drip", "sprinkler", "pivot", "flood"]);
+const fields = pgTable("fields", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  farmId: integer("farm_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  areaHectares: integer("area_hectares"),
+  latitude: varchar("latitude", { length: 20 }),
+  longitude: varchar("longitude", { length: 20 }),
+  boundaries: json("boundaries"),
+  address: text("address"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }).default("Brasil"),
+  soilType: varchar("soil_type", { length: 100 }),
+  irrigationType: irrigationTypeEnum("irrigation_type").default("none"),
+  isActive: boolean("is_active").default(true),
+  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
+  lastNdviSync: timestamp("last_ndvi_sync"),
+  currentNdvi: integer("current_ndvi"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // Copernicus OAuth credentials
 const COPERNICUS_CLIENT_ID = process.env.COPERNICUS_CLIENT_ID || '';
@@ -29,6 +55,8 @@ async function getAccessToken(): Promise<string> {
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Copernicus] Token error:', response.status, errorText);
     throw new Error(`Failed to get Copernicus token: ${response.status}`);
   }
 
@@ -132,11 +160,23 @@ function evaluatePixel(sample) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Habilitar CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   try {
     const { fieldId } = req.query;
     const palette = (req.query.palette as string) || 'contrast';
     const dateFrom = (req.query.dateFrom as string) || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const dateTo = (req.query.dateTo as string) || new Date().toISOString().split('T')[0];
+    const id = parseInt(fieldId as string);
+
+    console.log(`[Copernicus] Requisição para campo ${id}, paleta: ${palette}`);
 
     if (!fieldId) {
       return res.status(400).json({ error: 'Field ID is required' });
@@ -144,31 +184,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Check if Copernicus credentials are configured
     if (!COPERNICUS_CLIENT_ID || !COPERNICUS_CLIENT_SECRET) {
+      console.error('[Copernicus] Credenciais não configuradas');
       return res.status(500).json({ error: 'Copernicus credentials not configured' });
     }
 
-    // Connect to database
-    const connection = await mysql.createConnection(process.env.DATABASE_URL!);
-    const db = drizzle(connection);
+    if (!process.env.DATABASE_URL) {
+      console.error("[Copernicus] DATABASE_URL não configurada");
+      return res.status(500).json({ error: "Database not configured" });
+    }
 
-    // Get field from database
-    const [field] = await db.select().from(fields).where(eq(fields.id, Number(fieldId)));
+    // Conectar ao banco de dados PostgreSQL
+    const client = postgres(process.env.DATABASE_URL, { 
+      connect_timeout: 10,
+      idle_timeout: 20,
+    });
+    const db = drizzle(client);
+
+    // Buscar campo
+    const result = await db.select().from(fields).where(eq(fields.id, id)).limit(1);
+    const field = result[0];
 
     if (!field) {
-      await connection.end();
+      console.log(`[Copernicus] Campo ${id} não encontrado`);
+      await client.end();
       return res.status(404).json({ error: 'Field not found' });
     }
 
     const boundaries = field.boundaries as { lat: number; lng: number }[];
-    if (!boundaries || boundaries.length < 3) {
-      await connection.end();
+    if (!boundaries || !Array.isArray(boundaries) || boundaries.length < 3) {
+      console.log(`[Copernicus] Campo ${id} sem boundaries válidos`);
+      await client.end();
       return res.status(400).json({ error: 'Field has no valid boundaries' });
     }
 
-    await connection.end();
+    await client.end();
+    console.log(`[Copernicus] Campo ${id} tem ${boundaries.length} pontos`);
 
     // Get access token
     const token = await getAccessToken();
+    console.log(`[Copernicus] Token obtido com sucesso`);
 
     // Convert polygon to GeoJSON format
     const coordinates = boundaries.map(p => [p.lng, p.lat]);
@@ -191,6 +245,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else {
       width = Math.round(512 * aspectRatio);
     }
+
+    console.log(`[Copernicus] Tamanho da imagem: ${width}x${height}`);
 
     const requestBody = {
       input: {
@@ -229,6 +285,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       evalscript: generateEvalscript(palette),
     };
 
+    console.log(`[Copernicus] Enviando requisição para API...`);
+
     const response = await fetch(PROCESS_API_URL, {
       method: 'POST',
       headers: {
@@ -241,19 +299,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Copernicus API error:', errorText);
-      return res.status(response.status).json({ error: 'Failed to get NDVI image from Copernicus' });
+      console.error('[Copernicus] API error:', response.status, errorText);
+      return res.status(response.status).json({ error: 'Failed to get NDVI image from Copernicus', details: errorText });
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.log(`[Copernicus] Imagem recebida: ${buffer.length} bytes`);
 
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     return res.send(buffer);
 
   } catch (error) {
-    console.error('Error in copernicus-ndvi handler:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[Copernicus] Error:', error);
+    return res.status(500).json({ error: 'Internal server error', details: String(error) });
   }
 }
