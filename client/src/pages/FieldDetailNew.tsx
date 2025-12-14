@@ -132,39 +132,8 @@ export default function FieldDetailNew() {
           proxyImageUrl
         });
 
-        // 1) PRIMEIRA OPÇÃO: Usar tiles NDVI para mais resolução e gradiente detalhado (igual OneSoil)
+        // 1) PRIMEIRA OPÇÃO: Usar imagem estática NDVI (funciona no Vercel)
         {
-          try {
-            console.log("[NDVI] Tentando carregar tiles via proxy:", proxyTileUrl);
-            
-            // Adicionar source de tiles com proxy local
-            mapInstance.addSource("ndvi-tile-layer-source", {
-              type: "raster",
-              tiles: [proxyTileUrl],
-              tileSize: 256,
-              bounds: [minLng, minLat, maxLng, maxLat],
-            });
-
-            // Adicionar layer de tiles com alta opacidade
-            mapInstance.addLayer({
-              id: "ndvi-tile-layer",
-              type: "raster",
-              source: "ndvi-tile-layer-source",
-              paint: {
-                "raster-opacity": 0.95,
-                "raster-fade-duration": 300,
-              },
-            });
-
-            ndviLoaded = true;
-            console.log("[NDVI] Tiles carregados com sucesso via proxy");
-          } catch (error) {
-            console.warn("[NDVI] Falha ao carregar tiles via proxy:", error);
-          }
-        }
-
-        // 2) Fallback: usar imagem estática se tiles falharam
-        if (!ndviLoaded) {
           try {
             console.log("[NDVI] Carregando imagem via proxy:", proxyImageUrl);
             console.log("[NDVI] Bounds para overlay:", boundsArray);
@@ -192,7 +161,7 @@ export default function FieldDetailNew() {
               coordinates: boundsArray,
             });
 
-            // Adicionar layer de imagem
+            // Adicionar layer de imagem com alta opacidade
             mapInstance.addLayer({
               id: "ndvi-image-layer",
               type: "raster",
