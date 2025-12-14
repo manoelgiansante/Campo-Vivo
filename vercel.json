@@ -9,7 +9,7 @@
     }
   },
   "rewrites": [
-    { "source": "/api/ndvi-tiles/:fieldId/:z/:x/:y", "destination": "/api/ndvi-tiles/[fieldId]/[z]/[x]/[y]" },
+    { "source": "/api/ndvi-tiles/:path*", "destination": "/api/ndvi-tiles/[...path]" },
     { "source": "/api/ndvi-image/:fieldId", "destination": "/api/ndvi-image/[fieldId]" },
     { "source": "/api/trpc-standalone/:path*", "destination": "/api/trpc-standalone" },
     { "source": "/api/trpc/:path*", "destination": "/api/trpc-standalone" },

@@ -65,11 +65,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { fieldId, z, x, y } = req.query;
-    const id = parseInt(fieldId as string);
-    const zoom = z as string;
-    const tileX = x as string;
-    const tileY = (y as string).replace(".png", "");
+    // Parse path: /api/ndvi-tiles/fieldId/z/x/y.png
+    const pathParam = req.query.path;
+    const pathParts = Array.isArray(pathParam) ? pathParam : (pathParam as string).split("/");
+    
+    if (pathParts.length < 4) {
+      return res.status(400).send("Invalid path format. Expected: /api/ndvi-tiles/{fieldId}/{z}/{x}/{y}.png");
+    }
+
+    const [fieldIdStr, z, x, yWithExt] = pathParts;
+    const id = parseInt(fieldIdStr);
+    const zoom = z;
+    const tileX = x;
+    const tileY = yWithExt.replace(".png", "");
     
     console.log(`[NDVI Tiles] Requisição para campo ${id}, tile ${zoom}/${tileX}/${tileY}`);
 
