@@ -41,7 +41,6 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { ConnectionStatus } from "./OfflineIndicator";
 import { OfflineIndicator } from "./OfflineIndicator";
-import { NotificationsPanel } from "./NotificationsPanel";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -82,8 +81,10 @@ export default function AppLayout({
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-primary/5 to-background p-4">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full bg-card rounded-2xl shadow-lg border">
           <div className="flex flex-col items-center gap-4">
-            <img src="/logo.png" alt="CampoVivo" className="h-24 w-24 object-contain" />
-            <h1 className="text-2xl font-bold tracking-tight text-center text-green-700">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Leaf className="h-8 w-8 text-primary" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-center">
               CampoVivo
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
@@ -195,8 +196,10 @@ function AppLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <img src="/logo.png" alt="CampoVivo" className="h-8 w-8 object-contain shrink-0" />
-                  <span className="font-semibold tracking-tight truncate text-green-700">
+                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Leaf className="h-4 w-4 text-primary" />
+                  </div>
+                  <span className="font-semibold tracking-tight truncate text-primary">
                     CampoVivo
                   </span>
                 </div>
@@ -298,10 +301,7 @@ function AppLayoutContent({
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <NotificationsPanel />
-              <ConnectionStatus />
-            </div>
+            <ConnectionStatus />
           </div>
         )}
         <main className="flex-1 p-4 md:p-6">{children}</main>

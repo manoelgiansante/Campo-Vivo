@@ -7,7 +7,6 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { startNdviScheduler } from "../services/ndviScheduler";
 import * as db from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -37,7 +36,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
-  
+
+  // ==================== NDVI IMAGE PROXY ====================
   // Proxy para imagens NDVI (evita CORS)
   app.get("/api/ndvi-image/:fieldId", async (req, res) => {
     try {
@@ -48,7 +48,7 @@ async function startServer() {
       
       if (!field || !field.agroPolygonId) {
         console.log(`[NDVI Proxy] Campo ${fieldId} não encontrado ou sem polígono`);
-        return res.status(404).send("Field not found");
+        return res.status(404).send("Field not found or no polygon configured");
       }
       
       console.log(`[NDVI Proxy] Campo ${fieldId} tem polígono: ${field.agroPolygonId}`);
@@ -164,7 +164,7 @@ async function startServer() {
       res.status(500).send("Internal server error");
     }
   });
-  
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -189,9 +189,6 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
-    
-    // Inicia o scheduler de NDVI em background
-    startNdviScheduler();
   });
 }
 

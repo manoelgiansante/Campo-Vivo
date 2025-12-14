@@ -9,9 +9,8 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath } =
+  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
     options ?? {};
-  const actualRedirectPath = redirectPath ?? getLoginUrl();
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
@@ -21,7 +20,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
-      utils.auth.me.setData(undefined, undefined);
+      utils.auth.me.setData(undefined, null);
     },
   });
 
@@ -37,7 +36,7 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
-      utils.auth.me.setData(undefined, undefined);
+      utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
   }, [logoutMutation, utils]);
@@ -66,13 +65,12 @@ export function useAuth(options?: UseAuthOptions) {
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
-    if (!actualRedirectPath) return; // Skip if OAuth not configured
-    if (window.location.pathname === actualRedirectPath) return;
+    if (window.location.pathname === redirectPath) return;
 
-    window.location.href = actualRedirectPath;
+    window.location.href = redirectPath
   }, [
     redirectOnUnauthenticated,
-    actualRedirectPath,
+    redirectPath,
     logoutMutation.isPending,
     meQuery.isLoading,
     state.user,

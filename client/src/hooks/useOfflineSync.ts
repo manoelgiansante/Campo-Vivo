@@ -1,124 +1,37 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
 
-interface PendingChange {
-  localId: string;
-  action: "create" | "update" | "delete";
-  entityType: "fields" | "notes" | "tasks";
+interface PendingAction {
+  id: string;
+  type: string;
   data: any;
   timestamp: number;
-  retryCount?: number;
-  lastError?: string;
 }
 
 const STORAGE_KEY = "campovivo_offline_queue";
 const OFFLINE_DATA_KEY = "campovivo_offline_data";
-const LAST_SYNC_KEY = "campovivo_last_sync";
-const MAX_RETRY_COUNT = 3;
-const RETRY_DELAY_MS = 5000; // 5 seconds base delay
 
 export function useOfflineSync() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const syncInProgress = useRef(false);
-  
-  // tRPC mutations
-  const createFieldMutation = trpc.fields.create.useMutation();
-  const utils = trpc.useUtils();
 
-  // Load pending changes from localStorage
+  // Load pending actions from localStorage
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        setPendingChanges(JSON.parse(stored));
+        setPendingActions(JSON.parse(stored));
       } catch (e) {
         console.error("Failed to parse offline queue:", e);
       }
     }
   }, []);
 
-  // Save pending changes to localStorage
+  // Save pending actions to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingChanges));
-  }, [pendingChanges]);
-
-  // Sync function
-  const syncChanges = useCallback(async () => {
-    if (syncInProgress.current || pendingChanges.length === 0 || !isOnline) return;
-    
-    // Filter out changes that have exceeded max retries
-    const changesToSync = pendingChanges.filter(c => (c.retryCount || 0) < MAX_RETRY_COUNT);
-    if (changesToSync.length === 0) return;
-    
-    syncInProgress.current = true;
-    setIsSyncing(true);
-    
-    try {
-      const successfulIds = new Set<string>();
-      const failedIds = new Map<string, string>();
-      
-      // Process field changes one by one
-      for (const change of changesToSync) {
-        try {
-          if (change.entityType === "fields" && change.action === "create") {
-            await createFieldMutation.mutateAsync(change.data);
-            successfulIds.add(change.localId);
-          } else {
-            // Mark as successful for now (other entity types not implemented)
-            successfulIds.add(change.localId);
-          }
-        } catch (error: any) {
-          failedIds.set(change.localId, error.message || "Unknown error");
-        }
-      }
-      
-      // Update pending changes - remove successful, increment retry for failed
-      setPendingChanges(prev => prev
-        .filter(c => !successfulIds.has(c.localId))
-        .map(c => {
-          if (failedIds.has(c.localId)) {
-            return {
-              ...c,
-              retryCount: (c.retryCount || 0) + 1,
-              lastError: failedIds.get(c.localId),
-            };
-          }
-          return c;
-        })
-      );
-      
-      // Update last sync timestamp
-      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-      
-      // Invalidate queries to refresh data
-      utils.fields.list.invalidate();
-      
-      const syncedCount = successfulIds.size;
-      const failedCount = failedIds.size;
-      
-      if (syncedCount > 0) {
-        toast.success(`${syncedCount} alteração(ões) sincronizada(s)`);
-      }
-      if (failedCount > 0) {
-        toast.warning(`${failedCount} alteração(ões) falharam, tentando novamente...`);
-        // Schedule retry with exponential backoff
-        const maxRetry = Math.max(...pendingChanges.map(c => c.retryCount || 0));
-        const delay = RETRY_DELAY_MS * Math.pow(2, maxRetry);
-        setTimeout(() => syncChanges(), delay);
-      }
-    } catch (error) {
-      console.error("Sync failed:", error);
-      toast.error("Falha na sincronização. Tentaremos novamente.");
-      // Schedule retry
-      setTimeout(() => syncChanges(), RETRY_DELAY_MS);
-    } finally {
-      setIsSyncing(false);
-      syncInProgress.current = false;
-    }
-  }, [pendingChanges, isOnline, createFieldMutation, utils]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingActions));
+  }, [pendingActions]);
 
   // Listen for online/offline events
   useEffect(() => {
@@ -127,14 +40,12 @@ export function useOfflineSync() {
       toast.success("Conexão restaurada", {
         description: "Sincronizando dados...",
       });
-      // Auto-sync when back online
-      setTimeout(() => syncChanges(), 1000);
     };
 
     const handleOffline = () => {
       setIsOnline(false);
       toast.warning("Sem conexão", {
-        description: "Os dados serão salvos localmente.",
+        description: "Os dados serão salvos localmente e sincronizados quando a conexão for restaurada.",
       });
     };
 
@@ -145,39 +56,28 @@ export function useOfflineSync() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [syncChanges]);
+  }, []);
 
-  // Add change to queue
-  const queueChange = useCallback((
-    entityType: "fields" | "notes" | "tasks",
-    action: "create" | "update" | "delete",
-    data: any
-  ) => {
-    const change: PendingChange = {
-      localId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      entityType,
-      action,
+  // Add action to queue
+  const queueAction = useCallback((type: string, data: any) => {
+    const action: PendingAction = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type,
       data,
       timestamp: Date.now(),
     };
-    setPendingChanges((prev) => [...prev, change]);
-    
-    // Try to sync immediately if online
-    if (isOnline) {
-      setTimeout(() => syncChanges(), 100);
-    }
-    
-    return change.localId;
-  }, [isOnline, syncChanges]);
-
-  // Remove change from queue
-  const removeChange = useCallback((localId: string) => {
-    setPendingChanges((prev) => prev.filter((c) => c.localId !== localId));
+    setPendingActions((prev) => [...prev, action]);
+    return action.id;
   }, []);
 
-  // Clear all pending changes
+  // Remove action from queue
+  const removeAction = useCallback((id: string) => {
+    setPendingActions((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  // Clear all pending actions
   const clearQueue = useCallback(() => {
-    setPendingChanges([]);
+    setPendingActions([]);
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -214,24 +114,17 @@ export function useOfflineSync() {
     localStorage.removeItem(OFFLINE_DATA_KEY);
   }, []);
 
-  // Get last sync timestamp
-  const getLastSyncTimestamp = useCallback(() => {
-    return localStorage.getItem(LAST_SYNC_KEY);
-  }, []);
-
   return {
     isOnline,
     isSyncing,
-    pendingChanges,
-    pendingCount: pendingChanges.length,
-    queueChange,
-    removeChange,
+    pendingActions,
+    pendingCount: pendingActions.length,
+    queueAction,
+    removeAction,
     clearQueue,
-    syncChanges,
     cacheData,
     getCachedData,
     clearCache,
-    getLastSyncTimestamp,
   };
 }
 

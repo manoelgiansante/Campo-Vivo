@@ -45,18 +45,8 @@ export default function FieldDetail() {
   const { data: field, isLoading } = trpc.fields.getById.useQuery({ id: fieldId });
   const { data: crops } = trpc.crops.listByField.useQuery({ fieldId }, { enabled: !!field });
   const { data: notes } = trpc.notes.listByField.useQuery({ fieldId }, { enabled: !!field });
-  const { data: ndviData } = trpc.ndvi.history.useQuery({ fieldId, days: 30 }, { enabled: !!field });
-  // Simulated weather for now
-  const weather = {
-    current: { temp: 28, description: "Ensolarado" },
-    forecast: Array.from({ length: 5 }, (_, i) => ({
-      date: new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString(),
-      tempMin: 20,
-      tempMax: 32,
-      description: "Ensolarado",
-      icon: "sun"
-    }))
-  };
+  const { data: ndviData } = trpc.ndvi.getByField.useQuery({ fieldId, limit: 5 }, { enabled: !!field });
+  const { data: weather } = trpc.weather.getByField.useQuery({ fieldId }, { enabled: !!field });
 
   const deleteMutation = trpc.fields.delete.useMutation({
     onSuccess: () => {
@@ -254,7 +244,7 @@ export default function FieldDetail() {
             <CardContent>
               {crops && crops.length > 0 ? (
                 <div className="space-y-3">
-                  {crops.map((crop: any) => (
+                  {crops.map((crop) => (
                     <div key={crop.id} className="flex items-center justify-between p-4 rounded-lg border">
                       <div className="flex items-center gap-4">
                         <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -264,7 +254,7 @@ export default function FieldDetail() {
                           <p className="font-medium">{crop.cropType}</p>
                           <p className="text-sm text-muted-foreground">
                             {crop.variety && `${crop.variety} • `}
-                            Safra atual
+                            {crop.season || "Safra não definida"}
                           </p>
                         </div>
                       </div>
@@ -309,21 +299,21 @@ export default function FieldDetail() {
               <CardDescription>Condições climáticas para os próximos dias</CardDescription>
             </CardHeader>
             <CardContent>
-              {weather.forecast && weather.forecast.length > 0 ? (
+              {weather && weather.daily && weather.daily.length > 0 ? (
                 <div className="grid gap-4 md:grid-cols-5">
-                  {weather.forecast.map((day: any, index: number) => (
+                  {weather.daily.slice(0, 5).map((day, index) => (
                     <div key={index} className="p-4 rounded-lg border text-center">
                       <p className="text-sm font-medium mb-2">
                         {format(new Date(day.date), "EEE, dd/MM", { locale: ptBR })}
                       </p>
                       <Cloud className="h-8 w-8 mx-auto mb-2 text-blue-500" />
                       <p className="text-lg font-bold">
-                        {day.tempMax ? `${day.tempMax.toFixed(0)}°` : "-"}
+                        {day.temperatureMax?.toFixed(0)}°
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {day.tempMin ? `${day.tempMin.toFixed(0)}°` : "-"}
+                        {day.temperatureMin?.toFixed(0)}°
                       </p>
-                      {day.precipitation && day.precipitation > 0 && (
+                      {day.precipitation > 0 && (
                         <p className="text-xs text-blue-500 mt-1">
                           {day.precipitation.toFixed(1)}mm
                         </p>
@@ -354,19 +344,21 @@ export default function FieldDetail() {
             <CardContent>
               {ndviData && ndviData.length > 0 ? (
                 <div className="space-y-4">
-                  {ndviData.map((data: any, index: number) => (
-                    <div key={index} className="flex items-center justify-between p-4 rounded-lg border">
+                  {ndviData.map((data) => (
+                    <div key={data.id} className="flex items-center justify-between p-4 rounded-lg border">
                       <div className="flex items-center gap-4">
                         <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                          (data.ndvi || 0) >= 0.7 ? "bg-green-100" :
-                          (data.ndvi || 0) >= 0.5 ? "bg-green-50" :
-                          (data.ndvi || 0) >= 0.3 ? "bg-yellow-50" :
+                          data.healthStatus === "excellent" ? "bg-green-100" :
+                          data.healthStatus === "good" ? "bg-green-50" :
+                          data.healthStatus === "moderate" ? "bg-yellow-50" :
+                          data.healthStatus === "poor" ? "bg-orange-50" :
                           "bg-red-50"
                         }`}>
                           <BarChart3 className={`h-5 w-5 ${
-                            (data.ndvi || 0) >= 0.7 ? "text-green-600" :
-                            (data.ndvi || 0) >= 0.5 ? "text-green-500" :
-                            (data.ndvi || 0) >= 0.3 ? "text-yellow-600" :
+                            data.healthStatus === "excellent" ? "text-green-600" :
+                            data.healthStatus === "good" ? "text-green-500" :
+                            data.healthStatus === "moderate" ? "text-yellow-600" :
+                            data.healthStatus === "poor" ? "text-orange-500" :
                             "text-red-500"
                           }`} />
                         </div>

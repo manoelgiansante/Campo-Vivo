@@ -33,8 +33,6 @@ export default function FieldDetailNew() {
   const [, setLocation] = useLocation();
   const [hideCloudy, setHideCloudy] = useState(false);
   const [selectedDate, setSelectedDate] = useState<number>(0);
-  const [selectedPalette, setSelectedPalette] = useState<string>('contrast');
-  const [useCopernicus, setUseCopernicus] = useState<boolean>(true);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap } = useMapbox();
   const {
@@ -65,22 +63,6 @@ export default function FieldDetailNew() {
   // URLs do proxy local para evitar CORS
   const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
   const proxyTileUrl = useMemo(() => `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`, [fieldId]);
-  
-  // URL do Copernicus para imagens de alta qualidade
-  const copernicusImageUrl = useMemo(() => {
-    const dateFrom = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const dateTo = new Date().toISOString().split('T')[0];
-    return `/api/copernicus-ndvi/${fieldId}?palette=${selectedPalette}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-  }, [fieldId, selectedPalette]);
-
-  // Paletas de cores disponíveis
-  const palettes = [
-    { key: 'contrast', name: 'Contraste', description: 'Estilo OneSoil (vermelho-verde)' },
-    { key: 'classic', name: 'Clássica', description: 'Verde tradicional' },
-    { key: 'viridis', name: 'Viridis', description: 'Paleta científica' },
-    { key: 'rdylgn', name: 'RdYlGn', description: 'Vermelho-Amarelo-Verde' },
-    { key: 'pasture', name: 'Pastagem', description: 'Otimizada para gado' },
-  ];
 
   // Draw field on map with NDVI overlay
   useEffect(() => {
@@ -150,58 +132,10 @@ export default function FieldDetailNew() {
           proxyImageUrl
         });
 
-        // 1) PRIMEIRA OPÇÃO: Usar Copernicus para imagens de alta qualidade
-        if (useCopernicus) {
-          try {
-            console.log("[NDVI] Carregando imagem do Copernicus:", copernicusImageUrl);
-            console.log("[NDVI] Bounds para overlay:", boundsArray);
-            
-            // Pré-carregar a imagem para verificar se está acessível
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => {
-                console.log("[NDVI] Imagem Copernicus carregada:", img.width, "x", img.height);
-                resolve();
-              };
-              img.onerror = () => {
-                console.warn("[NDVI] Copernicus não disponível, usando Agromonitoring");
-                reject(new Error("Failed to load Copernicus image"));
-              };
-              img.src = copernicusImageUrl + "&t=" + Date.now();
-            });
-            
-            // Adicionar source de imagem do Copernicus
-            console.log("[NDVI] Adicionando source com bounds:", boundsArray);
-            console.log("[NDVI] URL da imagem:", copernicusImageUrl);
-            
-            mapInstance.addSource("ndvi-image-layer-source", {
-              type: "image",
-              url: copernicusImageUrl,
-              coordinates: boundsArray,
-            });
-
-            // Adicionar layer de imagem com alta opacidade
-            mapInstance.addLayer({
-              id: "ndvi-image-layer",
-              type: "raster",
-              source: "ndvi-image-layer-source",
-              paint: {
-                "raster-opacity": 0.95,
-                "raster-fade-duration": 0,
-              },
-            });
-
-            ndviLoaded = true;
-            console.log("[NDVI] Imagem Copernicus adicionada ao mapa!");
-          } catch (error) {
-            console.warn("[NDVI] Falha ao carregar Copernicus, tentando Agromonitoring:", error);
-          }
-        }
-
-        // 2) SEGUNDA OPÇÃO: Usar imagem estática NDVI do Agromonitoring
-        if (!ndviLoaded) {
+        // SEMPRE tentar carregar a imagem NDVI via proxy
+        // O proxy verifica se o campo tem agroPolygonId e retorna a imagem ou 404
+        // Isso garante que o overlay seja exibido mesmo se a query tRPC falhar
+        {
           try {
             console.log("[NDVI] Carregando imagem via proxy:", proxyImageUrl);
             console.log("[NDVI] Bounds para overlay:", boundsArray);
@@ -223,25 +157,64 @@ export default function FieldDetailNew() {
             });
             
             // Adicionar source de imagem com proxy local
+            // boundsArray é [[topLeft], [topRight], [bottomRight], [bottomLeft]]
             mapInstance.addSource("ndvi-image-layer-source", {
               type: "image",
               url: proxyImageUrl,
               coordinates: boundsArray,
             });
 
-            // Adicionar layer de imagem com alta opacidade
+            // Adicionar layer de imagem ANTES do fill layer
             mapInstance.addLayer({
               id: "ndvi-image-layer",
               type: "raster",
               source: "ndvi-image-layer-source",
               paint: {
-                "raster-opacity": 0.95,
+                "raster-opacity": 0.9,
                 "raster-fade-duration": 0,
+              },
+            });
+            
+            // Listener de erro no source
+            mapInstance.on("error", (e: any) => {
+              if (e.sourceId === "ndvi-image-layer-source") {
+                console.error("[NDVI] Erro no source da imagem:", e.error);
+              }
+            });
+
+            ndviLoaded = true;
+            console.log("[NDVI] Imagem adicionada ao mapa com sucesso!");
+          } catch (error) {
+            console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
+          }
+        }
+
+        // 2) Fallback: usar tiles se imagem falhou
+        if (!ndviLoaded && hasNdviConfig && ndviImage?.tileUrl) {
+          try {
+            console.log("[NDVI] Tentando carregar tiles via proxy:", proxyTileUrl);
+            
+            // Adicionar source de tiles com proxy local
+            mapInstance.addSource("ndvi-tile-layer-source", {
+              type: "raster",
+              tiles: [proxyTileUrl],
+              tileSize: 256,
+              bounds: [minLng, minLat, maxLng, maxLat],
+            });
+
+            // Adicionar layer de tiles
+            mapInstance.addLayer({
+              id: "ndvi-tile-layer",
+              type: "raster",
+              source: "ndvi-tile-layer-source",
+              paint: {
+                "raster-opacity": 0.85,
+                "raster-fade-duration": 300,
               },
             });
 
             ndviLoaded = true;
-            console.log("[NDVI] Imagem Agromonitoring adicionada ao mapa!");
+            console.log("[NDVI] Imagem carregada com sucesso via proxy");
           } catch (error) {
             console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
           }
@@ -255,33 +228,31 @@ export default function FieldDetailNew() {
           ndviLoaded = true;
         }
 
-        // Base fill para percepção de área (apenas se NDVI não carregou)
-        if (!ndviLoaded) {
-          const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
-          const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
-                           currentNdvi >= 0.4 ? "#EAB308" :
-                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+        // Base fill para percepção de área (semi-transparente)
+        const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
+        const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
+                         currentNdvi >= 0.4 ? "#EAB308" :
+                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
 
-          mapInstance.addLayer({
-            id: fillLayerId,
-            type: "fill",
-            source: sourceId,
-            paint: {
-              "fill-color": fillColor,
-              "fill-opacity": 0.4,
-            },
-          });
-        }
+        mapInstance.addLayer({
+          id: fillLayerId,
+          type: "fill",
+          source: sourceId,
+          paint: {
+            "fill-color": fillColor,
+            "fill-opacity": ndviLoaded ? 0.15 : 0.4,
+          },
+        });
 
-        // Borda do campo (preta igual OneSoil)
+        // Borda do campo (sempre visível)
         mapInstance.addLayer({
           id: outlineId,
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#1a1a1a",
-            "line-width": 2.5,
-            "line-opacity": 1,
+            "line-color": "#FFFFFF",
+            "line-width": 3,
+            "line-opacity": 0.9,
           },
         });
 
@@ -311,7 +282,7 @@ export default function FieldDetailNew() {
     return () => {
       mapInstance.off("error", errorHandler);
     };
-  }, [mapInstance, field, fieldId, ndviImage, proxyImageUrl, proxyTileUrl, copernicusImageUrl, useCopernicus, selectedPalette, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
+  }, [mapInstance, field, fieldId, ndviImage, proxyImageUrl, proxyTileUrl, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
 
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
@@ -409,13 +380,6 @@ export default function FieldDetailNew() {
               </span>
             </div>
 
-            {/* Escala de cores vertical igual OneSoil */}
-            <div className="absolute bottom-12 left-3 flex flex-col items-center gap-1">
-              <span className="text-[10px] font-medium text-white drop-shadow-md">1.0</span>
-              <div className="w-3 h-24 rounded-sm bg-gradient-to-b from-green-500 via-yellow-400 to-red-500 shadow-md" />
-              <span className="text-[10px] font-medium text-white drop-shadow-md">0.0</span>
-            </div>
-
             {/* Cloud Coverage Warning */}
             {ndviImage?.cloudCoverage && ndviImage.cloudCoverage > 30 && (
               <div className="absolute top-3 right-3 bg-yellow-500/90 backdrop-blur-sm rounded-lg px-3 py-1.5 flex items-center gap-2">
@@ -461,35 +425,8 @@ export default function FieldDetailNew() {
               </DropdownMenu>
             </div>
 
-            {/* Seletor de Paleta de Cores */}
+            {/* NDVI Color Scale */}
             <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-600">Paleta de cores</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7 text-xs">
-                      {palettes.find(p => p.key === selectedPalette)?.name || 'Contraste'}
-                      <ChevronDown className="h-3 w-3 ml-1" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {palettes.map((palette) => (
-                      <DropdownMenuItem 
-                        key={palette.key}
-                        onClick={() => setSelectedPalette(palette.key)}
-                        className={selectedPalette === palette.key ? 'bg-green-50' : ''}
-                      >
-                        <div>
-                          <div className="font-medium">{palette.name}</div>
-                          <div className="text-xs text-gray-500">{palette.description}</div>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              
-              {/* NDVI Color Scale */}
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                 <span>Baixo</span>
                 <span>NDVI</span>

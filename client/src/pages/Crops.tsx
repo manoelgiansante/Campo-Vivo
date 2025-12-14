@@ -75,13 +75,12 @@ export default function Crops() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFieldForRotation, setSelectedFieldForRotation] = useState<number | null>(null);
 
-  const { data: crops, isLoading, refetch } = trpc.crops.list.useQuery();
+  const { data: crops, isLoading, refetch } = trpc.crops.listAll.useQuery();
   const { data: fields } = trpc.fields.list.useQuery();
-  // Rotation suggestions - using simulated data for now
-  const rotationSuggestions = selectedFieldForRotation ? [
-    { crop: "Milho", reason: "Boa rotação após soja" },
-    { crop: "Feijão", reason: "Fixação de nitrogênio" },
-  ] : [];
+  const { data: rotationSuggestions } = trpc.rotation.getSuggestions.useQuery(
+    { fieldId: selectedFieldForRotation! },
+    { enabled: !!selectedFieldForRotation }
+  );
   
   const createMutation = trpc.crops.create.useMutation({
     onSuccess: () => {
@@ -90,7 +89,7 @@ export default function Crops() {
       setFormData(initialFormData);
       refetch();
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || "Erro ao criar cultivo");
     },
   });
@@ -99,15 +98,16 @@ export default function Crops() {
     if (!crops) return [];
     if (!searchQuery) return crops;
     
-    return crops.filter((crop: any) => 
+    return crops.filter(crop => 
       crop.cropType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      crop.variety?.toLowerCase().includes(searchQuery.toLowerCase())
+      crop.variety?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      crop.season?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [crops, searchQuery]);
 
-  const activeCrops = filteredCrops.filter((c: any) => c.status === "growing" || c.status === "planted");
-  const plannedCrops = filteredCrops.filter((c: any) => c.status === "planned");
-  const harvestedCrops = filteredCrops.filter((c: any) => c.status === "harvested" || c.status === "failed");
+  const activeCrops = filteredCrops.filter(c => c.status === "growing" || c.status === "planted");
+  const plannedCrops = filteredCrops.filter(c => c.status === "planned");
+  const harvestedCrops = filteredCrops.filter(c => c.status === "harvested" || c.status === "failed");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +126,11 @@ export default function Crops() {
       variety: formData.variety.trim() || undefined,
       plantingDate: formData.plantingDate ? new Date(formData.plantingDate) : undefined,
       expectedHarvestDate: formData.expectedHarvestDate ? new Date(formData.expectedHarvestDate) : undefined,
+      status: formData.status,
+      areaHectares: formData.areaHectares ? Math.round(parseFloat(formData.areaHectares) * 100) : undefined,
+      expectedYield: formData.expectedYield ? parseInt(formData.expectedYield) : undefined,
+      notes: formData.notes.trim() || undefined,
+      season: formData.season.trim() || undefined,
     });
   };
 
@@ -199,7 +204,7 @@ export default function Crops() {
         <TabsContent value="active">
           {activeCrops.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {activeCrops.map((crop: any) => (
+              {activeCrops.map((crop) => (
                 <CropCard key={crop.id} crop={crop} />
               ))}
             </div>
@@ -222,7 +227,7 @@ export default function Crops() {
         <TabsContent value="planned">
           {plannedCrops.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {plannedCrops.map((crop: any) => (
+              {plannedCrops.map((crop) => (
                 <CropCard key={crop.id} crop={crop} />
               ))}
             </div>
@@ -245,7 +250,7 @@ export default function Crops() {
         <TabsContent value="history">
           {harvestedCrops.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {harvestedCrops.map((crop: any) => (
+              {harvestedCrops.map((crop) => (
                 <CropCard key={crop.id} crop={crop} />
               ))}
             </div>
@@ -287,18 +292,25 @@ export default function Crops() {
                 </Select>
               </div>
 
-              {selectedFieldForRotation && rotationSuggestions && rotationSuggestions.length > 0 && (
+              {selectedFieldForRotation && rotationSuggestions && (
                 <div className="space-y-4">
+                  {rotationSuggestions.lastCrop && (
+                    <div className="p-4 rounded-lg bg-muted">
+                      <p className="text-sm text-muted-foreground">Último cultivo</p>
+                      <p className="text-lg font-semibold">{rotationSuggestions.lastCrop}</p>
+                    </div>
+                  )}
+
                   <div>
                     <h4 className="font-medium mb-3">Cultivos sugeridos para próxima safra:</h4>
                     <div className="grid gap-3 md:grid-cols-3">
-                      {rotationSuggestions.map((suggestion: any, index: number) => (
+                      {rotationSuggestions.suggestions.map((suggestion, index) => (
                         <Card key={index} className="cursor-pointer hover:border-primary transition-colors"
                           onClick={() => {
                             setFormData(prev => ({
                               ...prev,
                               fieldId: selectedFieldForRotation,
-                              cropType: suggestion.crop,
+                              cropType: suggestion,
                               season: getCurrentSeason(),
                             }));
                             setShowNewCropDialog(true);
@@ -309,7 +321,7 @@ export default function Crops() {
                               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                                 <Leaf className="h-5 w-5 text-primary" />
                               </div>
-                              <span className="font-medium">{suggestion.crop}</span>
+                              <span className="font-medium">{suggestion}</span>
                             </div>
                             <ArrowRight className="h-4 w-4 text-muted-foreground" />
                           </CardContent>

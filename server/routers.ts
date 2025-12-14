@@ -7,6 +7,7 @@ import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./_core/env";
 import * as agromonitoring from "./services/agromonitoring";
+import * as weather from "./services/weather";
 
 // Helper para converter URLs HTTP para HTTPS
 const toHttps = (url: string | null | undefined): string | null => 
@@ -366,17 +367,143 @@ export const appRouter = router({
       }),
   }),
 
-  // ==================== WEATHER ====================
+  // ==================== WEATHER (Open-Meteo API) ====================
   weather: router({
+    // Get current weather and 7-day forecast for a field
     getByField: protectedProcedure
-      .input(z.object({ fieldId: z.number(), days: z.number().optional() }))
+      .input(z.object({ fieldId: z.number() }))
       .query(async ({ ctx, input }) => {
         const field = await db.getFieldById(input.fieldId);
         if (!field || field.userId !== ctx.user.id) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
         }
-        return await db.getWeatherByFieldId(input.fieldId, input.days ?? 5);
+        
+        // Get field center coordinates
+        let lat = parseFloat(field.latitude || "0");
+        let lng = parseFloat(field.longitude || "0");
+        
+        // If no coordinates, try to get from boundaries
+        if (lat === 0 && lng === 0 && field.boundaries) {
+          try {
+            const boundaries = typeof field.boundaries === "string" 
+              ? JSON.parse(field.boundaries) 
+              : field.boundaries;
+            if (Array.isArray(boundaries) && boundaries.length > 0) {
+              const sumLat = boundaries.reduce((acc: number, p: any) => acc + (p.lat || p[1] || 0), 0);
+              const sumLng = boundaries.reduce((acc: number, p: any) => acc + (p.lng || p[0] || 0), 0);
+              lat = sumLat / boundaries.length;
+              lng = sumLng / boundaries.length;
+            }
+          } catch (e) {
+            console.error("Error parsing boundaries for weather:", e);
+          }
+        }
+        
+        if (lat === 0 && lng === 0) {
+          lat = -23.5505;
+          lng = -46.6333;
+        }
+        
+        try {
+          const weatherData = await weather.getCurrentWeather(lat, lng);
+          return {
+            success: true,
+            ...weatherData,
+            location: { lat, lng },
+          };
+        } catch (error) {
+          console.error("Error fetching weather:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao buscar dados meteorológicos" });
+        }
       }),
+    
+    // Get historical weather data for charts
+    getHistorical: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        startDate: z.string(),
+        endDate: z.string(),
+        baseTemp: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.fieldId);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        let lat = parseFloat(field.latitude || "0");
+        let lng = parseFloat(field.longitude || "0");
+        
+        if (lat === 0 && lng === 0 && field.boundaries) {
+          try {
+            const boundaries = typeof field.boundaries === "string" 
+              ? JSON.parse(field.boundaries) 
+              : field.boundaries;
+            if (Array.isArray(boundaries) && boundaries.length > 0) {
+              const sumLat = boundaries.reduce((acc: number, p: any) => acc + (p.lat || p[1] || 0), 0);
+              const sumLng = boundaries.reduce((acc: number, p: any) => acc + (p.lng || p[0] || 0), 0);
+              lat = sumLat / boundaries.length;
+              lng = sumLng / boundaries.length;
+            }
+          } catch (e) {
+            console.error("Error parsing boundaries for weather:", e);
+          }
+        }
+        
+        if (lat === 0 && lng === 0) {
+          lat = -23.5505;
+          lng = -46.6333;
+        }
+        
+        try {
+          const historical = await weather.getHistoricalWeather(lat, lng, input.startDate, input.endDate);
+          
+          const accumulatedPrecipitation = weather.calculateAccumulatedPrecipitation(historical.precipitation);
+          const thermalSum = weather.calculateThermalSum(
+            historical.temperatureMax,
+            historical.temperatureMin,
+            input.baseTemp || 10
+          );
+          
+          return {
+            success: true,
+            dates: historical.dates,
+            precipitation: historical.precipitation,
+            accumulatedPrecipitation,
+            temperatureMax: historical.temperatureMax,
+            temperatureMin: historical.temperatureMin,
+            temperatureMean: historical.temperatureMean,
+            thermalSum,
+            totalPrecipitation: accumulatedPrecipitation[accumulatedPrecipitation.length - 1] || 0,
+            totalThermalSum: thermalSum[thermalSum.length - 1] || 0,
+            location: { lat, lng },
+          };
+        } catch (error) {
+          console.error("Error fetching historical weather:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao buscar dados históricos" });
+        }
+      }),
+    
+    // Get weather by coordinates (for map view)
+    getByCoordinates: publicProcedure
+      .input(z.object({
+        lat: z.number(),
+        lng: z.number(),
+      }))
+      .query(async ({ input }) => {
+        try {
+          const weatherData = await weather.getCurrentWeather(input.lat, input.lng);
+          return {
+            success: true,
+            ...weatherData,
+          };
+        } catch (error) {
+          console.error("Error fetching weather by coordinates:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao buscar dados meteorológicos" });
+        }
+      }),
+    
+    // Legacy endpoints for compatibility
     getAlerts: protectedProcedure.query(async ({ ctx }) => {
       return await db.getWeatherAlertsByUserId(ctx.user.id);
     }),
@@ -385,18 +512,6 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await db.dismissWeatherAlert(input.id);
         return { success: true };
-      }),
-    // Fetch weather from external API and save to database
-    fetchForecast: protectedProcedure
-      .input(z.object({ fieldId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const field = await db.getFieldById(input.fieldId);
-        if (!field || field.userId !== ctx.user.id) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
-        }
-        // TODO: Integrate with weather API (OpenWeatherMap, etc.)
-        // For now, return mock data
-        return { success: true, message: "Previsão atualizada" };
       }),
   }),
 

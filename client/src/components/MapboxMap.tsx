@@ -3,8 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 // Set the Mapbox access token
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoibWFub2VsZ2lhbnNhbnRlIiwiYSI6ImNtYXVvMG1lMTBkcG4ya3B6anM5a2VoOW0ifQ.zN4Ra2gAVOJ8Hf1tuYfyQA';
-mapboxgl.accessToken = MAPBOX_TOKEN;
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || "";
 
 export interface MapboxMapProps {
   className?: string;
@@ -47,22 +46,10 @@ export function MapboxMap({
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
-    // Validar coordenadas iniciais
-    let validCenter: [number, number] = [-47.9292, -15.7801]; // Brasília como fallback
-    if (
-      initialCenter &&
-      Array.isArray(initialCenter) &&
-      initialCenter.length === 2 &&
-      !isNaN(initialCenter[0]) &&
-      !isNaN(initialCenter[1])
-    ) {
-      validCenter = initialCenter;
-    }
-
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: getStyleUrl(style),
-      center: validCenter,
+      center: initialCenter,
       zoom: initialZoom,
       interactive,
       attributionControl: true,

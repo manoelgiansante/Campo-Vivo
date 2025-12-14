@@ -21,18 +21,13 @@ import { ptBR } from "date-fns/locale";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { data: overview, isLoading } = trpc.dashboard.summary.useQuery();
+  const { data: overview, isLoading } = trpc.dashboard.getOverview.useQuery();
 
   if (isLoading) {
     return <DashboardSkeleton />;
   }
 
-  const stats = { 
-    totalFields: overview?.totalFields ?? 0, 
-    activeCrops: 0, 
-    pendingTasks: overview?.tasks?.length ?? 0, 
-    unreadAlerts: overview?.alerts?.length ?? 0 
-  };
+  const stats = overview?.stats ?? { totalFields: 0, activeCrops: 0, pendingTasks: 0, unreadAlerts: 0 };
 
   return (
     <div className="space-y-6">
@@ -97,9 +92,9 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent>
-            {overview?.recentFields && overview.recentFields.length > 0 ? (
+            {overview?.fields && overview.fields.length > 0 ? (
               <div className="space-y-3">
-                {overview.recentFields.map((field: any) => (
+                {overview.fields.map((field) => (
                   <div
                     key={field.id}
                     className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
@@ -149,9 +144,9 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent>
-            {overview?.tasks && overview.tasks.length > 0 ? (
+            {overview?.pendingTasks && overview.pendingTasks.length > 0 ? (
               <div className="space-y-3">
-                {overview.tasks.map((task: any) => (
+                {overview.pendingTasks.map((task) => (
                   <div
                     key={task.id}
                     className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
@@ -197,7 +192,7 @@ export default function Dashboard() {
           <CardContent>
             {overview?.alerts && overview.alerts.length > 0 ? (
               <div className="space-y-3">
-                {overview.alerts.map((alert: any) => (
+                {overview.alerts.map((alert) => (
                   <div
                     key={alert.id}
                     className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -242,9 +237,9 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent>
-            {overview?.notes && overview.notes.length > 0 ? (
+            {overview?.recentNotes && overview.recentNotes.length > 0 ? (
               <div className="space-y-3">
-                {overview.notes.slice(0, 4).map((note: any) => (
+                {overview.recentNotes.slice(0, 4).map((note) => (
                   <div
                     key={note.id}
                     className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"

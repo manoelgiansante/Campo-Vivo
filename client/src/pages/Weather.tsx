@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +24,44 @@ import {
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+
+// Weather code descriptions (WMO codes)
+const weatherCodeDescriptions: Record<number, string> = {
+  0: 'Céu limpo',
+  1: 'Principalmente limpo',
+  2: 'Parcialmente nublado',
+  3: 'Nublado',
+  45: 'Neblina',
+  48: 'Neblina com geada',
+  51: 'Garoa leve',
+  53: 'Garoa moderada',
+  55: 'Garoa intensa',
+  61: 'Chuva leve',
+  63: 'Chuva moderada',
+  65: 'Chuva forte',
+  71: 'Neve leve',
+  73: 'Neve moderada',
+  75: 'Neve forte',
+  80: 'Pancadas leves',
+  81: 'Pancadas moderadas',
+  82: 'Pancadas fortes',
+  95: 'Tempestade',
+  96: 'Tempestade com granizo leve',
+  99: 'Tempestade com granizo forte',
+};
+
+function getWeatherIconByCode(code: number, isDay: boolean = true) {
+  const iconClass = "h-10 w-10 mx-auto";
+  
+  if (code === 0) return isDay ? <Sun className={`${iconClass} text-yellow-500`} /> : <Cloud className={`${iconClass} text-gray-400`} />;
+  if (code <= 3) return <Cloud className={`${iconClass} text-gray-400`} />;
+  if (code <= 48) return <CloudFog className={`${iconClass} text-gray-400`} />;
+  if (code <= 55) return <CloudRain className={`${iconClass} text-blue-400`} />;
+  if (code <= 65) return <CloudRain className={`${iconClass} text-blue-500`} />;
+  if (code <= 75) return <CloudSnow className={`${iconClass} text-blue-200`} />;
+  if (code <= 82) return <CloudRain className={`${iconClass} text-blue-600`} />;
+  return <CloudRain className={`${iconClass} text-purple-500`} />;
+}
 
 export default function Weather() {
   const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
@@ -115,7 +152,7 @@ export default function Weather() {
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        {getAlertIcon(alert.alertType, alert.severity)}
+                        <AlertTriangle className="h-5 w-5 text-yellow-600" />
                         <div>
                           <p className="font-medium">{alert.title}</p>
                           <p className="text-sm text-muted-foreground">{alert.message}</p>
@@ -135,7 +172,7 @@ export default function Weather() {
           )}
 
           {/* Current Conditions */}
-          {weather && weather.length > 0 && (
+          {weather && weather.current && (
             <Card>
               <CardHeader>
                 <CardTitle>Condições Atuais</CardTitle>
@@ -150,9 +187,7 @@ export default function Weather() {
                     <div>
                       <p className="text-sm text-muted-foreground">Temperatura</p>
                       <p className="text-2xl font-bold">
-                        {weather[0].temperatureMax 
-                          ? `${(weather[0].temperatureMax / 10).toFixed(0)}°C`
-                          : "-"}
+                        {weather.current.temperature?.toFixed(0)}°C
                       </p>
                     </div>
                   </div>
@@ -161,9 +196,7 @@ export default function Weather() {
                     <div>
                       <p className="text-sm text-muted-foreground">Umidade</p>
                       <p className="text-2xl font-bold">
-                        {weather[0].humidity 
-                          ? `${weather[0].humidity}%`
-                          : "-"}
+                        {weather.current.humidity}%
                       </p>
                     </div>
                   </div>
@@ -172,9 +205,7 @@ export default function Weather() {
                     <div>
                       <p className="text-sm text-muted-foreground">Vento</p>
                       <p className="text-2xl font-bold">
-                        {weather[0].windSpeed 
-                          ? `${(weather[0].windSpeed / 10).toFixed(0)} km/h`
-                          : "-"}
+                        {weather.current.windSpeed?.toFixed(0)} km/h
                       </p>
                     </div>
                   </div>
@@ -183,35 +214,42 @@ export default function Weather() {
                     <div>
                       <p className="text-sm text-muted-foreground">Precipitação</p>
                       <p className="text-2xl font-bold">
-                        {weather[0].precipitation 
-                          ? `${(weather[0].precipitation / 10).toFixed(1)} mm`
-                          : "0 mm"}
+                        {weather.current.precipitation?.toFixed(1) || "0"} mm
                       </p>
                     </div>
+                  </div>
+                </div>
+                <div className="mt-4 p-4 rounded-lg bg-muted/50 flex items-center gap-4">
+                  {getWeatherIconByCode(weather.current.weatherCode, weather.current.isDay)}
+                  <div>
+                    <p className="font-medium">{weatherCodeDescriptions[weather.current.weatherCode] || "Desconhecido"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Atualizado agora
+                    </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* 5-Day Forecast */}
+          {/* 7-Day Forecast */}
           <Card>
             <CardHeader>
-              <CardTitle>Previsão para 5 Dias</CardTitle>
+              <CardTitle>Previsão para 7 Dias</CardTitle>
               <CardDescription>
                 Condições climáticas esperadas para os próximos dias
               </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="grid gap-4 md:grid-cols-5">
-                  {[...Array(5)].map((_, i) => (
+                <div className="grid gap-4 md:grid-cols-7">
+                  {[...Array(7)].map((_, i) => (
                     <Skeleton key={i} className="h-40" />
                   ))}
                 </div>
-              ) : weather && weather.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-5">
-                  {weather.slice(0, 5).map((day, index) => (
+              ) : weather && weather.daily && weather.daily.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-7">
+                  {weather.daily.map((day, index) => (
                     <div 
                       key={index} 
                       className={`p-4 rounded-lg border text-center ${
@@ -226,27 +264,28 @@ export default function Weather() {
                       <p className="text-xs text-muted-foreground mb-3">
                         {format(new Date(day.date), "dd/MM")}
                       </p>
-                      {getWeatherIcon(day.condition)}
-                      <p className="text-xs text-muted-foreground mt-2 capitalize">
-                        {getConditionLabel(day.condition)}
+                      {getWeatherIconByCode(day.weatherCode)}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {weatherCodeDescriptions[day.weatherCode] || ""}
                       </p>
                       <div className="mt-3">
                         <p className="text-lg font-bold">
-                          {day.temperatureMax 
-                            ? `${(day.temperatureMax / 10).toFixed(0)}°`
-                            : "-"}
+                          {day.temperatureMax?.toFixed(0)}°
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {day.temperatureMin 
-                            ? `${(day.temperatureMin / 10).toFixed(0)}°`
-                            : "-"}
+                          {day.temperatureMin?.toFixed(0)}°
                         </p>
                       </div>
-                      {day.precipitation && day.precipitation > 0 && (
+                      {day.precipitation > 0 && (
                         <div className="flex items-center justify-center gap-1 mt-2 text-xs text-blue-500">
                           <Droplets className="h-3 w-3" />
-                          {(day.precipitation / 10).toFixed(1)}mm
+                          {day.precipitation.toFixed(1)}mm
                         </div>
+                      )}
+                      {day.precipitationProbability > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {day.precipitationProbability}% chance
+                        </p>
                       )}
                     </div>
                   ))}
@@ -264,7 +303,7 @@ export default function Weather() {
           </Card>
 
           {/* Agricultural Recommendations */}
-          {weather && weather.length > 0 && (
+          {weather && weather.daily && weather.daily.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Recomendações Agrícolas</CardTitle>
@@ -274,7 +313,7 @@ export default function Weather() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {getAgriculturalRecommendations(weather).map((rec, index) => (
+                  {getAgriculturalRecommendations(weather.daily, weather.current).map((rec, index) => (
                     <div key={index} className="flex items-start gap-3 p-4 rounded-lg bg-muted">
                       <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${rec.iconBg}`}>
                         {rec.icon}
@@ -305,70 +344,33 @@ export default function Weather() {
   );
 }
 
-function getAlertIcon(alertType: string | null, severity: string | null) {
-  const iconClass = severity === "critical" ? "text-destructive" : 
-                    severity === "warning" ? "text-yellow-600" : "text-blue-500";
-  
-  switch (alertType) {
-    case "rain":
-      return <CloudRain className={`h-5 w-5 ${iconClass}`} />;
-    case "frost":
-      return <CloudSnow className={`h-5 w-5 ${iconClass}`} />;
-    case "heat":
-      return <Sun className={`h-5 w-5 ${iconClass}`} />;
-    case "drought":
-      return <Sun className={`h-5 w-5 ${iconClass}`} />;
-    case "wind":
-      return <Wind className={`h-5 w-5 ${iconClass}`} />;
-    default:
-      return <AlertTriangle className={`h-5 w-5 ${iconClass}`} />;
-  }
+interface DailyWeather {
+  date: string;
+  temperatureMax: number;
+  temperatureMin: number;
+  precipitation: number;
+  precipitationProbability: number;
+  weatherCode: number;
 }
 
-function getWeatherIcon(condition: string | null) {
-  const iconClass = "h-10 w-10 mx-auto";
-  
-  switch (condition) {
-    case "sunny":
-    case "clear":
-      return <Sun className={`${iconClass} text-yellow-500`} />;
-    case "partly_cloudy":
-      return <Cloud className={`${iconClass} text-gray-400`} />;
-    case "cloudy":
-      return <Cloud className={`${iconClass} text-gray-500`} />;
-    case "rain":
-    case "showers":
-      return <CloudRain className={`${iconClass} text-blue-500`} />;
-    case "storm":
-      return <CloudRain className={`${iconClass} text-purple-500`} />;
-    case "fog":
-      return <CloudFog className={`${iconClass} text-gray-400`} />;
-    default:
-      return <Cloud className={`${iconClass} text-gray-400`} />;
-  }
+interface CurrentWeather {
+  temperature: number;
+  humidity: number;
+  precipitation: number;
+  windSpeed: number;
+  windDirection: number;
+  weatherCode: number;
+  isDay: boolean;
 }
 
-function getConditionLabel(condition: string | null): string {
-  const labels: Record<string, string> = {
-    sunny: "Ensolarado",
-    clear: "Céu limpo",
-    partly_cloudy: "Parcialmente nublado",
-    cloudy: "Nublado",
-    rain: "Chuva",
-    showers: "Pancadas de chuva",
-    storm: "Tempestade",
-    fog: "Neblina",
-  };
-  return labels[condition || ""] || "Não disponível";
-}
-
-function getAgriculturalRecommendations(weather: any[]) {
+function getAgriculturalRecommendations(daily: DailyWeather[], current?: CurrentWeather) {
   const recommendations = [];
   
-  const todayWeather = weather[0];
-  const hasRainComing = weather.slice(0, 3).some(w => w.precipitation && w.precipitation > 50);
-  const isHot = todayWeather?.temperatureMax && todayWeather.temperatureMax > 350;
-  const isCold = todayWeather?.temperatureMin && todayWeather.temperatureMin < 100;
+  const todayWeather = daily[0];
+  const hasRainComing = daily.slice(0, 3).some(w => w.precipitation > 5);
+  const isHot = todayWeather?.temperatureMax > 35;
+  const isCold = todayWeather?.temperatureMin < 10;
+  const isWindy = current?.windSpeed && current.windSpeed > 30;
   
   if (hasRainComing) {
     recommendations.push({
@@ -397,7 +399,16 @@ function getAgriculturalRecommendations(weather: any[]) {
     });
   }
   
-  if (!hasRainComing && !isHot) {
+  if (isWindy) {
+    recommendations.push({
+      icon: <Wind className="h-4 w-4 text-gray-500" />,
+      iconBg: "bg-gray-100",
+      title: "Ventos fortes",
+      description: "Evite aplicações de defensivos para prevenir deriva. Verifique estruturas e coberturas."
+    });
+  }
+  
+  if (!hasRainComing && !isHot && !isWindy) {
     recommendations.push({
       icon: <Sun className="h-4 w-4 text-green-500" />,
       iconBg: "bg-green-100",

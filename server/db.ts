@@ -1,6 +1,5 @@
-import { eq, and, desc, asc, gte, lte, sql, inArray, isNull, or } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { eq, and, desc, asc, gte, lte, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
   InsertField, fields, Field,
@@ -12,76 +11,21 @@ import {
   InsertCropRotationPlan, cropRotationPlans, CropRotationPlan,
   InsertTask, tasks, Task,
   InsertNotification, notifications, Notification,
-  InsertFarm, farms, Farm,
-  InsertFieldShare, fieldShares, FieldShare,
-  InsertPushToken, pushTokens, PushToken,
-  InsertNdviHistory, ndviHistory, NdviHistory,
-  InsertPushSubscription, pushSubscriptions, PushSubscription,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
-let _client: ReturnType<typeof postgres> | null = null;
-let _connectionFailed = false;
-
-// In-memory storage for demo mode when database is unavailable
-const demoStorage = {
-  users: new Map<string, any>(),
-  fields: new Map<number, any>(),
-  nextFieldId: 1,
-};
-
-export function isDemoMode() {
-  return _connectionFailed || !process.env.DATABASE_URL;
-}
 
 export async function getDb() {
-  if (_connectionFailed) return null;
-  
-  if (!_db) {
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) {
-      console.warn("[Database] DATABASE_URL not set - running in demo mode");
-      _connectionFailed = true;
-      return null;
-    }
+  if (!_db && process.env.DATABASE_URL) {
     try {
-      console.log("[Database] Connecting to PostgreSQL...");
-      _client = postgres(dbUrl, { 
-        connect_timeout: 10,
-        idle_timeout: 20,
-        max_lifetime: 60 * 30,
-      });
-      // Test the connection
-      await _client`SELECT 1`;
-      _db = drizzle(_client);
-      console.log("[Database] Connected successfully");
-    } catch (error: any) {
-      console.error("[Database] Failed to connect:", error?.message || error);
-      _connectionFailed = true;
+      _db = drizzle(process.env.DATABASE_URL);
+    } catch (error) {
+      console.warn("[Database] Failed to connect:", error);
       _db = null;
     }
   }
   return _db;
-}
-
-// Demo mode helpers
-export function getDemoUser(openId: string) {
-  return demoStorage.users.get(openId);
-}
-
-export function setDemoUser(openId: string, user: any) {
-  demoStorage.users.set(openId, user);
-}
-
-export function getDemoFields(userId: number) {
-  return Array.from(demoStorage.fields.values()).filter(f => f.userId === userId && f.isActive !== false);
-}
-
-export function createDemoField(field: any): number {
-  const id = demoStorage.nextFieldId++;
-  demoStorage.fields.set(id, { ...field, id, createdAt: new Date(), updatedAt: new Date(), isActive: true });
-  return id;
 }
 
 // ==================== USER FUNCTIONS ====================
@@ -139,8 +83,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onConflictDoUpdate({
-      target: users.openId,
+    await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
     });
   } catch (error) {
@@ -169,115 +112,25 @@ export async function updateUserProfile(userId: number, data: Partial<InsertUser
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
-// ==================== USER PREFERENCES FUNCTIONS ====================
-export interface UserPreferences {
-  mapPosition?: {
-    center: [number, number];
-    zoom: number;
-    updatedAt: string;
-  };
-  [key: string]: any;
-}
-
-export async function getUserPreferences(userId: number): Promise<UserPreferences | null> {
-  const db = await getDb();
-  if (!db) return null;
-  
-  try {
-    const result = await db.select({ preferences: users.preferences })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    
-    return (result[0]?.preferences as UserPreferences) || null;
-  } catch (error) {
-    console.error("[getUserPreferences] Error:", error);
-    return null;
-  }
-}
-
-export async function updateUserPreferences(userId: number, newPrefs: Partial<UserPreferences>): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  
-  try {
-    // Get current preferences
-    const current = await getUserPreferences(userId);
-    const merged = { ...(current || {}), ...newPrefs };
-    
-    await db.update(users)
-      .set({ preferences: merged })
-      .where(eq(users.id, userId));
-  } catch (error) {
-    console.error("[updateUserPreferences] Error:", error);
-    throw error;
-  }
-}
-
-
 // ==================== FIELD FUNCTIONS ====================
 export async function createField(field: InsertField): Promise<number> {
   const db = await getDb();
-  if (!db) {
-    // Demo mode: store in memory
-    console.log("[createField] Demo mode - storing in memory");
-    return createDemoField(field);
-  }
-  try {
-    console.log("[createField] Creating field:", JSON.stringify(field));
-    const result = await db.insert(fields).values(field).returning({ id: fields.id });
-    console.log("[createField] Field created with id:", result[0].id);
-    return result[0].id;
-  } catch (error) {
-    console.error("[createField] Error:", error);
-    throw error;
-  }
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(fields).values(field);
+  return result[0].insertId;
 }
 
 export async function getFieldById(id: number): Promise<Field | undefined> {
   const db = await getDb();
-  if (!db) {
-    // Demo mode
-    const demoField = Array.from((globalThis as any).__demoFields?.values() || []).find((f: any) => f.id === id);
-    return demoField as Field | undefined;
-  }
+  if (!db) return undefined;
   const result = await db.select().from(fields).where(eq(fields.id, id)).limit(1);
   return result[0];
 }
 
 export async function getFieldsByUserId(userId: number): Promise<Field[]> {
   const db = await getDb();
-  if (!db) {
-    // Demo mode: return from memory
-    console.log("[getFieldsByUserId] Demo mode - returning from memory");
-    return getDemoFields(userId) as Field[];
-  }
-  try {
-    console.log("[getFieldsByUserId] Fetching fields for user:", userId);
-    const result = await db.select().from(fields).where(and(eq(fields.userId, userId), eq(fields.isActive, true))).orderBy(desc(fields.createdAt));
-    console.log("[getFieldsByUserId] Found", result.length, "fields");
-    return result;
-  } catch (error) {
-    console.error("[getFieldsByUserId] Error:", error);
-    return [];
-  }
-}
-
-// Retorna todos os campos que têm boundaries definidos (para scheduler NDVI)
-export async function getAllFieldsWithBoundaries(): Promise<Field[]> {
-  const db = await getDb();
   if (!db) return [];
-  try {
-    const result = await db
-      .select()
-      .from(fields)
-      .where(and(eq(fields.isActive, true), sql`${fields.boundaries} IS NOT NULL`))
-      .orderBy(desc(fields.createdAt));
-    return result;
-  } catch (error) {
-    console.error("[getAllFieldsWithBoundaries] Error:", error);
-    return [];
-  }
+  return await db.select().from(fields).where(and(eq(fields.userId, userId), eq(fields.isActive, true))).orderBy(desc(fields.createdAt));
 }
 
 export async function updateField(id: number, data: Partial<InsertField>) {
@@ -296,8 +149,8 @@ export async function deleteField(id: number) {
 export async function createCrop(crop: InsertCrop): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(crops).values(crop).returning({ id: crops.id });
-  return result[0].id;
+  const result = await db.insert(crops).values(crop);
+  return result[0].insertId;
 }
 
 export async function getCropsByFieldId(fieldId: number): Promise<Crop[]> {
@@ -324,19 +177,12 @@ export async function deleteCrop(id: number) {
   await db.delete(crops).where(eq(crops.id, id));
 }
 
-export async function getCropById(id: number): Promise<Crop | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(crops).where(eq(crops.id, id)).limit(1);
-  return result[0];
-}
-
 // ==================== FIELD NOTES FUNCTIONS ====================
 export async function createFieldNote(note: InsertFieldNote): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(fieldNotes).values(note).returning({ id: fieldNotes.id });
-  return result[0].id;
+  const result = await db.insert(fieldNotes).values(note);
+  return result[0].insertId;
 }
 
 export async function getFieldNotesByFieldId(fieldId: number): Promise<FieldNote[]> {
@@ -363,19 +209,12 @@ export async function deleteFieldNote(id: number) {
   await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
 }
 
-export async function getFieldNoteById(id: number): Promise<FieldNote | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(fieldNotes).where(eq(fieldNotes.id, id)).limit(1);
-  return result[0];
-}
-
 // ==================== WEATHER FUNCTIONS ====================
 export async function createWeatherData(data: InsertWeatherData): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(weatherData).values(data).returning({ id: weatherData.id });
-  return result[0].id;
+  const result = await db.insert(weatherData).values(data);
+  return result[0].insertId;
 }
 
 export async function getWeatherByFieldId(fieldId: number, days: number = 5): Promise<WeatherData[]> {
@@ -392,8 +231,8 @@ export async function getWeatherByFieldId(fieldId: number, days: number = 5): Pr
 export async function createWeatherAlert(alert: InsertWeatherAlert): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(weatherAlerts).values(alert).returning({ id: weatherAlerts.id });
-  return result[0].id;
+  const result = await db.insert(weatherAlerts).values(alert);
+  return result[0].insertId;
 }
 
 export async function getWeatherAlertsByUserId(userId: number): Promise<WeatherAlert[]> {
@@ -414,8 +253,8 @@ export async function dismissWeatherAlert(id: number) {
 export async function createNdviData(data: InsertNdviData): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(ndviData).values(data).returning({ id: ndviData.id });
-  return result[0].id;
+  const result = await db.insert(ndviData).values(data);
+  return result[0].insertId;
 }
 
 export async function getNdviByFieldId(fieldId: number, limit: number = 10): Promise<NdviData[]> {
@@ -441,8 +280,8 @@ export async function getLatestNdviByFieldId(fieldId: number): Promise<NdviData 
 export async function createCropRotationPlan(plan: InsertCropRotationPlan): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(cropRotationPlans).values(plan).returning({ id: cropRotationPlans.id });
-  return result[0].id;
+  const result = await db.insert(cropRotationPlans).values(plan);
+  return result[0].insertId;
 }
 
 export async function getCropRotationByFieldId(fieldId: number): Promise<CropRotationPlan[]> {
@@ -459,19 +298,12 @@ export async function updateCropRotationPlan(id: number, data: Partial<InsertCro
   await db.update(cropRotationPlans).set(data).where(eq(cropRotationPlans.id, id));
 }
 
-export async function getCropRotationPlanById(id: number): Promise<CropRotationPlan | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(cropRotationPlans).where(eq(cropRotationPlans.id, id)).limit(1);
-  return result[0];
-}
-
 // ==================== TASK FUNCTIONS ====================
 export async function createTask(task: InsertTask): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(tasks).values(task).returning({ id: tasks.id });
-  return result[0].id;
+  const result = await db.insert(tasks).values(task);
+  return result[0].insertId;
 }
 
 export async function getTasksByUserId(userId: number): Promise<Task[]> {
@@ -502,19 +334,12 @@ export async function deleteTask(id: number) {
   await db.delete(tasks).where(eq(tasks.id, id));
 }
 
-export async function getTaskById(id: number): Promise<Task | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  return result[0];
-}
-
 // ==================== NOTIFICATION FUNCTIONS ====================
 export async function createNotification(notification: InsertNotification): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(notifications).values(notification).returning({ id: notifications.id });
-  return result[0].id;
+  const result = await db.insert(notifications).values(notification);
+  return result[0].insertId;
 }
 
 export async function getNotificationsByUserId(userId: number, limit: number = 20): Promise<Notification[]> {
@@ -568,223 +393,4 @@ export async function getDashboardStats(userId: number) {
     pendingTasks: tasksResult[0]?.count ?? 0,
     unreadAlerts: alertsResult[0]?.count ?? 0,
   };
-}
-
-// ==================== FARM FUNCTIONS ====================
-export async function createFarm(farm: InsertFarm): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(farms).values(farm).returning({ id: farms.id });
-  return result[0].id;
-}
-
-export async function getFarmById(id: number): Promise<Farm | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(farms).where(eq(farms.id, id)).limit(1);
-  return result[0];
-}
-
-export async function getFarmsByUserId(userId: number): Promise<Farm[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(farms).where(eq(farms.userId, userId)).orderBy(asc(farms.name));
-}
-
-export async function updateFarm(id: number, data: Partial<InsertFarm>) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(farms).set(data).where(eq(farms.id, id));
-}
-
-export async function deleteFarm(id: number) {
-  const db = await getDb();
-  if (!db) return;
-  // Remove farm reference from fields but don't delete them
-  await db.update(fields).set({ farmId: null }).where(eq(fields.farmId, id));
-  await db.delete(farms).where(eq(farms.id, id));
-}
-
-export async function getFieldsByFarmId(farmId: number): Promise<Field[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(fields).where(and(eq(fields.farmId, farmId), eq(fields.isActive, true))).orderBy(asc(fields.name));
-}
-
-export async function assignFieldToFarm(fieldId: number, farmId: number | null) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(fields).set({ farmId }).where(eq(fields.id, fieldId));
-}
-
-// ==================== FIELD SHARE FUNCTIONS ====================
-export async function createFieldShare(share: InsertFieldShare): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(fieldShares).values(share).returning({ id: fieldShares.id });
-  return result[0].id;
-}
-
-export async function getFieldSharesByFieldId(fieldId: number): Promise<FieldShare[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(fieldShares).where(eq(fieldShares.fieldId, fieldId)).orderBy(desc(fieldShares.createdAt));
-}
-
-export async function getFieldSharesByUserId(userId: number): Promise<FieldShare[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(fieldShares).where(eq(fieldShares.sharedWithUserId, userId)).orderBy(desc(fieldShares.createdAt));
-}
-
-export async function getFieldShareByToken(token: string): Promise<FieldShare | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(fieldShares).where(eq(fieldShares.shareToken, token)).limit(1);
-  return result[0];
-}
-
-export async function acceptFieldShare(shareId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(fieldShares).set({ sharedWithUserId: userId, acceptedAt: new Date() }).where(eq(fieldShares.id, shareId));
-}
-
-export async function deleteFieldShare(id: number) {
-  const db = await getDb();
-  if (!db) return;
-  await db.delete(fieldShares).where(eq(fieldShares.id, id));
-}
-
-export async function getSharedFieldsForUser(userId: number): Promise<Field[]> {
-  const db = await getDb();
-  if (!db) return [];
-  const shares = await db.select().from(fieldShares).where(eq(fieldShares.sharedWithUserId, userId));
-  if (shares.length === 0) return [];
-  const fieldIds = shares.map(s => s.fieldId);
-  return await db.select().from(fields).where(inArray(fields.id, fieldIds));
-}
-
-// ==================== PUSH TOKEN FUNCTIONS ====================
-export async function savePushToken(token: InsertPushToken): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  // Check if token exists, update or insert
-  const existing = await db.select().from(pushTokens).where(eq(pushTokens.token, token.token)).limit(1);
-  if (existing.length > 0) {
-    await db.update(pushTokens).set({ isActive: true, updatedAt: new Date() }).where(eq(pushTokens.id, existing[0].id));
-    return existing[0].id;
-  }
-  
-  const result = await db.insert(pushTokens).values(token).returning({ id: pushTokens.id });
-  return result[0].id;
-}
-
-export async function getPushTokensByUserId(userId: number): Promise<PushToken[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.isActive, true)));
-}
-
-export async function deactivatePushToken(token: string) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(pushTokens).set({ isActive: false }).where(eq(pushTokens.token, token));
-}
-
-// ==================== NDVI HISTORY FUNCTIONS ====================
-export async function createNdviHistory(data: InsertNdviHistory): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(ndviHistory).values(data).returning({ id: ndviHistory.id });
-  return result[0].id;
-}
-
-export async function getNdviHistoryByFieldId(fieldId: number, days: number = 30): Promise<NdviHistory[]> {
-  const db = await getDb();
-  if (!db) return [];
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  return await db.select().from(ndviHistory)
-    .where(and(eq(ndviHistory.fieldId, fieldId), gte(ndviHistory.acquisitionDate, startDate)))
-    .orderBy(desc(ndviHistory.acquisitionDate));
-}
-
-export async function getLatestNdviHistoryByFieldId(fieldId: number): Promise<NdviHistory | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(ndviHistory)
-    .where(eq(ndviHistory.fieldId, fieldId))
-    .orderBy(desc(ndviHistory.acquisitionDate))
-    .limit(1);
-  return result[0];
-}
-
-export async function updateFieldNdvi(fieldId: number, ndviValue: number, polygonId?: string): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  const updateData: Partial<Field> = {
-    currentNdvi: ndviValue,
-    lastNdviSync: new Date(),
-  };
-  if (polygonId) {
-    updateData.agroPolygonId = polygonId;
-  }
-  await db.update(fields).set(updateData).where(eq(fields.id, fieldId));
-}
-
-export async function updateFieldAgroPolygonId(fieldId: number, polygonId: string): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(fields).set({ agroPolygonId: polygonId }).where(eq(fields.id, fieldId));
-}
-
-// ==================== PUSH SUBSCRIPTION FUNCTIONS ====================
-export async function savePushSubscription(data: InsertPushSubscription): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  // Verificar se já existe
-  const existing = await db.select().from(pushSubscriptions)
-    .where(eq(pushSubscriptions.endpoint, data.endpoint))
-    .limit(1);
-  
-  if (existing.length > 0) {
-    await db.update(pushSubscriptions)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(pushSubscriptions.endpoint, data.endpoint));
-    return existing[0].id;
-  }
-  
-  const result = await db.insert(pushSubscriptions).values(data).returning({ id: pushSubscriptions.id });
-  return result[0].id;
-}
-
-export async function getPushSubscriptionsByUserId(userId: number): Promise<PushSubscription[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(pushSubscriptions)
-    .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.isActive, true)));
-}
-
-export async function getAllPushSubscriptions(): Promise<PushSubscription[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(pushSubscriptions)
-    .where(eq(pushSubscriptions.isActive, true));
-}
-
-export async function deletePushSubscription(endpoint: string): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
-}
-
-export async function deactivatePushSubscription(endpoint: string): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(pushSubscriptions)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(pushSubscriptions.endpoint, endpoint));
 }

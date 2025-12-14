@@ -4,33 +4,35 @@ import { useNdviOverlay } from "@/hooks/useNdviOverlay";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  NdviChart as NdviChartComponent,
+  NdviColorScale,
+  PrecipitationChart as PrecipitationChartComponent,
+  ThermalSumChart,
+  WeatherWidget,
+  cropGDDRequirements,
+} from "@/components/charts";
 import { 
   ChevronLeft,
   ChevronRight,
   ChevronDown, 
   Maximize2,
-  MoreHorizontal,
   Download,
   Leaf,
   CloudRain,
   Thermometer,
-  Wind,
   Calendar,
   ArrowLeft,
   Layers,
   Upload,
-  Grid3X3,
-  List,
   Cloud,
+  Droplets,
+  Wind,
+  List,
+  Grid3X3,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
-import { format, subDays, startOfYear, differenceInDays } from "date-fns";
+import { format, subDays, subMonths, startOfYear, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import mapboxgl from "mapbox-gl";
 
@@ -249,6 +251,27 @@ export default function FieldDetailPro() {
     { enabled: !!fieldId }
   );
 
+  // Weather queries
+  const [dateRange] = useState({
+    start: format(subMonths(new Date(), 6), "yyyy-MM-dd"),
+    end: format(new Date(), "yyyy-MM-dd"),
+  });
+
+  const { data: weather } = trpc.weather.getByField.useQuery(
+    { fieldId },
+    { enabled: !!fieldId }
+  );
+
+  const { data: historicalWeather } = trpc.weather.getHistorical.useQuery(
+    {
+      fieldId,
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      baseTemp: 10,
+    },
+    { enabled: !!fieldId }
+  );
+
   const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
 
   // Dados para gráficos
@@ -268,15 +291,42 @@ export default function FieldDetailPro() {
     }));
   }, [ndviHistory]);
 
-  const precipitationData = useMemo(() => {
-    const data = [];
-    let accumulated = 0;
-    for (let i = 0; i < 12; i++) {
-      accumulated += 50 + Math.random() * 80;
-      data.push({ date: subDays(new Date(), (11 - i) * 30), value: Math.min(accumulated, 900) });
+  // Prepare chart data from real weather data
+  const precipitationChartData = useMemo(() => {
+    if (!historicalWeather?.dates) {
+      // Fallback mock data
+      const data = [];
+      let accumulated = 0;
+      for (let i = 0; i < 12; i++) {
+        accumulated += 50 + Math.random() * 80;
+        data.push({ 
+          date: format(subDays(new Date(), (11 - i) * 30), "yyyy-MM-dd"), 
+          precipitation: 20 + Math.random() * 40,
+          accumulated: Math.min(accumulated, 900) 
+        });
+      }
+      return data;
     }
-    return data;
-  }, []);
+    return historicalWeather.dates.map((date, i) => ({
+      date,
+      precipitation: historicalWeather.precipitation[i] || 0,
+      accumulated: historicalWeather.accumulatedPrecipitation[i] || 0,
+    }));
+  }, [historicalWeather]);
+
+  const thermalSumChartData = useMemo(() => {
+    if (!historicalWeather?.dates) return [];
+    return historicalWeather.dates.map((date, i) => ({
+      date,
+      thermalSum: historicalWeather.thermalSum[i] || 0,
+      temperatureMean: historicalWeather.temperatureMean[i] || 0,
+    }));
+  }, [historicalWeather]);
+
+  // Get target GDD based on current crop
+  const targetGDD = crops?.[0]?.cropType 
+    ? cropGDDRequirements[crops[0].cropType.toLowerCase()]?.max 
+    : undefined;
 
   const availableImages = useMemo(() => {
     if (!ndviHistory?.length) {
@@ -696,70 +746,100 @@ export default function FieldDetailPro() {
           </Button>
         </div>
 
+        {/* Weather Widget */}
+        {weather?.current && (
+          <div className="bg-white rounded-xl shadow-sm p-5 mb-4">
+            <WeatherWidget current={weather.current} location={field.city || field.name} />
+          </div>
+        )}
+
         {/* Charts - Estilo OneSoil */}
         <div className="space-y-4">
           {/* NDVI Chart */}
           <div className="bg-white rounded-xl shadow-sm p-5">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <NdviChart data={ndviChartData} height={140} />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Leaf className="h-5 w-5 text-green-500" />
+                <span className="text-sm font-medium text-gray-700">Índice NDVI</span>
               </div>
-              <div className="ml-6 text-right min-w-[140px]">
-                <div className="flex items-center justify-end gap-2 mb-2">
-                  <span className="text-sm text-gray-500">NDVI</span>
-                  <button className="p-1 hover:bg-gray-100 rounded">
-                    <Download className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <Leaf className="h-5 w-5 text-green-500" />
-                  <span className="text-3xl font-semibold text-gray-900">{currentNdviValue}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Last updated {daysSinceUpdate} days ago</p>
-              </div>
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <Download className="h-4 w-4 text-gray-400" />
+              </button>
             </div>
+            <NdviChartComponent 
+              data={ndviChartData.map(d => ({ date: format(d.date, "yyyy-MM-dd"), ndvi: d.ndvi }))}
+              currentValue={parseFloat(currentNdviValue)}
+              height={180}
+            />
           </div>
 
           {/* Precipitation Chart */}
           <div className="bg-white rounded-xl shadow-sm p-5">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <PrecipitationChart data={precipitationData} height={140} />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Droplets className="h-5 w-5 text-blue-500" />
+                <span className="text-sm font-medium text-gray-700">Precipitação</span>
               </div>
-              <div className="ml-6 text-right min-w-[140px]">
-                <p className="text-sm text-gray-500 mb-2">Accumulated precipitation</p>
-                <div className="flex items-center justify-end gap-2">
-                  <CloudRain className="h-5 w-5 text-orange-500" />
-                  <span className="text-3xl font-semibold text-gray-900">
-                    {precipitationData[precipitationData.length - 1]?.value.toFixed(0) || 832} mm
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">{periodDays} day period</p>
-              </div>
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <Download className="h-4 w-4 text-gray-400" />
+              </button>
             </div>
+            <PrecipitationChartComponent 
+              data={precipitationChartData}
+              totalPrecipitation={historicalWeather?.totalPrecipitation || precipitationChartData[precipitationChartData.length - 1]?.accumulated}
+              height={180}
+            />
           </div>
 
           {/* Growing Degree Days */}
           <div className="bg-white rounded-xl shadow-sm p-5">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <p className="text-sm text-gray-500 mb-3">Growing degree-days</p>
-                <div className="h-24 bg-gray-50 rounded-lg flex items-center justify-center">
-                  <span className="text-gray-400 text-sm">Temperature chart</span>
-                </div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Thermometer className="h-5 w-5 text-orange-500" />
+                <span className="text-sm font-medium text-gray-700">Soma Térmica (Graus-dia)</span>
               </div>
-              <div className="ml-6 text-right min-w-[180px]">
-                <div className="flex items-center justify-end gap-2 mb-2">
-                  <Thermometer className="h-5 w-5 text-red-500" />
-                  <span className="text-3xl font-semibold text-gray-900">+5,471°</span>
-                </div>
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  In {periodDays - 19} of {periodDays} days, the temperature<br />
-                  was between +10° and +30°
-                </p>
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <Download className="h-4 w-4 text-gray-400" />
+              </button>
+            </div>
+            <ThermalSumChart 
+              data={thermalSumChartData}
+              totalThermalSum={historicalWeather?.totalThermalSum}
+              baseTemperature={10}
+              targetGDD={targetGDD}
+              height={180}
+            />
+          </div>
+
+          {/* Weather Forecast */}
+          {weather?.daily && weather.daily.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Cloud className="h-5 w-5 text-blue-400" />
+                <span className="text-sm font-medium text-gray-700">Previsão para 7 Dias</span>
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {weather.daily.slice(0, 7).map((day, index) => (
+                  <div key={index} className="text-center p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <p className="text-xs font-medium text-gray-600">
+                      {index === 0 ? "Hoje" : format(new Date(day.date), "EEE", { locale: ptBR })}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      {format(new Date(day.date), "dd/MM")}
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">{day.temperatureMax?.toFixed(0)}°</p>
+                    <p className="text-sm text-gray-500">{day.temperatureMin?.toFixed(0)}°</p>
+                    {day.precipitation > 0 && (
+                      <p className="text-xs text-blue-500 mt-1 flex items-center justify-center gap-0.5">
+                        <Droplets className="h-3 w-3" />
+                        {day.precipitation.toFixed(0)}mm
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

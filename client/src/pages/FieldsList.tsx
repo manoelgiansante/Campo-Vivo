@@ -48,18 +48,18 @@ export default function FieldsList() {
       <div className="bg-gray-100 sticky top-0 z-10 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Campos</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Fields</h1>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
                   <Folder className="h-4 w-4" />
-                  <span>Todos os campos</span>
+                  <span>All fields</span>
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem>Todos os campos</DropdownMenuItem>
-                <DropdownMenuItem>Criar grupo...</DropdownMenuItem>
+                <DropdownMenuItem>All fields</DropdownMenuItem>
+                <DropdownMenuItem>Create group...</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -86,7 +86,7 @@ export default function FieldsList() {
       <div className="px-4">
         {/* Group Header */}
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-          <span className="font-medium text-gray-700">Sem grupos</span>
+          <span className="font-medium text-gray-700">No groups</span>
           <span>{(totalArea / 100).toFixed(1)} ha</span>
         </div>
 
@@ -128,7 +128,7 @@ export default function FieldsList() {
           className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-6 h-10 gap-2 shadow-lg"
         >
           <Leaf className="h-4 w-4" />
-          <span>Vegetação</span>
+          <span>Vegetation</span>
         </Button>
       </div>
 
@@ -136,27 +136,27 @@ export default function FieldsList() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Camada do Mapa</SheetTitle>
+            <SheetTitle>Map layer</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 justify-center">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Satélite"
+                label="Satellite image"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Cultivos"
+                label="Crop"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
               />
               <LayerButton
                 icon={<Leaf className="h-6 w-6" />}
-                label="Vegetação"
+                label="Vegetation"
                 active={mapLayer === "vegetation"}
                 onClick={() => setMapLayer("vegetation")}
                 color="green"
@@ -165,10 +165,10 @@ export default function FieldsList() {
 
             {mapLayer === "vegetation" && (
               <div className="mt-6 space-y-2">
-                <NdviOption label="NDVI Básico" active={true} onClick={() => {}} />
-                <NdviOption label="NDVI Contrastado" active={false} onClick={() => {}} />
-                <NdviOption label="NDVI Médio" active={false} onClick={() => {}} />
-                <NdviOption label="Heterogeneidade" active={false} onClick={() => {}} />
+                <NdviOption label="Basic NDVI" active={true} onClick={() => {}} />
+                <NdviOption label="Contrasted NDVI" active={false} onClick={() => {}} />
+                <NdviOption label="Average NDVI" active={false} onClick={() => {}} />
+                <NdviOption label="Heterogenity NDVI" active={false} onClick={() => {}} />
               </div>
             )}
           </div>
@@ -179,31 +179,19 @@ export default function FieldsList() {
 }
 
 function FieldCard({ field, onClick }: { field: any; onClick: () => void }) {
-  // Use real NDVI value from database if available
-  const ndviValue = field.currentNdvi 
-    ? field.currentNdvi / 100  // Convert from stored format (0-100) to display format (0-1)
-    : null;
-  const ndviPercent = ndviValue ? Math.min(100, Math.max(0, ndviValue * 100)) : 50;
-
-  // Get NDVI color based on value
-  const getNdviColor = (value: number): string => {
-    if (value < 0.2) return "#ef4444";
-    if (value < 0.4) return "#f59e0b";
-    if (value < 0.5) return "#eab308";
-    if (value < 0.6) return "#84cc16";
-    if (value < 0.7) return "#22c55e";
-    return "#16a34a";
-  };
+  // Generate a simple NDVI value for display (in real app, this would come from satellite data)
+  const ndviValue = field.ndviValue || 0.74;
+  const ndviPercent = Math.min(100, Math.max(0, ndviValue * 100));
 
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors shadow-sm"
+      className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
     >
       {/* Field Thumbnail */}
       <div className="h-14 w-14 rounded-lg bg-gray-200 flex items-center justify-center overflow-hidden shrink-0">
         {field.boundaries ? (
-          <FieldThumbnail boundaries={field.boundaries} ndviValue={ndviValue} />
+          <FieldThumbnail boundaries={field.boundaries} />
         ) : (
           <Leaf className="h-6 w-6 text-green-600" />
         )}
@@ -219,23 +207,30 @@ function FieldCard({ field, onClick }: { field: any; onClick: () => void }) {
 
       {/* NDVI Indicator */}
       <div className="flex items-center gap-2 shrink-0">
-        <div className="w-16 h-2 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 relative">
-          {ndviValue !== null && (
-            <div 
-              className="absolute top-0 w-1 h-full bg-gray-800 rounded-full"
-              style={{ left: `${ndviPercent}%`, transform: 'translateX(-50%)' }}
-            />
-          )}
+        <div className="w-16 h-2 rounded-full overflow-hidden bg-gray-200">
+          <div 
+            className="h-full rounded-full"
+            style={{
+              width: `${ndviPercent}%`,
+              background: `linear-gradient(to right, #EF4444, #EAB308 50%, #22C55E)`,
+            }}
+          />
+          <div 
+            className="relative -mt-2"
+            style={{ marginLeft: `${ndviPercent}%`, transform: 'translateX(-50%)' }}
+          >
+            <div className="w-0.5 h-3 bg-gray-800" />
+          </div>
         </div>
         <span className="text-sm font-medium text-gray-700 w-10 text-right">
-          {ndviValue !== null ? ndviValue.toFixed(2).replace('.', ',') : '--'}
+          {ndviValue.toFixed(2).replace('.', ',')}
         </span>
       </div>
     </button>
   );
 }
 
-function FieldThumbnail({ boundaries, ndviValue }: { boundaries: any; ndviValue: number | null }) {
+function FieldThumbnail({ boundaries }: { boundaries: any }) {
   // Simple SVG representation of field shape
   try {
     const coords = typeof boundaries === 'string' ? JSON.parse(boundaries) : boundaries;
@@ -261,27 +256,13 @@ function FieldThumbnail({ boundaries, ndviValue }: { boundaries: any; ndviValue:
       return `${x},${y}`;
     }).join(' ');
 
-    // Get color based on NDVI value
-    const getNdviColor = (value: number | null): string => {
-      if (value === null) return "#94a3b8"; // Gray if no NDVI
-      if (value < 0.2) return "#ef4444";
-      if (value < 0.4) return "#f59e0b";
-      if (value < 0.5) return "#eab308";
-      if (value < 0.6) return "#84cc16";
-      if (value < 0.7) return "#22c55e";
-      return "#16a34a";
-    };
-
-    const fillColor = getNdviColor(ndviValue);
-    const strokeColor = ndviValue !== null ? "#ffffff" : "#64748b";
-
     return (
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
         <polygon
           points={points}
-          fill={fillColor}
-          stroke={strokeColor}
-          strokeWidth="1.5"
+          fill="#22C55E"
+          stroke="#166534"
+          strokeWidth="1"
         />
       </svg>
     );

@@ -3,8 +3,7 @@
 .pnpm-store/
 
 # Build outputs
-dist/*
-!dist/.gitkeep
+dist/
 build/
 *.dist
 

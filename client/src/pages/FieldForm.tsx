@@ -64,7 +64,7 @@ export default function FieldForm() {
       toast.success("Campo criado com sucesso!");
       setLocation(`/fields/${data.id}`);
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || "Erro ao criar campo");
     },
   });
@@ -74,7 +74,7 @@ export default function FieldForm() {
       toast.success("Campo atualizado com sucesso!");
       setLocation(`/fields/${fieldId}`);
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || "Erro ao atualizar campo");
     },
   });
@@ -92,7 +92,7 @@ export default function FieldForm() {
         state: existingField.state || "",
         country: existingField.country || "Brasil",
         soilType: existingField.soilType || "",
-        irrigationType: (existingField.irrigationType as any) || "none",
+        irrigationType: existingField.irrigationType || "none",
       });
       if (existingField.latitude && existingField.longitude) {
         setMapCenter({

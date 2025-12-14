@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,7 +32,6 @@ import {
   Calendar,
   AlertTriangle
 } from "lucide-react";
-// @ts-nocheck
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -85,17 +83,17 @@ export default function NotesNew() {
       <div className="bg-gray-100 sticky top-0 z-10 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Notas</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Notes</h1>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-1 text-green-600 text-sm font-medium">
                   <Folder className="h-4 w-4" />
-                  <span>Todos os campos</span>
+                  <span>All fields</span>
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem>Todos os campos</DropdownMenuItem>
+                <DropdownMenuItem>All fields</DropdownMenuItem>
                 {fields?.map((field) => (
                   <DropdownMenuItem key={field.id}>{field.name}</DropdownMenuItem>
                 ))}
@@ -121,14 +119,14 @@ export default function NotesNew() {
                 <FileText className="h-8 w-8 text-gray-400" />
               </div>
               <p className="text-gray-500 text-center max-w-xs mb-6">
-                Adicione notas ao realizar inspeções de campo ou quando quiser marcar um local importante no mapa.
+                Add noted when you conduct field scouting or when you want to mark an important place on the map.
               </p>
               <Button 
                 onClick={() => setShowAddDialog(true)}
                 className="bg-green-600 hover:bg-green-700 rounded-full px-6 h-11 gap-2"
               >
                 <FilePlus className="h-5 w-5" />
-                Adicionar nota
+                Add note
               </Button>
             </div>
           </div>
@@ -143,7 +141,7 @@ export default function NotesNew() {
             className="bg-green-600 hover:bg-green-700 rounded-full px-6 h-11 gap-2 shadow-lg"
           >
             <FilePlus className="h-5 w-5" />
-            Adicionar nota
+            Add note
           </Button>
         </div>
       )}
