@@ -536,6 +536,73 @@ const appRouter = t.router({
           return [];
         }
       }),
+
+    // Imagem NDVI mais recente (URL de imagem e tile)
+    getLatestNdviImage: protectedProcedure
+      .input(z.object({ fieldId: z.number(), days: z.number().default(60) }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+
+        if (!field) throw new Error("Campo não encontrado");
+
+        if (!process.env.AGROMONITORING_API_KEY || !field.agroPolygonId) {
+          return {
+            configured: false,
+            imageUrl: null,
+            tileUrl: null,
+            truecolorUrl: null,
+            message: "Agromonitoring não configurado",
+          };
+        }
+
+        try {
+          const images = await getAgroSatelliteImages(field.agroPolygonId, input.days);
+          const sorted = images
+            .filter((img) => img.cl < 50)
+            .sort((a, b) => {
+              const diff = a.cl - b.cl;
+              if (Math.abs(diff) > 15) return diff;
+              return b.dt - a.dt;
+            });
+
+          const pick = sorted[0] || images.sort((a, b) => a.cl - b.cl)[0];
+
+          if (!pick) {
+            return {
+              configured: true,
+              imageUrl: null,
+              tileUrl: null,
+              truecolorUrl: null,
+              message: "Nenhuma imagem disponível",
+            };
+          }
+
+          return {
+            configured: true,
+            imageUrl: toHttps(pick.image?.ndvi),
+            tileUrl: toHttps(pick.tile?.ndvi),
+            truecolorUrl: toHttps(pick.image?.truecolor),
+            date: new Date(pick.dt * 1000).toISOString(),
+            cloudCoverage: pick.cl,
+            dataCoverage: pick.dc,
+            warning: sorted.length ? undefined : `Imagem com ${pick.cl}% de nuvens`,
+          };
+        } catch (error) {
+          console.error("Erro ao buscar imagem NDVI:", error);
+          return {
+            configured: true,
+            imageUrl: null,
+            tileUrl: null,
+            truecolorUrl: null,
+            error: "Erro ao buscar imagem",
+          };
+        }
+      }),
       
     // Buscar NDVI de múltiplos campos de uma vez
     getLatestBatch: protectedProcedure
@@ -1202,6 +1269,13 @@ async function getAgroSatelliteImages(polygonId: string, days: number): Promise<
   
   if (!response.ok) return [];
   return response.json();
+}
+
+function toHttps(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("https://")) return url;
+  if (url.startsWith("http://")) return url.replace("http://", "https://");
+  return url;
 }
 
 async function getAgroWeather(lat: number, lon: number): Promise<any> {

@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { MapboxMap, useMapbox } from "@/components/MapboxMap";
+import { useNdviOverlay } from "@/hooks/useNdviOverlay";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -34,6 +35,13 @@ export default function FieldDetailNew() {
   const [selectedDate, setSelectedDate] = useState<number>(0);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap } = useMapbox();
+  const {
+    addNdviImageOverlay,
+    addNdviTileOverlay,
+    removeAllOverlays,
+    calculateBoundsFromPolygon,
+    generateNdviGradientOverlay,
+  } = useNdviOverlay();
 
   const { data: field, isLoading } = trpc.fields.getById.useQuery({ id: fieldId });
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
@@ -42,10 +50,10 @@ export default function FieldDetailNew() {
   );
 
   // Buscar última imagem NDVI (tile e imagem única)
-  const { data: ndviImage } = (trpc as any).ndvi?.getLatestNdviImage?.useQuery(
-    { fieldId },
+  const { data: ndviImage } = trpc.ndvi.getLatestNdviImage.useQuery(
+    { fieldId, days: 60 },
     { enabled: !!fieldId }
-  ) || { data: null };
+  );
 
   const { data: crops } = trpc.crops.listByField.useQuery(
     { fieldId },
@@ -58,39 +66,39 @@ export default function FieldDetailNew() {
 
     const drawField = async () => {
       try {
-        const boundaries = typeof field.boundaries === 'string' 
-          ? JSON.parse(field.boundaries) 
+        const boundaries = typeof field.boundaries === "string"
+          ? JSON.parse(field.boundaries)
           : field.boundaries;
-        
+
         if (!Array.isArray(boundaries) || boundaries.length < 3) return;
 
-        const coordinates = boundaries.map((p: { lat: number; lng: number }) => 
+        const coordinates = boundaries.map((p: { lat: number; lng: number }) =>
           [p.lng, p.lat] as [number, number]
         );
-        coordinates.push(coordinates[0]); // Close polygon
+        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+          coordinates.push(coordinates[0]);
+        }
 
         const sourceId = "field-detail";
-        const ndviLayerId = "ndvi-image-layer";
-        const ndviSourceId = "ndvi-image";
         const fillLayerId = "ndvi-fill-layer";
+        const outlineId = `${sourceId}-outline`;
 
-        // Remove existing layers
-        [fillLayerId, ndviLayerId, `${sourceId}-outline`].forEach(id => {
+        // Limpar overlays/layers anteriores
+        removeAllOverlays(mapInstance);
+        [fillLayerId, outlineId, sourceId].forEach((id) => {
           if (mapInstance.getLayer(id)) mapInstance.removeLayer(id);
-        });
-        [sourceId, ndviSourceId].forEach(id => {
           if (mapInstance.getSource(id)) mapInstance.removeSource(id);
         });
 
-        // Calculate bounds
-        const lngs = coordinates.map((c: [number, number]) => c[0]);
-        const lats = coordinates.map((c: [number, number]) => c[1]);
+        // Bounds e fonte do campo
+        const boundsArray = calculateBoundsFromPolygon(coordinates);
+        const lngs = coordinates.map((c) => c[0]);
+        const lats = coordinates.map((c) => c[1]);
         const minLng = Math.min(...lngs);
         const maxLng = Math.max(...lngs);
         const minLat = Math.min(...lats);
         const maxLat = Math.max(...lats);
 
-        // Add field source (for outline and fill)
         mapInstance.addSource(sourceId, {
           type: "geojson",
           data: {
@@ -103,46 +111,49 @@ export default function FieldDetailNew() {
           },
         });
 
-        // 1) Tentar sobrepor NDVI: usar IMAGEM colorizada (proxy) para evitar CORS e garantir cor
         let ndviLoaded = false;
 
-        // 1a) Imagem colorizada (Agromonitoring) via proxy local para evitar CORS
-        const ndviUrl = `/api/ndvi-image/${fieldId}`;
-        try {
-          console.log("[Map] Tentando overlay NDVI via imagem (proxy):", ndviUrl);
-          mapInstance.addSource(ndviSourceId, {
-            type: "image",
-            url: ndviUrl,
-            coordinates: [
-              [minLng, maxLat], // top-left
-              [maxLng, maxLat], // top-right
-              [maxLng, minLat], // bottom-right
-              [minLng, minLat], // bottom-left
-            ],
-          });
+        // 1) Prefer tile direto da API (funciona em Vercel sem proxy)
+        const tileUrl = ndviImage?.tileUrl ? ensureHttps(ndviImage.tileUrl) : null;
+        const imageUrl = ndviImage?.imageUrl ? ensureHttps(ndviImage.imageUrl) : null;
 
-          mapInstance.addLayer({
-            id: ndviLayerId,
-            type: "raster",
-            source: ndviSourceId,
-            paint: {
-              "raster-opacity": 0.95,
-              "raster-fade-duration": 0,
-            },
-          });
-
-          ndviLoaded = true;
-          console.log("[Map] Overlay NDVI (imagem proxy) adicionado");
-        } catch (error) {
-          console.warn("[Map] Falha overlay NDVI imagem proxy, usando fill:", error);
+        if (tileUrl) {
+          try {
+            addNdviTileOverlay(mapInstance, "ndvi-tile-layer", tileUrl, {
+              opacity: 0.9,
+              bounds: [minLng, minLat, maxLng, maxLat],
+            });
+            ndviLoaded = true;
+          } catch (error) {
+            console.warn("[Map] Falha tile NDVI direto:", error);
+          }
         }
 
-        // 2) Base fill SEMPRE (mesmo com NDVI) para garantir percepção de área
+        // 2) Se não tem tile mas tem imagem, usar image overlay
+        if (!ndviLoaded && imageUrl) {
+          try {
+            addNdviImageOverlay(mapInstance, "ndvi-image-layer", imageUrl, {
+              opacity: 0.9,
+              coordinates: boundsArray,
+            });
+            ndviLoaded = true;
+          } catch (error) {
+            console.warn("[Map] Falha imagem NDVI direta:", error);
+          }
+        }
+
+        // 3) Fallback: gradiente sintético usando NDVI atual
+        if (!ndviLoaded) {
+          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+          generateNdviGradientOverlay(mapInstance, "ndvi-fallback-layer", currentNdvi, boundsArray);
+          ndviLoaded = true;
+        }
+
+        // Base fill para percepção de área
         const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
-        const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
-                         currentNdvi >= 0.4 ? "#EAB308" : 
+        const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
+                         currentNdvi >= 0.4 ? "#EAB308" :
                          currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
-        console.log("[Map] Fill NDVI base:", currentNdvi, fillColor);
 
         mapInstance.addLayer({
           id: fillLayerId,
@@ -150,22 +161,20 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.25 : 0.6,
+            "fill-opacity": ndviLoaded ? 0.18 : 0.45,
           },
         });
 
-        // 3) Contorno para melhor visibilidade
         mapInstance.addLayer({
-          id: `${sourceId}-outline`,
+          id: outlineId,
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#000000",
-            "line-width": 3,
+            "line-color": "#111827",
+            "line-width": 2.5,
           },
         });
 
-        // Fit bounds
         const bounds = new mapboxgl.LngLatBounds(
           [minLng, minLat],
           [maxLng, maxLat]
@@ -191,7 +200,7 @@ export default function FieldDetailNew() {
     return () => {
       mapInstance.off("error", errorHandler);
     };
-  }, [mapInstance, field, fieldId, ndviImage]);
+  }, [mapInstance, field, fieldId, ndviImage, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
 
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
@@ -452,4 +461,12 @@ function FieldDetailSkeleton() {
       </div>
     </div>
   );
+}
+
+// Garante HTTPS para URLs retornadas pelo Agromonitoring
+function ensureHttps(url?: string | null) {
+  if (!url) return null;
+  if (url.startsWith("https://")) return url;
+  if (url.startsWith("http://")) return url.replace("http://", "https://");
+  return url;
 }
