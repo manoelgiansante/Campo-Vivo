@@ -132,10 +132,39 @@ export default function FieldDetailNew() {
           proxyImageUrl
         });
 
-        // SEMPRE tentar carregar a imagem NDVI via proxy
-        // O proxy verifica se o campo tem agroPolygonId e retorna a imagem ou 404
-        // Isso garante que o overlay seja exibido mesmo se a query tRPC falhar
+        // 1) PRIMEIRA OPÇÃO: Usar tiles NDVI para mais resolução e gradiente detalhado (igual OneSoil)
         {
+          try {
+            console.log("[NDVI] Tentando carregar tiles via proxy:", proxyTileUrl);
+            
+            // Adicionar source de tiles com proxy local
+            mapInstance.addSource("ndvi-tile-layer-source", {
+              type: "raster",
+              tiles: [proxyTileUrl],
+              tileSize: 256,
+              bounds: [minLng, minLat, maxLng, maxLat],
+            });
+
+            // Adicionar layer de tiles com alta opacidade
+            mapInstance.addLayer({
+              id: "ndvi-tile-layer",
+              type: "raster",
+              source: "ndvi-tile-layer-source",
+              paint: {
+                "raster-opacity": 0.95,
+                "raster-fade-duration": 300,
+              },
+            });
+
+            ndviLoaded = true;
+            console.log("[NDVI] Tiles carregados com sucesso via proxy");
+          } catch (error) {
+            console.warn("[NDVI] Falha ao carregar tiles via proxy:", error);
+          }
+        }
+
+        // 2) Fallback: usar imagem estática se tiles falharam
+        if (!ndviLoaded) {
           try {
             console.log("[NDVI] Carregando imagem via proxy:", proxyImageUrl);
             console.log("[NDVI] Bounds para overlay:", boundsArray);
@@ -157,64 +186,25 @@ export default function FieldDetailNew() {
             });
             
             // Adicionar source de imagem com proxy local
-            // boundsArray é [[topLeft], [topRight], [bottomRight], [bottomLeft]]
             mapInstance.addSource("ndvi-image-layer-source", {
               type: "image",
               url: proxyImageUrl,
               coordinates: boundsArray,
             });
 
-            // Adicionar layer de imagem ANTES do fill layer
+            // Adicionar layer de imagem
             mapInstance.addLayer({
               id: "ndvi-image-layer",
               type: "raster",
               source: "ndvi-image-layer-source",
               paint: {
-                "raster-opacity": 0.9,
+                "raster-opacity": 0.95,
                 "raster-fade-duration": 0,
               },
-            });
-            
-            // Listener de erro no source
-            mapInstance.on("error", (e: any) => {
-              if (e.sourceId === "ndvi-image-layer-source") {
-                console.error("[NDVI] Erro no source da imagem:", e.error);
-              }
             });
 
             ndviLoaded = true;
             console.log("[NDVI] Imagem adicionada ao mapa com sucesso!");
-          } catch (error) {
-            console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
-          }
-        }
-
-        // 2) Fallback: usar tiles se imagem falhou
-        if (!ndviLoaded && hasNdviConfig && ndviImage?.tileUrl) {
-          try {
-            console.log("[NDVI] Tentando carregar tiles via proxy:", proxyTileUrl);
-            
-            // Adicionar source de tiles com proxy local
-            mapInstance.addSource("ndvi-tile-layer-source", {
-              type: "raster",
-              tiles: [proxyTileUrl],
-              tileSize: 256,
-              bounds: [minLng, minLat, maxLng, maxLat],
-            });
-
-            // Adicionar layer de tiles
-            mapInstance.addLayer({
-              id: "ndvi-tile-layer",
-              type: "raster",
-              source: "ndvi-tile-layer-source",
-              paint: {
-                "raster-opacity": 0.85,
-                "raster-fade-duration": 300,
-              },
-            });
-
-            ndviLoaded = true;
-            console.log("[NDVI] Imagem carregada com sucesso via proxy");
           } catch (error) {
             console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
           }
@@ -228,31 +218,33 @@ export default function FieldDetailNew() {
           ndviLoaded = true;
         }
 
-        // Base fill para percepção de área (semi-transparente)
-        const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
-        const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
-                         currentNdvi >= 0.4 ? "#EAB308" :
-                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+        // Base fill para percepção de área (apenas se NDVI não carregou)
+        if (!ndviLoaded) {
+          const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
+          const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
+                           currentNdvi >= 0.4 ? "#EAB308" :
+                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
 
-        mapInstance.addLayer({
-          id: fillLayerId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.15 : 0.4,
-          },
-        });
+          mapInstance.addLayer({
+            id: fillLayerId,
+            type: "fill",
+            source: sourceId,
+            paint: {
+              "fill-color": fillColor,
+              "fill-opacity": 0.4,
+            },
+          });
+        }
 
-        // Borda do campo (sempre visível)
+        // Borda do campo (preta igual OneSoil)
         mapInstance.addLayer({
           id: outlineId,
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#FFFFFF",
-            "line-width": 3,
-            "line-opacity": 0.9,
+            "line-color": "#1a1a1a",
+            "line-width": 2.5,
+            "line-opacity": 1,
           },
         });
 
@@ -378,6 +370,13 @@ export default function FieldDetailNew() {
               <span className="text-sm font-medium">
                 NDVI: {field.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : "N/A"}
               </span>
+            </div>
+
+            {/* Escala de cores vertical igual OneSoil */}
+            <div className="absolute bottom-12 left-3 flex flex-col items-center gap-1">
+              <span className="text-[10px] font-medium text-white drop-shadow-md">1.0</span>
+              <div className="w-3 h-24 rounded-sm bg-gradient-to-b from-green-500 via-yellow-400 to-red-500 shadow-md" />
+              <span className="text-[10px] font-medium text-white drop-shadow-md">0.0</span>
             </div>
 
             {/* Cloud Coverage Warning */}

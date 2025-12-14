@@ -101,3 +101,8 @@
 - [ ] Implementar overlay com variação vermelho→amarelo→verde
 - [ ] Recortar tiles pelo contorno exato do polígono
 - [ ] Atualizar endpoint de proxy para tiles
+
+- [ ] Usar tiles NDVI em vez de imagem estática para mais resolução
+- [ ] Contorno preto ao redor do polígono (igual OneSoil)
+- [ ] Escala de cores vertical na lateral do mapa (0.0 a 1.0)
+- [ ] Gradiente detalhado pixel a pixel dentro do campo
