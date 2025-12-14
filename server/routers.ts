@@ -1113,7 +1113,7 @@ export const appRouter = router({
         
         try {
           const endDate = new Date();
-          const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+          const startDate = new Date(endDate.getTime() - 60 * 24 * 60 * 60 * 1000); // 60 dias
           
           const images = await agromonitoring.searchSatelliteImages(
             field.agroPolygonId,
@@ -1121,21 +1121,48 @@ export const appRouter = router({
             endDate
           );
           
-          // Pegar a imagem mais recente com menor cobertura de nuvem
+          console.log(`[NDVI] Campo ${field.id}: ${images.length} imagens encontradas`);
+          
+          // CORREÇÃO: Aceitar até 50% de nuvens e ordenar melhor
           const sortedImages = images
-            .filter(img => img.cl < 30) // Menos de 30% nuvens
-            .sort((a, b) => b.dt - a.dt); // Mais recente primeiro
+            .filter(img => img.cl < 50) // Aumentado de 30 para 50
+            .sort((a, b) => {
+              // Priorizar menos nuvens, depois mais recente
+              const cloudDiff = a.cl - b.cl;
+              if (Math.abs(cloudDiff) > 15) return cloudDiff;
+              return b.dt - a.dt;
+            });
+          
+          console.log(`[NDVI] Campo ${field.id}: ${sortedImages.length} imagens após filtro`);
           
           if (sortedImages.length === 0) {
+            // Se não há imagens com <50% nuvens, pegar a melhor disponível
+            const bestAvailable = images.sort((a, b) => a.cl - b.cl)[0];
+            if (bestAvailable) {
+              console.log(`[NDVI] Usando imagem com ${bestAvailable.cl}% nuvens`);
+              return {
+                configured: true,
+                imageUrl: bestAvailable.image?.ndvi || null,
+                tileUrl: bestAvailable.tile?.ndvi || null,
+                truecolorUrl: bestAvailable.image?.truecolor || null,
+                date: new Date(bestAvailable.dt * 1000),
+                cloudCoverage: bestAvailable.cl,
+                dataCoverage: bestAvailable.dc,
+                warning: `Imagem com ${bestAvailable.cl}% de nuvens`
+              };
+            }
+            
             return {
               configured: true,
               imageUrl: null,
               tileUrl: null,
-              message: "Nenhuma imagem disponível com baixa cobertura de nuvens"
+              message: "Nenhuma imagem disponível nos últimos 60 dias"
             };
           }
           
           const latestImage = sortedImages[0];
+          console.log(`[NDVI] Imagem selecionada: ${latestImage.cl}% nuvens, data: ${new Date(latestImage.dt * 1000)}`);
+          
           return {
             configured: true,
             imageUrl: latestImage.image?.ndvi || null,

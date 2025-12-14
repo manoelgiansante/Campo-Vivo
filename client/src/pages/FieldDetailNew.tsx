@@ -103,6 +103,8 @@ export default function FieldDetailNew() {
 
         // Add NDVI image overlay if available (OneSoil-style pixel overlay)
         if (ndviImage?.imageUrl) {
+          console.log("[Map] Adicionando overlay NDVI:", ndviImage.imageUrl);
+          
           mapInstance.addSource(ndviSourceId, {
             type: "image",
             url: ndviImage.imageUrl,
@@ -124,26 +126,32 @@ export default function FieldDetailNew() {
             },
           });
         } else {
+          console.log("[Map] Sem imagem NDVI, usando fill sólido");
           // Fallback to solid fill if no NDVI image
+          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+          const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
+                           currentNdvi >= 0.4 ? "#EAB308" : 
+                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+          
           mapInstance.addLayer({
             id: sourceId,
             type: "fill",
             source: sourceId,
             paint: {
-              "fill-color": "#22C55E",
-              "fill-opacity": 0.6,
+              "fill-color": fillColor,
+              "fill-opacity": 0.7,
             },
           });
         }
 
-        // Add outline
+        // SEMPRE adicionar contorno (borda preta grossa para melhor visibilidade)
         mapInstance.addLayer({
           id: `${sourceId}-outline`,
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#ffffff",
-            "line-width": 2,
+            "line-color": "#000000",
+            "line-width": 3,
           },
         });
 
