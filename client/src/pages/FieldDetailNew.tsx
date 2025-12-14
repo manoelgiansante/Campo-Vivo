@@ -103,73 +103,38 @@ export default function FieldDetailNew() {
           },
         });
 
-        // 1) Tentar sobrepor NDVI: preferir IMAGEM colorizada (mais parecida com OneSoil), fallback tile/proxy
+        // 1) Tentar sobrepor NDVI: usar IMAGEM colorizada (proxy) para evitar CORS e garantir cor
         let ndviLoaded = false;
 
-        // 1a) Imagem colorizada (Agromonitoring) ou proxy
-        const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
-        if (ndviUrl) {
-          try {
-            console.log("[Map] Tentando overlay NDVI via imagem:", ndviUrl);
-            mapInstance.addSource(ndviSourceId, {
-              type: "image",
-              url: ndviUrl,
-              coordinates: [
-                [minLng, maxLat], // top-left
-                [maxLng, maxLat], // top-right
-                [maxLng, minLat], // bottom-right
-                [minLng, minLat], // bottom-left
-              ],
-            });
+        // 1a) Imagem colorizada (Agromonitoring) via proxy local para evitar CORS
+        const ndviUrl = `/api/ndvi-image/${fieldId}`;
+        try {
+          console.log("[Map] Tentando overlay NDVI via imagem (proxy):", ndviUrl);
+          mapInstance.addSource(ndviSourceId, {
+            type: "image",
+            url: ndviUrl,
+            coordinates: [
+              [minLng, maxLat], // top-left
+              [maxLng, maxLat], // top-right
+              [maxLng, minLat], // bottom-right
+              [minLng, minLat], // bottom-left
+            ],
+          });
 
-            mapInstance.addLayer({
-              id: ndviLayerId,
-              type: "raster",
-              source: ndviSourceId,
-              paint: {
-                "raster-opacity": 0.95,
-                "raster-fade-duration": 0,
-              },
-            });
+          mapInstance.addLayer({
+            id: ndviLayerId,
+            type: "raster",
+            source: ndviSourceId,
+            paint: {
+              "raster-opacity": 0.95,
+              "raster-fade-duration": 0,
+            },
+          });
 
-            ndviLoaded = true;
-            console.log("[Map] Overlay NDVI (imagem) adicionado");
-          } catch (error) {
-            console.warn("[Map] Falha overlay NDVI imagem, tentando tile:", error);
-          }
-        }
-
-        // 1b) Tile (melhor nitidez) se imagem falhar ou não existir
-        if (!ndviLoaded) {
-          const tileTemplate = ndviImage?.tileUrl || `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`;
-          if (tileTemplate) {
-            try {
-              console.log("[Map] Tentando overlay NDVI via tile:", tileTemplate);
-              mapInstance.addSource(ndviSourceId, {
-                type: "raster",
-                tiles: [tileTemplate],
-                tileSize: 256,
-                scheme: "tms",
-                minzoom: 5,
-                maxzoom: 18,
-              });
-
-              mapInstance.addLayer({
-                id: ndviLayerId,
-                type: "raster",
-                source: ndviSourceId,
-                paint: {
-                  "raster-opacity": 0.95,
-                  "raster-fade-duration": 0,
-                },
-              });
-
-              ndviLoaded = true;
-              console.log("[Map] Overlay NDVI (tile) adicionado");
-            } catch (error) {
-              console.warn("[Map] Falha tile NDVI, usando fill:", error);
-            }
-          }
+          ndviLoaded = true;
+          console.log("[Map] Overlay NDVI (imagem proxy) adicionado");
+        } catch (error) {
+          console.warn("[Map] Falha overlay NDVI imagem proxy, usando fill:", error);
         }
 
         // 2) Base fill SEMPRE (mesmo com NDVI) para garantir percepção de área
@@ -185,7 +150,7 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.18 : 0.5,
+            "fill-opacity": ndviLoaded ? 0.25 : 0.6,
           },
         });
 
