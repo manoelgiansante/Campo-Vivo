@@ -106,7 +106,7 @@ export default function FieldDetailNew() {
         // 1) Tentar sobrepor NDVI: preferir tile (melhor nitidez), fallback imagem proxy
         let ndviLoaded = false;
 
-        // 1a) Raster tile (Agromonitoring tile URL ou proxy)
+        // 1a) Raster tile (Agromonitoring tile URL ou proxy). Tentamos scheme TMS (invert y) que é comum em NDVI tiles.
         const tileTemplate = ndviImage?.tileUrl || `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`;
         if (tileTemplate) {
           try {
@@ -115,6 +115,9 @@ export default function FieldDetailNew() {
               type: "raster",
               tiles: [tileTemplate],
               tileSize: 256,
+              scheme: "tms",
+              minzoom: 5,
+              maxzoom: 18,
             });
 
             mapInstance.addLayer({
@@ -122,7 +125,7 @@ export default function FieldDetailNew() {
               type: "raster",
               source: ndviSourceId,
               paint: {
-                "raster-opacity": 0.9,
+                "raster-opacity": 1,
                 "raster-fade-duration": 0,
               },
             });
@@ -183,7 +186,7 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.25 : 0.55, // se NDVI carregou, deixa só um realce
+            "fill-opacity": ndviLoaded ? 0.2 : 0.55,
           },
         });
 
