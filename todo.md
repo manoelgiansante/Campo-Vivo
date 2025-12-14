@@ -244,3 +244,8 @@
 - [x] Atualizar para usar nova estrutura de dados do Open-Meteo
 - [x] Corrigir tipagem TypeScript
 - [x] Recomendações agrícolas baseadas no clima
+
+
+## Bugs Reportados
+
+- [x] Erro 404 na rota /fields no Vercel (falta configuração SPA routing)
