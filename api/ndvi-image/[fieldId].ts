@@ -114,8 +114,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).send("No NDVI image available");
     }
 
-    // Fazer proxy da imagem
-    const imageUrl = image.image.ndvi.replace("http://", "https://");
+    // Fazer proxy da imagem com paleta de contraste (gradiente vermelho→amarelo→verde)
+    // Paleta 3 = Contrast palette #1 (mais parecido com OneSoil)
+    // Paleta 4 = Contrast palette #2
+    let imageUrl = image.image.ndvi.replace("http://", "https://");
+    
+    // Adicionar parâmetro de paleta para ter gradiente de cores
+    if (imageUrl.includes("?")) {
+      imageUrl += "&paletteid=3";
+    } else {
+      imageUrl += "?paletteid=3";
+    }
     console.log(`[NDVI Proxy] Buscando imagem: ${imageUrl.substring(0, 80)}...`);
 
     const imageResponse = await fetch(imageUrl);

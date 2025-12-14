@@ -93,3 +93,11 @@
 - [x] Substituir Google Maps por Mapbox nos detalhes do campo
 - [x] Configurar estilo de satélite igual ao OneSoil
 - [x] Instalar turf.js para cálculos geográficos
+
+
+## Versão 2.2 - Gradiente NDVI igual OneSoil (Em Progresso)
+
+- [ ] Usar tiles NDVI do Agromonitoring com gradiente de cores
+- [ ] Implementar overlay com variação vermelho→amarelo→verde
+- [ ] Recortar tiles pelo contorno exato do polígono
+- [ ] Atualizar endpoint de proxy para tiles
