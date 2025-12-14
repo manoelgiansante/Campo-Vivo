@@ -10,6 +10,10 @@ import { storagePut } from "./storage";
 import * as agromonitoring from "./services/agromonitoring";
 import { pestsRouter, healthRouter, agronomistRouter } from "./services/advancedRoutes";
 
+// Helper para converter URLs HTTP para HTTPS (evitar mixed content no browser)
+const toHttps = (url: string | null | undefined): string | null => 
+  url ? url.replace('http://', 'https://') : null;
+
 // Helper function to generate mock weather forecast
 function generateMockForecast() {
   const forecast = [];
@@ -1093,6 +1097,10 @@ export const appRouter = router({
           return { images: [], configured: true, error: "Erro ao buscar imagens" };
         }
       }),
+    
+
+    
+
     // Buscar a imagem NDVI mais recente para exibir no mapa (OneSoil style)
     getLatestNdviImage: protectedProcedure
       .input(z.object({ fieldId: z.number() }))
@@ -1142,9 +1150,9 @@ export const appRouter = router({
               console.log(`[NDVI] Usando imagem com ${bestAvailable.cl}% nuvens`);
               return {
                 configured: true,
-                imageUrl: bestAvailable.image?.ndvi || null,
-                tileUrl: bestAvailable.tile?.ndvi || null,
-                truecolorUrl: bestAvailable.image?.truecolor || null,
+                imageUrl: toHttps(bestAvailable.image?.ndvi),
+                tileUrl: toHttps(bestAvailable.tile?.ndvi),
+                truecolorUrl: toHttps(bestAvailable.image?.truecolor),
                 date: new Date(bestAvailable.dt * 1000),
                 cloudCoverage: bestAvailable.cl,
                 dataCoverage: bestAvailable.dc,
@@ -1165,9 +1173,9 @@ export const appRouter = router({
           
           return {
             configured: true,
-            imageUrl: latestImage.image?.ndvi || null,
-            tileUrl: latestImage.tile?.ndvi || null,
-            truecolorUrl: latestImage.image?.truecolor || null,
+            imageUrl: toHttps(latestImage.image?.ndvi),
+            tileUrl: toHttps(latestImage.tile?.ndvi),
+            truecolorUrl: toHttps(latestImage.image?.truecolor),
             date: new Date(latestImage.dt * 1000),
             cloudCoverage: latestImage.cl,
             dataCoverage: latestImage.dc,
