@@ -5,21 +5,14 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MobileLayout } from "./components/MobileLayout";
 
-// Pages
+// New OneSoil-style pages
 import MapView from "./pages/MapView";
-import FieldsListNew from "./pages/FieldsListNew";
+import FieldsList from "./pages/FieldsList";
 import FieldDetailNew from "./pages/FieldDetailNew";
+import FieldDetailPro from "./pages/FieldDetailPro";
 import FieldDrawNew from "./pages/FieldDrawNew";
 import NotesNew from "./pages/NotesNew";
 import ProfileNew from "./pages/ProfileNew";
-import FarmsOneSoil from "./pages/FarmsOneSoil";
-import FieldShareOneSoil from "./pages/FieldShareOneSoil";
-import AuthPage from "./pages/AuthPage";
-
-// Pro features pages
-import WeatherCharts from "./pages/WeatherCharts";
-import SatelliteCompare from "./pages/SatelliteCompare";
-import PlansPage from "./pages/PlansPage";
 
 function Router() {
   return (
@@ -44,18 +37,11 @@ function Router() {
       <Route path="/fields">
         {() => (
           <MobileLayout>
-            <FieldsListNew />
+            <FieldsList />
           </MobileLayout>
         )}
       </Route>
       <Route path="/fields/new">
-        {() => (
-          <MobileLayout hideNav fullScreen>
-            <FieldDrawNew />
-          </MobileLayout>
-        )}
-      </Route>
-      <Route path="/fields/draw">
         {() => (
           <MobileLayout hideNav fullScreen>
             <FieldDrawNew />
@@ -69,35 +55,8 @@ function Router() {
           </MobileLayout>
         )}
       </Route>
-      <Route path="/fields/:id/share">
-        {() => (
-          <MobileLayout>
-            <FieldShareOneSoil />
-          </MobileLayout>
-        )}
-      </Route>
-      <Route path="/fields/:id/weather">
-        {() => (
-          <MobileLayout>
-            <WeatherCharts />
-          </MobileLayout>
-        )}
-      </Route>
-      <Route path="/fields/:id/compare">
-        {() => (
-          <MobileLayout hideNav fullScreen>
-            <SatelliteCompare />
-          </MobileLayout>
-        )}
-      </Route>
-
-      {/* Farms */}
-      <Route path="/farms">
-        {() => (
-          <MobileLayout>
-            <FarmsOneSoil />
-          </MobileLayout>
-        )}
+      <Route path="/fields/:id/pro">
+        {() => <FieldDetailPro />}
       </Route>
 
       {/* Notes */}
@@ -109,28 +68,11 @@ function Router() {
         )}
       </Route>
 
-      {/* Auth - Login/Signup */}
-      <Route path="/login">
-        {() => <AuthPage />}
-      </Route>
-      <Route path="/auth">
-        {() => <AuthPage />}
-      </Route>
-
       {/* Profile */}
       <Route path="/profile">
         {() => (
           <MobileLayout>
             <ProfileNew />
-          </MobileLayout>
-        )}
-      </Route>
-
-      {/* Plans */}
-      <Route path="/plans">
-        {() => (
-          <MobileLayout hideNav>
-            <PlansPage />
           </MobileLayout>
         )}
       </Route>
