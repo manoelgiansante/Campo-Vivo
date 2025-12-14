@@ -41,6 +41,12 @@ export default function FieldDetailNew() {
     { enabled: !!fieldId }
   );
 
+  // Buscar última imagem NDVI (tile e imagem única)
+  const { data: ndviImage } = (trpc as any).ndvi?.getLatestNdviImage?.useQuery(
+    { fieldId },
+    { enabled: !!fieldId }
+  ) || { data: null };
+
   const { data: crops } = trpc.crops.listByField.useQuery(
     { fieldId },
     { enabled: !!fieldId }
@@ -97,25 +103,61 @@ export default function FieldDetailNew() {
           },
         });
 
-        // SEMPRE adicionar fill colorido baseado no NDVI atual
-        const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
-        const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
-                         currentNdvi >= 0.4 ? "#EAB308" : 
-                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
-        
-        console.log("[Map] NDVI atual:", currentNdvi, "Cor:", fillColor);
-        
-        mapInstance.addLayer({
-          id: fillLayerId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": fillColor,
-            "fill-opacity": 0.6,
-          },
-        });
+        // 1) Tentar sobrepor imagem NDVI (OneSoil-style)
+        let ndviLoaded = false;
+        const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
 
-        // SEMPRE adicionar contorno (borda preta grossa para melhor visibilidade)
+        if (ndviUrl) {
+          try {
+            console.log("[Map] Tentando overlay NDVI:", ndviUrl);
+            mapInstance.addSource(ndviSourceId, {
+              type: "image",
+              url: ndviUrl,
+              coordinates: [
+                [minLng, maxLat], // top-left
+                [maxLng, maxLat], // top-right
+                [maxLng, minLat], // bottom-right
+                [minLng, minLat], // bottom-left
+              ],
+            });
+
+            mapInstance.addLayer({
+              id: ndviLayerId,
+              type: "raster",
+              source: ndviSourceId,
+              paint: {
+                "raster-opacity": 0.75,
+                "raster-fade-duration": 0,
+              },
+            });
+
+            ndviLoaded = true;
+            console.log("[Map] Overlay NDVI adicionado com sucesso");
+          } catch (error) {
+            console.warn("[Map] Falha ao adicionar overlay NDVI, usando fill:", error);
+          }
+        }
+
+        // 2) Fallback: fill colorido baseado no NDVI atual
+        if (!ndviLoaded) {
+          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+          const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
+                           currentNdvi >= 0.4 ? "#EAB308" : 
+                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+          console.log("[Map] Fallback fill NDVI:", currentNdvi, fillColor);
+
+          mapInstance.addLayer({
+            id: fillLayerId,
+            type: "fill",
+            source: sourceId,
+            paint: {
+              "fill-color": fillColor,
+              "fill-opacity": 0.6,
+            },
+          });
+        }
+
+        // 3) Contorno para melhor visibilidade
         mapInstance.addLayer({
           id: `${sourceId}-outline`,
           type: "line",
@@ -142,7 +184,7 @@ export default function FieldDetailNew() {
     } else {
       mapInstance.on("style.load", drawField);
     }
-  }, [mapInstance, field, fieldId]);
+  }, [mapInstance, field, fieldId, ndviImage]);
 
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
