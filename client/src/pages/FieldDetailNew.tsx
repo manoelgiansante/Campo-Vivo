@@ -149,8 +149,8 @@ export default function FieldDetailNew() {
                 console.log("[NDVI] Imagem pré-carregada:", img.width, "x", img.height);
                 resolve();
               };
-              img.onerror = (e) => {
-                console.error("[NDVI] Erro ao pré-carregar imagem:", e);
+              img.onerror = () => {
+                console.error("[NDVI] Erro ao pré-carregar imagem: falha no carregamento");
                 reject(new Error("Failed to preload image"));
               };
               img.src = proxyImageUrl + "?t=" + Date.now();
