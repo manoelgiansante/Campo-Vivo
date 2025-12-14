@@ -34,13 +34,9 @@ function Router() {
         )}
       </Route>
 
-      {/* Fields */}
+      {/* Fields - Interface estilo OneSoil */}
       <Route path="/fields">
-        {() => (
-          <MobileLayout>
-            <FieldsList />
-          </MobileLayout>
-        )}
+        {() => <FieldsOneSoil />}
       </Route>
       <Route path="/fields/new">
         {() => (

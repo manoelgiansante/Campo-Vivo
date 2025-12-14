@@ -35,8 +35,8 @@ import { format, subDays, startOfYear, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import mapboxgl from "mapbox-gl";
 
-// Componente para thumbnail do polígono
-function FieldThumbnail({ boundaries, size = 48 }: { boundaries: any; size?: number }) {
+// Componente para thumbnail do polígono com preenchimento NDVI
+function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any; ndviValue?: number; size?: number }) {
   const coords = useMemo(() => {
     try {
       const parsed = typeof boundaries === "string" ? JSON.parse(boundaries) : boundaries;
@@ -61,6 +61,15 @@ function FieldThumbnail({ boundaries, size = 48 }: { boundaries: any; size?: num
     }
   }, [boundaries, size]);
 
+  // Calcular cor baseada no NDVI
+  const fillColor = useMemo(() => {
+    const ndvi = ndviValue ?? 0.5;
+    if (ndvi >= 0.6) return "#22c55e"; // Verde
+    if (ndvi >= 0.4) return "#84cc16"; // Verde-amarelo
+    if (ndvi >= 0.2) return "#eab308"; // Amarelo
+    return "#ef4444"; // Vermelho
+  }, [ndviValue]);
+
   if (!coords) {
     return (
       <div 
@@ -78,11 +87,17 @@ function FieldThumbnail({ boundaries, size = 48 }: { boundaries: any; size?: num
 
   return (
     <svg width={size} height={size} className="bg-gray-50 rounded">
+      <defs>
+        <linearGradient id={`ndvi-gradient-${size}`} x1="0%" y1="100%" x2="0%" y2="0%">
+          <stop offset="0%" stopColor={fillColor} stopOpacity="0.8" />
+          <stop offset="100%" stopColor={fillColor} stopOpacity="0.4" />
+        </linearGradient>
+      </defs>
       <path 
         d={pathD} 
-        fill="none" 
-        stroke="#6b7280" 
-        strokeWidth="1.5"
+        fill={`url(#ndvi-gradient-${size})`}
+        stroke="#374151" 
+        strokeWidth="1"
         strokeLinejoin="round"
       />
     </svg>
@@ -507,7 +522,7 @@ export default function FieldsOneSoil() {
                   }`}
                   onClick={() => setSelectedFieldId(field.id)}
                 >
-                  <FieldThumbnail boundaries={field.boundaries} size={48} />
+                  <FieldThumbnail boundaries={field.boundaries} ndviValue={field.currentNdvi ? field.currentNdvi / 100 : 0.5} size={48} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{field.name}</p>
                     <p className="text-xs text-gray-500">
