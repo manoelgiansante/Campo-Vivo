@@ -21,7 +21,7 @@ import {
   Pencil,
   Info
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -60,6 +60,10 @@ export default function FieldDetailNew() {
     { enabled: !!fieldId }
   );
 
+  // URLs do proxy local para evitar CORS
+  const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
+  const proxyTileUrl = useMemo(() => `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`, [fieldId]);
+
   // Draw field on map with NDVI overlay
   useEffect(() => {
     if (!mapInstance || !field?.boundaries) return;
@@ -85,7 +89,7 @@ export default function FieldDetailNew() {
 
         // Limpar overlays/layers anteriores
         removeAllOverlays(mapInstance);
-        [fillLayerId, outlineId, sourceId].forEach((id) => {
+        [fillLayerId, outlineId, sourceId, "ndvi-tile-layer", "ndvi-tile-layer-source", "ndvi-image-layer", "ndvi-image-layer-source", "ndvi-fallback-layer", "ndvi-fallback-layer-source"].forEach((id) => {
           if (mapInstance.getLayer(id)) mapInstance.removeLayer(id);
           if (mapInstance.getSource(id)) mapInstance.removeSource(id);
         });
@@ -113,44 +117,119 @@ export default function FieldDetailNew() {
 
         let ndviLoaded = false;
 
-        // 1) Prefer tile direto da API (funciona em Vercel sem proxy)
-        const tileUrl = ndviImage?.tileUrl ? ensureHttps(ndviImage.tileUrl) : null;
-        const imageUrl = ndviImage?.imageUrl ? ensureHttps(ndviImage.imageUrl) : null;
+        // Verificar se o campo tem agroPolygonId configurado
+        const hasAgroPolygon = !!(field as any).agroPolygonId;
+        const hasNdviConfig = ndviImage?.configured && (ndviImage?.imageUrl || ndviImage?.tileUrl);
+        
+        console.log("[NDVI] Config:", { 
+          hasAgroPolygon,
+          fieldId,
+          configured: ndviImage?.configured, 
+          hasImageUrl: !!ndviImage?.imageUrl, 
+          hasTileUrl: !!ndviImage?.tileUrl,
+          cloudCoverage: ndviImage?.cloudCoverage,
+          bounds: boundsArray,
+          proxyImageUrl
+        });
 
-        if (tileUrl) {
+        // SEMPRE tentar carregar a imagem NDVI via proxy
+        // O proxy verifica se o campo tem agroPolygonId e retorna a imagem ou 404
+        // Isso garante que o overlay seja exibido mesmo se a query tRPC falhar
+        {
           try {
-            addNdviTileOverlay(mapInstance, "ndvi-tile-layer", tileUrl, {
-              opacity: 0.9,
-              bounds: [minLng, minLat, maxLng, maxLat],
+            console.log("[NDVI] Carregando imagem via proxy:", proxyImageUrl);
+            console.log("[NDVI] Bounds para overlay:", boundsArray);
+            
+            // Pré-carregar a imagem para verificar se está acessível
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                console.log("[NDVI] Imagem pré-carregada:", img.width, "x", img.height);
+                resolve();
+              };
+              img.onerror = (e) => {
+                console.error("[NDVI] Erro ao pré-carregar imagem:", e);
+                reject(new Error("Failed to preload image"));
+              };
+              img.src = proxyImageUrl + "?t=" + Date.now();
             });
-            ndviLoaded = true;
-          } catch (error) {
-            console.warn("[Map] Falha tile NDVI direto:", error);
-          }
-        }
-
-        // 2) Se não tem tile mas tem imagem, usar image overlay
-        if (!ndviLoaded && imageUrl) {
-          try {
-            addNdviImageOverlay(mapInstance, "ndvi-image-layer", imageUrl, {
-              opacity: 0.9,
+            
+            // Adicionar source de imagem com proxy local
+            // boundsArray é [[topLeft], [topRight], [bottomRight], [bottomLeft]]
+            mapInstance.addSource("ndvi-image-layer-source", {
+              type: "image",
+              url: proxyImageUrl,
               coordinates: boundsArray,
             });
+
+            // Adicionar layer de imagem ANTES do fill layer
+            mapInstance.addLayer({
+              id: "ndvi-image-layer",
+              type: "raster",
+              source: "ndvi-image-layer-source",
+              paint: {
+                "raster-opacity": 0.9,
+                "raster-fade-duration": 0,
+              },
+            });
+            
+            // Listener de erro no source
+            mapInstance.on("error", (e: any) => {
+              if (e.sourceId === "ndvi-image-layer-source") {
+                console.error("[NDVI] Erro no source da imagem:", e.error);
+              }
+            });
+
             ndviLoaded = true;
+            console.log("[NDVI] Imagem adicionada ao mapa com sucesso!");
           } catch (error) {
-            console.warn("[Map] Falha imagem NDVI direta:", error);
+            console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
           }
         }
 
-        // 3) Fallback: gradiente sintético usando NDVI atual
+        // 2) Fallback: usar tiles se imagem falhou
+        if (!ndviLoaded && hasNdviConfig && ndviImage?.tileUrl) {
+          try {
+            console.log("[NDVI] Tentando carregar tiles via proxy:", proxyTileUrl);
+            
+            // Adicionar source de tiles com proxy local
+            mapInstance.addSource("ndvi-tile-layer-source", {
+              type: "raster",
+              tiles: [proxyTileUrl],
+              tileSize: 256,
+              bounds: [minLng, minLat, maxLng, maxLat],
+            });
+
+            // Adicionar layer de tiles
+            mapInstance.addLayer({
+              id: "ndvi-tile-layer",
+              type: "raster",
+              source: "ndvi-tile-layer-source",
+              paint: {
+                "raster-opacity": 0.85,
+                "raster-fade-duration": 300,
+              },
+            });
+
+            ndviLoaded = true;
+            console.log("[NDVI] Imagem carregada com sucesso via proxy");
+          } catch (error) {
+            console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
+          }
+        }
+
+        // 3) Fallback final: gradiente sintético usando NDVI atual
         if (!ndviLoaded) {
-          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+          const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
+          console.log("[NDVI] Usando gradiente sintético, NDVI:", currentNdvi);
           generateNdviGradientOverlay(mapInstance, "ndvi-fallback-layer", currentNdvi, boundsArray);
           ndviLoaded = true;
         }
 
-        // Base fill para percepção de área
-        const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+        // Base fill para percepção de área (semi-transparente)
+        const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
         const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
                          currentNdvi >= 0.4 ? "#EAB308" :
                          currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
@@ -161,20 +240,23 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.18 : 0.45,
+            "fill-opacity": ndviLoaded ? 0.15 : 0.4,
           },
         });
 
+        // Borda do campo (sempre visível)
         mapInstance.addLayer({
           id: outlineId,
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#111827",
-            "line-width": 2.5,
+            "line-color": "#FFFFFF",
+            "line-width": 3,
+            "line-opacity": 0.9,
           },
         });
 
+        // Ajustar visualização para o campo
         const bounds = new mapboxgl.LngLatBounds(
           [minLng, minLat],
           [maxLng, maxLat]
@@ -200,7 +282,7 @@ export default function FieldDetailNew() {
     return () => {
       mapInstance.off("error", errorHandler);
     };
-  }, [mapInstance, field, fieldId, ndviImage, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
+  }, [mapInstance, field, fieldId, ndviImage, proxyImageUrl, proxyTileUrl, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
 
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
@@ -250,189 +332,183 @@ export default function FieldDetailNew() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-10 w-10">
+            <Button variant="ghost" size="icon" className="rounded-full">
               <Search className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-10 w-10">
+            <Button variant="ghost" size="icon" className="rounded-full">
               <Plus className="h-5 w-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-10 w-10">
-              <MoreVertical className="h-5 w-5" />
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Field Detail Card */}
-      <div className="px-4">
-        <div className="bg-white rounded-t-3xl overflow-hidden">
-          {/* Drag Handle */}
-          <div className="flex justify-center py-2">
-            <div className="w-10 h-1 bg-gray-300 rounded-full" />
-          </div>
-
-          {/* Field Header */}
-          <div className="px-4 pb-3 flex items-start justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">{field.name}</h2>
-              <p className="text-gray-500">
-                {field.areaHectares ? (field.areaHectares / 100).toFixed(1) : '?'} ha
-              </p>
+      {/* Field Card with Map */}
+      <div className="px-4 mb-4">
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          {/* Map Section */}
+          <div className="relative h-48">
+            <MapboxMap
+              onMapReady={handleMapReady}
+              className="w-full h-full"
+              initialCenter={
+                field.boundaries
+                  ? (() => {
+                      const bounds = typeof field.boundaries === "string"
+                        ? JSON.parse(field.boundaries)
+                        : field.boundaries;
+                      if (Array.isArray(bounds) && bounds.length > 0) {
+                        const lngs = bounds.map((p: any) => p.lng);
+                        const lats = bounds.map((p: any) => p.lat);
+                        return [
+                          (Math.min(...lngs) + Math.max(...lngs)) / 2,
+                          (Math.min(...lats) + Math.max(...lats)) / 2,
+                        ] as [number, number];
+                      }
+                      return [-49.5, -20.8] as [number, number];
+                    })()
+                  : [-49.5, -20.8] as [number, number]
+              }
+              initialZoom={14}
+              style="satellite"
+            />
+            
+            {/* NDVI Badge */}
+            <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 flex items-center gap-2">
+              <Leaf className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium">
+                NDVI: {field.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : "N/A"}
+              </span>
             </div>
-            <Button variant="ghost" size="icon">
-              <MoreVertical className="h-5 w-5" />
+
+            {/* Cloud Coverage Warning */}
+            {ndviImage?.cloudCoverage && ndviImage.cloudCoverage > 30 && (
+              <div className="absolute top-3 right-3 bg-yellow-500/90 backdrop-blur-sm rounded-lg px-3 py-1.5 flex items-center gap-2">
+                <Info className="h-4 w-4 text-white" />
+                <span className="text-sm font-medium text-white">
+                  {ndviImage.cloudCoverage}% nuvens
+                </span>
+              </div>
+            )}
+            
+            {/* Expand Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm rounded-lg"
+            >
+              <Maximize2 className="h-4 w-4" />
             </Button>
           </div>
 
-          {/* Map with NDVI - Using Mapbox */}
-          <div className="relative mx-4 rounded-2xl overflow-hidden h-64">
-            <MapboxMap
-              onMapReady={handleMapReady}
-              style="satellite"
-              initialZoom={14}
-              className="h-full w-full"
-            />
-            
-            {/* NDVI Type Selector */}
-            <div className="absolute top-3 left-3 z-10">
+          {/* Field Info */}
+          <div className="p-4">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">{field.name}</h2>
+                <p className="text-sm text-gray-500">
+                  {field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} ha` : "Área não definida"}
+                  {currentCrop && ` • ${currentCrop.cropType}`}
+                </p>
+              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="secondary" 
-                    className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-4 h-9 gap-2 text-sm"
-                  >
-                    <Leaf className="h-4 w-4" />
-                    <span>NDVI Básico</span>
-                    <ChevronDown className="h-3 w-3" />
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem>NDVI Básico</DropdownMenuItem>
-                  <DropdownMenuItem>NDVI Contrastado</DropdownMenuItem>
-                  <DropdownMenuItem>NDVI Médio</DropdownMenuItem>
-                  <DropdownMenuItem>NDVI Heterogeneidade</DropdownMenuItem>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setLocation(`/fields/${fieldId}/edit`)}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Editar campo
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
 
-            {/* Expand Button */}
-            <Button
-              variant="secondary"
-              size="icon"
-              className="absolute top-3 right-3 bg-gray-800/90 text-white hover:bg-gray-700 rounded-full h-9 w-9 z-10"
-            >
-              <Maximize2 className="h-4 w-4" />
-            </Button>
-
-            {/* NDVI Scale */}
-            <div className="absolute left-3 bottom-3 top-12 z-10">
-              <div className="w-2 h-full rounded-full overflow-hidden" style={{
-                background: "linear-gradient(to bottom, #22C55E, #EAB308, #EF4444)"
-              }} />
-            </div>
-
-            {/* Info Button */}
-            <Button
-              variant="secondary"
-              size="icon"
-              className="absolute bottom-3 right-3 bg-transparent text-white hover:bg-gray-800/50 rounded-full h-8 w-8 z-10"
-            >
-              <Info className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* History Section */}
-          <div className="px-4 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Histórico</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Ocultar dias nublados</span>
-                <Switch 
-                  checked={hideCloudy} 
-                  onCheckedChange={setHideCloudy}
-                />
+            {/* NDVI Color Scale */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span>Baixo</span>
+                <span>NDVI</span>
+                <span>Alto</span>
               </div>
+              <div className="h-2 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500" />
             </div>
+          </div>
+        </div>
+      </div>
 
-            {/* Timeline */}
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
-              {historyData
-                .filter((h: any) => !hideCloudy || !h.cloudy)
-                .map((item: any, index: number) => (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedDate(index)}
-                    className={`flex-shrink-0 w-24 rounded-xl border-2 overflow-hidden transition-all ${
-                      selectedDate === index 
-                        ? "border-gray-400" 
-                        : "border-transparent"
-                    }`}
-                  >
-                    <div className={`h-16 flex items-center justify-center ${
-                      item.cloudy ? "bg-gray-200" : "bg-green-100"
-                    }`}>
-                      {item.cloudy ? (
-                        <div className="w-10 h-10 bg-gray-300 rounded" style={{
-                          clipPath: "polygon(0 20%, 30% 20%, 30% 0, 100% 50%, 30% 100%, 30% 80%, 0 80%)"
-                        }} />
-                      ) : (
-                        <div className="w-10 h-10 bg-green-500 rounded" style={{
-                          clipPath: "polygon(0 20%, 30% 20%, 30% 0, 100% 50%, 30% 100%, 30% 80%, 0 80%)"
-                        }} />
-                      )}
+      {/* Timeline Section */}
+      <div className="px-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-gray-700">Histórico</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Ocultar nublados</span>
+            <Switch
+              checked={hideCloudy}
+              onCheckedChange={setHideCloudy}
+              className="scale-75"
+            />
+          </div>
+        </div>
+
+        {/* Timeline Thumbnails */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {historyData
+            .filter((item: any) => !hideCloudy || !item.cloudy)
+            .map((item: any, index: number) => (
+              <button
+                key={index}
+                onClick={() => setSelectedDate(index)}
+                className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                  selectedDate === index
+                    ? "border-green-500 ring-2 ring-green-200"
+                    : "border-transparent"
+                }`}
+              >
+                <div className="w-16 h-16 relative">
+                  {item.cloudy ? (
+                    <div className="w-full h-full bg-gray-300 flex items-center justify-center">
+                      <span className="text-2xl">☁️</span>
                     </div>
-                    <div className="p-2 text-center bg-white">
-                      <p className="text-xs text-gray-500">
-                        {format(item.date, "dd 'de' MMM.", { locale: ptBR })}
-                      </p>
-                      {item.ndvi && (
-                        <p className="text-sm font-semibold">
-                          {item.ndvi.toFixed(2).replace('.', ',')}
-                          <span className="text-green-500 text-xs ml-1">
-                            +{item.ndvi.toFixed(2).replace('.', ',')}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-            </div>
-          </div>
+                  ) : (
+                    <div
+                      className="w-full h-full"
+                      style={{
+                        background: item.ndvi
+                          ? `linear-gradient(135deg, ${getNdviColor(item.ndvi)} 0%, ${getNdviColor(item.ndvi * 0.8)} 100%)`
+                          : "#ccc",
+                      }}
+                    />
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] text-center py-0.5">
+                    {format(item.date, "dd/MM", { locale: ptBR })}
+                  </div>
+                </div>
+              </button>
+            ))}
+        </div>
+      </div>
 
-          {/* Crop Section */}
-          <div className="px-4 pb-4">
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <span className="font-semibold text-gray-900">
-                    {currentCrop?.cropType || "Pastagem"}
-                  </span>
-                </div>
-                <Button variant="ghost" size="icon">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-3">
-                <div>
-                  <p className="text-sm text-gray-500">Data de plantio</p>
-                  <p className="font-medium text-gray-900">
-                    {currentCrop?.plantingDate 
-                      ? format(new Date(currentCrop.plantingDate), "dd/MM/yyyy")
-                      : "Não definida"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Data de colheita</p>
-                  <p className="font-medium text-gray-900">
-                    {currentCrop?.expectedHarvestDate 
-                      ? format(new Date(currentCrop.expectedHarvestDate), "dd/MM/yyyy")
-                      : "Não definida"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Quick Actions */}
+      <div className="px-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            variant="outline"
+            className="h-auto py-3 flex flex-col items-center gap-1"
+            onClick={() => setLocation(`/notes/new?fieldId=${fieldId}`)}
+          >
+            <Plus className="h-5 w-5 text-green-600" />
+            <span className="text-sm">Nova nota</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="h-auto py-3 flex flex-col items-center gap-1"
+            onClick={() => setLocation(`/fields/${fieldId}/crops`)}
+          >
+            <Leaf className="h-5 w-5 text-green-600" />
+            <span className="text-sm">Cultivos</span>
+          </Button>
         </div>
       </div>
     </div>
@@ -443,30 +519,22 @@ function FieldDetailSkeleton() {
   return (
     <div className="min-h-screen bg-gray-100 pb-20">
       <div className="px-4 pt-4">
-        <Skeleton className="h-8 w-24 mb-2" />
-        <Skeleton className="h-5 w-32 mb-4" />
+        <Skeleton className="h-8 w-32 mb-2" />
+        <Skeleton className="h-4 w-24 mb-4" />
       </div>
       <div className="px-4">
-        <div className="bg-white rounded-t-3xl p-4">
-          <Skeleton className="h-6 w-32 mb-2" />
-          <Skeleton className="h-4 w-16 mb-4" />
-          <Skeleton className="h-64 w-full rounded-2xl mb-4" />
-          <Skeleton className="h-6 w-24 mb-3" />
-          <div className="flex gap-2">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-24 w-24 rounded-xl" />
-            ))}
-          </div>
-        </div>
+        <Skeleton className="h-64 w-full rounded-2xl mb-4" />
+        <Skeleton className="h-20 w-full rounded-lg" />
       </div>
     </div>
   );
 }
 
-// Garante HTTPS para URLs retornadas pelo Agromonitoring
-function ensureHttps(url?: string | null) {
-  if (!url) return null;
-  if (url.startsWith("https://")) return url;
-  if (url.startsWith("http://")) return url.replace("http://", "https://");
-  return url;
+// Helper function to get NDVI color
+function getNdviColor(ndvi: number): string {
+  if (ndvi < 0.2) return "#EF4444"; // Red
+  if (ndvi < 0.4) return "#F97316"; // Orange
+  if (ndvi < 0.6) return "#EAB308"; // Yellow
+  if (ndvi < 0.8) return "#84CC16"; // Light green
+  return "#22C55E"; // Green
 }
