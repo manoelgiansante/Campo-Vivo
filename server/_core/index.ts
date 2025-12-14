@@ -107,6 +107,63 @@ async function startServer() {
       res.status(500).send("Internal server error");
     }
   });
+
+  // Proxy para tiles NDVI ({z}/{x}/{y}) evitando CORS
+  app.get("/api/ndvi-tiles/:fieldId/:z/:x/:y.png", async (req, res) => {
+    try {
+      const fieldId = parseInt(req.params.fieldId);
+      const { z, x, y } = req.params;
+      console.log(`[NDVI Tile Proxy] Campo ${fieldId} tile z${z}/${x}/${y}`);
+
+      const field = await db.getFieldById(fieldId);
+      if (!field || !field.agroPolygonId) {
+        console.log(`[NDVI Tile Proxy] Campo ${fieldId} não encontrado ou sem polígono`);
+        return res.status(404).send("Field not found");
+      }
+
+      const { searchSatelliteImages } = await import("../services/agromonitoring");
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+      const images = await searchSatelliteImages(field.agroPolygonId, startDate, endDate);
+
+      const sortedImages = images
+        .filter(img => img.cl < 50)
+        .sort((a, b) => {
+          const cloudDiff = a.cl - b.cl;
+          if (Math.abs(cloudDiff) > 15) return cloudDiff;
+          return b.dt - a.dt;
+        });
+
+      const image = sortedImages[0] || images.sort((a, b) => a.cl - b.cl)[0];
+      const baseTile = image?.tile?.ndvi;
+      if (!baseTile) {
+        console.log(`[NDVI Tile Proxy] Nenhum tile NDVI disponível`);
+        return res.status(404).send("No NDVI tile available");
+      }
+
+      // Garantir https e substituir placeholders
+      const tileUrl = baseTile
+        .replace("http://", "https://")
+        .replace("{z}", z)
+        .replace("{x}", x)
+        .replace("{y}", y);
+
+      const response = await fetch(tileUrl);
+      if (!response.ok) {
+        console.log(`[NDVI Tile Proxy] Erro ao buscar tile: ${response.status}`);
+        return res.status(response.status).send("Failed to fetch NDVI tile");
+      }
+
+      const buffer = await response.arrayBuffer();
+      res.set("Content-Type", response.headers.get("content-type") || "image/png");
+      res.set("Cache-Control", "public, max-age=3600");
+      res.set("Access-Control-Allow-Origin", "*");
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error("[NDVI Tile Proxy] Error:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
   
   // tRPC API
   app.use(

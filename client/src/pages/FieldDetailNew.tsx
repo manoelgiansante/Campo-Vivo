@@ -106,16 +106,15 @@ export default function FieldDetailNew() {
         // 1) Tentar sobrepor NDVI: preferir tile (melhor nitidez), fallback imagem proxy
         let ndviLoaded = false;
 
-        // 1a) Raster tile (Agromonitoring tile URL já vem com {z}/{x}/{y})
-        if (ndviImage?.tileUrl) {
+        // 1a) Raster tile (Agromonitoring tile URL ou proxy)
+        const tileTemplate = ndviImage?.tileUrl || `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`;
+        if (tileTemplate) {
           try {
-            const tileUrl = ndviImage.tileUrl;
-            console.log("[Map] Tentando overlay NDVI via tile:", tileUrl);
+            console.log("[Map] Tentando overlay NDVI via tile:", tileTemplate);
             mapInstance.addSource(ndviSourceId, {
               type: "raster",
-              tiles: [tileUrl],
+              tiles: [tileTemplate],
               tileSize: 256,
-              bounds: [minLng, minLat, maxLng, maxLat],
             });
 
             mapInstance.addLayer({
