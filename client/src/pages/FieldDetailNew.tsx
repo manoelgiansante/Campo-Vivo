@@ -103,21 +103,23 @@ export default function FieldDetailNew() {
           },
         });
 
-        // 1) Tentar sobrepor NDVI: preferir tile (melhor nitidez), fallback imagem proxy
+        // 1) Tentar sobrepor NDVI: preferir IMAGEM colorizada (mais parecida com OneSoil), fallback tile/proxy
         let ndviLoaded = false;
 
-        // 1a) Raster tile (Agromonitoring tile URL ou proxy). Tentamos scheme TMS (invert y) que é comum em NDVI tiles.
-        const tileTemplate = ndviImage?.tileUrl || `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`;
-        if (tileTemplate) {
+        // 1a) Imagem colorizada (Agromonitoring) ou proxy
+        const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
+        if (ndviUrl) {
           try {
-            console.log("[Map] Tentando overlay NDVI via tile:", tileTemplate);
+            console.log("[Map] Tentando overlay NDVI via imagem:", ndviUrl);
             mapInstance.addSource(ndviSourceId, {
-              type: "raster",
-              tiles: [tileTemplate],
-              tileSize: 256,
-              scheme: "tms",
-              minzoom: 5,
-              maxzoom: 18,
+              type: "image",
+              url: ndviUrl,
+              coordinates: [
+                [minLng, maxLat], // top-left
+                [maxLng, maxLat], // top-right
+                [maxLng, minLat], // bottom-right
+                [minLng, minLat], // bottom-left
+              ],
             });
 
             mapInstance.addLayer({
@@ -125,33 +127,31 @@ export default function FieldDetailNew() {
               type: "raster",
               source: ndviSourceId,
               paint: {
-                "raster-opacity": 1,
+                "raster-opacity": 0.95,
                 "raster-fade-duration": 0,
               },
             });
 
             ndviLoaded = true;
-            console.log("[Map] Overlay NDVI (tile) adicionado");
+            console.log("[Map] Overlay NDVI (imagem) adicionado");
           } catch (error) {
-            console.warn("[Map] Falha tile NDVI, tentando imagem:", error);
+            console.warn("[Map] Falha overlay NDVI imagem, tentando tile:", error);
           }
         }
 
-        // 1b) Imagem simples (proxy) se tile falhar ou não existir
+        // 1b) Tile (melhor nitidez) se imagem falhar ou não existir
         if (!ndviLoaded) {
-          const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
-          if (ndviUrl) {
+          const tileTemplate = ndviImage?.tileUrl || `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`;
+          if (tileTemplate) {
             try {
-              console.log("[Map] Tentando overlay NDVI via imagem:", ndviUrl);
+              console.log("[Map] Tentando overlay NDVI via tile:", tileTemplate);
               mapInstance.addSource(ndviSourceId, {
-                type: "image",
-                url: ndviUrl,
-                coordinates: [
-                  [minLng, maxLat], // top-left
-                  [maxLng, maxLat], // top-right
-                  [maxLng, minLat], // bottom-right
-                  [minLng, minLat], // bottom-left
-                ],
+                type: "raster",
+                tiles: [tileTemplate],
+                tileSize: 256,
+                scheme: "tms",
+                minzoom: 5,
+                maxzoom: 18,
               });
 
               mapInstance.addLayer({
@@ -159,20 +159,19 @@ export default function FieldDetailNew() {
                 type: "raster",
                 source: ndviSourceId,
                 paint: {
-                  "raster-opacity": 0.9,
+                  "raster-opacity": 0.95,
                   "raster-fade-duration": 0,
                 },
               });
 
               ndviLoaded = true;
-              console.log("[Map] Overlay NDVI (imagem) adicionado");
+              console.log("[Map] Overlay NDVI (tile) adicionado");
             } catch (error) {
-              console.warn("[Map] Falha overlay NDVI imagem, usando fill:", error);
+              console.warn("[Map] Falha tile NDVI, usando fill:", error);
             }
           }
         }
 
-        // 2) Fallback: fill colorido baseado no NDVI atual
         // 2) Base fill SEMPRE (mesmo com NDVI) para garantir percepção de área
         const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
         const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
@@ -186,7 +185,7 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.2 : 0.55,
+            "fill-opacity": ndviLoaded ? 0.18 : 0.5,
           },
         });
 
