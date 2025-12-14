@@ -1131,6 +1131,12 @@ export const appRouter = router({
           
           console.log(`[NDVI] Campo ${field.id}: ${images.length} imagens encontradas`);
           
+          // DEBUG: Mostrar estrutura da primeira imagem
+          if (images.length > 0) {
+            console.log("[DEBUG] Primeira imagem encontrada:", JSON.stringify(images[0], null, 2));
+            console.log("[DEBUG] URL da imagem NDVI:", images[0]?.image?.ndvi);
+          }
+          
           // CORREÇÃO: Aceitar até 50% de nuvens e ordenar melhor
           const sortedImages = images
             .filter(img => img.cl < 50) // Aumentado de 30 para 50

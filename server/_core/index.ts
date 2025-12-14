@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startNdviScheduler } from "../services/ndviScheduler";
+import * as db from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,77 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  
+  // Proxy para imagens NDVI (evita CORS)
+  app.get("/api/ndvi-image/:fieldId", async (req, res) => {
+    try {
+      const fieldId = parseInt(req.params.fieldId);
+      console.log(`[NDVI Proxy] Requisição para campo ${fieldId}`);
+      
+      const field = await db.getFieldById(fieldId);
+      
+      if (!field || !field.agroPolygonId) {
+        console.log(`[NDVI Proxy] Campo ${fieldId} não encontrado ou sem polígono`);
+        return res.status(404).send("Field not found");
+      }
+      
+      console.log(`[NDVI Proxy] Campo ${fieldId} tem polígono: ${field.agroPolygonId}`);
+      
+      // Buscar a URL da imagem NDVI mais recente
+      const { searchSatelliteImages } = await import("../services/agromonitoring");
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+      
+      const images = await searchSatelliteImages(field.agroPolygonId, startDate, endDate);
+      console.log(`[NDVI Proxy] ${images.length} imagens encontradas`);
+      
+      if (images.length > 0) {
+        console.log(`[NDVI Proxy] Primeira imagem:`, {
+          dt: images[0].dt,
+          cl: images[0].cl,
+          ndviUrl: images[0]?.image?.ndvi?.substring(0, 80) + "..."
+        });
+      }
+      
+      const sortedImages = images
+        .filter(img => img.cl < 50)
+        .sort((a, b) => {
+          const cloudDiff = a.cl - b.cl;
+          if (Math.abs(cloudDiff) > 15) return cloudDiff;
+          return b.dt - a.dt;
+        });
+      
+      const image = sortedImages[0] || images.sort((a, b) => a.cl - b.cl)[0];
+      
+      if (!image?.image?.ndvi) {
+        console.log(`[NDVI Proxy] Nenhuma imagem NDVI disponível`);
+        return res.status(404).send("No NDVI image available");
+      }
+      
+      // Fazer proxy da imagem
+      const imageUrl = image.image.ndvi.replace("http://", "https://");
+      console.log(`[NDVI Proxy] Buscando imagem: ${imageUrl.substring(0, 80)}...`);
+      
+      const response = await fetch(imageUrl);
+      
+      if (!response.ok) {
+        console.log(`[NDVI Proxy] Erro ao buscar imagem: ${response.status}`);
+        return res.status(response.status).send("Failed to fetch NDVI image");
+      }
+      
+      const buffer = await response.arrayBuffer();
+      console.log(`[NDVI Proxy] Imagem carregada: ${buffer.byteLength} bytes`);
+      
+      res.set("Content-Type", response.headers.get("content-type") || "image/png");
+      res.set("Cache-Control", "public, max-age=3600");
+      res.set("Access-Control-Allow-Origin", "*");
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error("[NDVI Proxy] Error:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+  
   // tRPC API
   app.use(
     "/api/trpc",
