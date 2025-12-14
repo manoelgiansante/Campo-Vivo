@@ -10,6 +10,7 @@
   },
   "rewrites": [
     { "source": "/api/ndvi-image/:fieldId", "destination": "/api/ndvi-image/[fieldId]" },
+    { "source": "/api/copernicus-ndvi/:fieldId", "destination": "/api/copernicus-ndvi/[fieldId]" },
     { "source": "/api/trpc-standalone/:path*", "destination": "/api/trpc-standalone" },
     { "source": "/api/trpc/:path*", "destination": "/api/trpc-standalone" },
     { "source": "/api/oauth/:path*", "destination": "/api/oauth/[...path]" },

@@ -33,6 +33,8 @@ export default function FieldDetailNew() {
   const [, setLocation] = useLocation();
   const [hideCloudy, setHideCloudy] = useState(false);
   const [selectedDate, setSelectedDate] = useState<number>(0);
+  const [selectedPalette, setSelectedPalette] = useState<string>('contrast');
+  const [useCopernicus, setUseCopernicus] = useState<boolean>(true);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap } = useMapbox();
   const {
@@ -63,6 +65,21 @@ export default function FieldDetailNew() {
   // URLs do proxy local para evitar CORS
   const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
   const proxyTileUrl = useMemo(() => `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`, [fieldId]);
+  
+  // URL do Copernicus para imagens de alta qualidade
+  const copernicusImageUrl = useMemo(() => 
+    `/api/copernicus-ndvi/${fieldId}?palette=${selectedPalette}`, 
+    [fieldId, selectedPalette]
+  );
+
+  // Paletas de cores disponíveis
+  const palettes = [
+    { key: 'contrast', name: 'Contraste', description: 'Estilo OneSoil (vermelho-verde)' },
+    { key: 'classic', name: 'Clássica', description: 'Verde tradicional' },
+    { key: 'viridis', name: 'Viridis', description: 'Paleta científica' },
+    { key: 'rdylgn', name: 'RdYlGn', description: 'Vermelho-Amarelo-Verde' },
+    { key: 'pasture', name: 'Pastagem', description: 'Otimizada para gado' },
+  ];
 
   // Draw field on map with NDVI overlay
   useEffect(() => {
@@ -132,8 +149,55 @@ export default function FieldDetailNew() {
           proxyImageUrl
         });
 
-        // 1) PRIMEIRA OPÇÃO: Usar imagem estática NDVI (funciona no Vercel)
-        {
+        // 1) PRIMEIRA OPÇÃO: Usar Copernicus para imagens de alta qualidade
+        if (useCopernicus) {
+          try {
+            console.log("[NDVI] Carregando imagem do Copernicus:", copernicusImageUrl);
+            console.log("[NDVI] Bounds para overlay:", boundsArray);
+            
+            // Pré-carregar a imagem para verificar se está acessível
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                console.log("[NDVI] Imagem Copernicus carregada:", img.width, "x", img.height);
+                resolve();
+              };
+              img.onerror = () => {
+                console.warn("[NDVI] Copernicus não disponível, usando Agromonitoring");
+                reject(new Error("Failed to load Copernicus image"));
+              };
+              img.src = copernicusImageUrl + "&t=" + Date.now();
+            });
+            
+            // Adicionar source de imagem do Copernicus
+            mapInstance.addSource("ndvi-image-layer-source", {
+              type: "image",
+              url: copernicusImageUrl,
+              coordinates: boundsArray,
+            });
+
+            // Adicionar layer de imagem com alta opacidade
+            mapInstance.addLayer({
+              id: "ndvi-image-layer",
+              type: "raster",
+              source: "ndvi-image-layer-source",
+              paint: {
+                "raster-opacity": 0.95,
+                "raster-fade-duration": 0,
+              },
+            });
+
+            ndviLoaded = true;
+            console.log("[NDVI] Imagem Copernicus adicionada ao mapa!");
+          } catch (error) {
+            console.warn("[NDVI] Falha ao carregar Copernicus, tentando Agromonitoring:", error);
+          }
+        }
+
+        // 2) SEGUNDA OPÇÃO: Usar imagem estática NDVI do Agromonitoring
+        if (!ndviLoaded) {
           try {
             console.log("[NDVI] Carregando imagem via proxy:", proxyImageUrl);
             console.log("[NDVI] Bounds para overlay:", boundsArray);
@@ -173,7 +237,7 @@ export default function FieldDetailNew() {
             });
 
             ndviLoaded = true;
-            console.log("[NDVI] Imagem adicionada ao mapa com sucesso!");
+            console.log("[NDVI] Imagem Agromonitoring adicionada ao mapa!");
           } catch (error) {
             console.warn("[NDVI] Falha ao carregar imagem via proxy:", error);
           }
@@ -243,7 +307,7 @@ export default function FieldDetailNew() {
     return () => {
       mapInstance.off("error", errorHandler);
     };
-  }, [mapInstance, field, fieldId, ndviImage, proxyImageUrl, proxyTileUrl, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
+  }, [mapInstance, field, fieldId, ndviImage, proxyImageUrl, proxyTileUrl, copernicusImageUrl, useCopernicus, selectedPalette, addNdviTileOverlay, addNdviImageOverlay, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
 
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
@@ -393,8 +457,35 @@ export default function FieldDetailNew() {
               </DropdownMenu>
             </div>
 
-            {/* NDVI Color Scale */}
+            {/* Seletor de Paleta de Cores */}
             <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-600">Paleta de cores</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      {palettes.find(p => p.key === selectedPalette)?.name || 'Contraste'}
+                      <ChevronDown className="h-3 w-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {palettes.map((palette) => (
+                      <DropdownMenuItem 
+                        key={palette.key}
+                        onClick={() => setSelectedPalette(palette.key)}
+                        className={selectedPalette === palette.key ? 'bg-green-50' : ''}
+                      >
+                        <div>
+                          <div className="font-medium">{palette.name}</div>
+                          <div className="text-xs text-gray-500">{palette.description}</div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              
+              {/* NDVI Color Scale */}
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                 <span>Baixo</span>
                 <span>NDVI</span>

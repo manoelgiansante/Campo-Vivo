@@ -106,3 +106,15 @@
 - [ ] Contorno preto ao redor do polígono (igual OneSoil)
 - [ ] Escala de cores vertical na lateral do mapa (0.0 a 1.0)
 - [ ] Gradiente detalhado pixel a pixel dentro do campo
+
+
+## Versão 3.0 - Sistema Único de Monitoramento Agrícola/Pecuário (Em Progresso)
+
+- [ ] Pesquisar melhores aplicativos de agricultura de precisão (OneSoil, Cropin, Climate FieldView, Farmers Edge)
+- [ ] Analisar índices de vegetação (NDVI, NDWI, LAI, etc.) para detecção de falhas
+- [ ] Implementar integração com Copernicus Sentinel-2 para dados de alta qualidade
+- [ ] Sistema de detecção de falhas na lavoura
+- [ ] Monitoramento de pastagem (detectar quando gado foi retirado/colocado)
+- [ ] Indicador de altura da vegetação (verde escuro = alto, verde claro = baixo)
+- [ ] Múltiplas paletas de cores para o usuário escolher
+- [ ] Interface única e profissional para agronegócio
