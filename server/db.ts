@@ -16,6 +16,7 @@ import {
   InsertFieldShare, fieldShares, FieldShare,
   InsertPushToken, pushTokens, PushToken,
   InsertNdviHistory, ndviHistory, NdviHistory,
+  InsertPushSubscription, pushSubscriptions, PushSubscription,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -691,4 +692,53 @@ export async function updateFieldAgroPolygonId(fieldId: number, polygonId: strin
   const db = await getDb();
   if (!db) return;
   await db.update(fields).set({ agroPolygonId: polygonId }).where(eq(fields.id, fieldId));
+}
+
+// ==================== PUSH SUBSCRIPTION FUNCTIONS ====================
+export async function savePushSubscription(data: InsertPushSubscription): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Verificar se já existe
+  const existing = await db.select().from(pushSubscriptions)
+    .where(eq(pushSubscriptions.endpoint, data.endpoint))
+    .limit(1);
+  
+  if (existing.length > 0) {
+    await db.update(pushSubscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(pushSubscriptions.endpoint, data.endpoint));
+    return existing[0].id;
+  }
+  
+  const result = await db.insert(pushSubscriptions).values(data).returning({ id: pushSubscriptions.id });
+  return result[0].id;
+}
+
+export async function getPushSubscriptionsByUserId(userId: number): Promise<PushSubscription[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.isActive, true)));
+}
+
+export async function getAllPushSubscriptions(): Promise<PushSubscription[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(pushSubscriptions)
+    .where(eq(pushSubscriptions.isActive, true));
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+}
+
+export async function deactivatePushSubscription(endpoint: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(pushSubscriptions)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(pushSubscriptions.endpoint, endpoint));
 }
