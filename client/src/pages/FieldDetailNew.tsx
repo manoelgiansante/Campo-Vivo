@@ -76,19 +76,15 @@ export default function FieldDetailNew() {
           if (mapInstance.getSource(id)) mapInstance.removeSource(id);
         });
 
-        // Calculate bounds with padding for NDVI image
+        // Calculate bounds
         const lngs = coordinates.map((c: [number, number]) => c[0]);
         const lats = coordinates.map((c: [number, number]) => c[1]);
         const minLng = Math.min(...lngs);
         const maxLng = Math.max(...lngs);
         const minLat = Math.min(...lats);
         const maxLat = Math.max(...lats);
-        
-        // Add padding to bounds for NDVI overlay
-        const lngPadding = (maxLng - minLng) * 0.1;
-        const latPadding = (maxLat - minLat) * 0.1;
 
-        // Add field source (for outline)
+        // Add field source (for outline and fill)
         mapInstance.addSource(sourceId, {
           type: "geojson",
           data: {
@@ -101,65 +97,23 @@ export default function FieldDetailNew() {
           },
         });
 
-        // Try to load NDVI image from proxy
-        const proxyUrl = `/api/ndvi-image/${fieldId}`;
-        let ndviLoaded = false;
+        // SEMPRE adicionar fill colorido baseado no NDVI atual
+        const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+        const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
+                         currentNdvi >= 0.4 ? "#EAB308" : 
+                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
         
-        console.log("[Map] Tentando carregar NDVI via proxy:", proxyUrl);
+        console.log("[Map] NDVI atual:", currentNdvi, "Cor:", fillColor);
         
-        try {
-          // Verificar se a imagem está disponível
-          const response = await fetch(proxyUrl, { method: "HEAD" });
-          
-          if (response.ok) {
-            console.log("[Map] NDVI disponível, adicionando layer");
-            
-            mapInstance.addSource(ndviSourceId, {
-              type: "image",
-              url: proxyUrl,
-              coordinates: [
-                [minLng - lngPadding, maxLat + latPadding], // top-left
-                [maxLng + lngPadding, maxLat + latPadding], // top-right
-                [maxLng + lngPadding, minLat - latPadding], // bottom-right
-                [minLng - lngPadding, minLat - latPadding], // bottom-left
-              ],
-            });
-
-            mapInstance.addLayer({
-              id: ndviLayerId,
-              type: "raster",
-              source: ndviSourceId,
-              paint: {
-                "raster-opacity": 0.85,
-                "raster-fade-duration": 300,
-              },
-            });
-            
-            ndviLoaded = true;
-            console.log("[Map] NDVI layer adicionado com sucesso!");
-          }
-        } catch (e) {
-          console.warn("[Map] Erro ao carregar NDVI via proxy:", e);
-        }
-
-        if (!ndviLoaded) {
-          console.log("[Map] Usando fill sólido como fallback");
-          // Fallback to solid fill if no NDVI image
-          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
-          const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
-                           currentNdvi >= 0.4 ? "#EAB308" : 
-                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
-          
-          mapInstance.addLayer({
-            id: fillLayerId,
-            type: "fill",
-            source: sourceId,
-            paint: {
-              "fill-color": fillColor,
-              "fill-opacity": 0.7,
-            },
-          });
-        }
+        mapInstance.addLayer({
+          id: fillLayerId,
+          type: "fill",
+          source: sourceId,
+          paint: {
+            "fill-color": fillColor,
+            "fill-opacity": 0.6,
+          },
+        });
 
         // SEMPRE adicionar contorno (borda preta grossa para melhor visibilidade)
         mapInstance.addLayer({
