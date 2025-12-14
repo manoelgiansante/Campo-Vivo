@@ -1,34 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { eq } from 'drizzle-orm';
-import { pgTable, serial, integer, varchar, text, boolean, timestamp, json, pgEnum } from 'drizzle-orm/pg-core';
-
-// Schema simplificado para fields
-const irrigationTypeEnum = pgEnum("irrigation_type", ["none", "drip", "sprinkler", "pivot", "flood"]);
-const fields = pgTable("fields", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  farmId: integer("farm_id"),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  areaHectares: integer("area_hectares"),
-  latitude: varchar("latitude", { length: 20 }),
-  longitude: varchar("longitude", { length: 20 }),
-  boundaries: json("boundaries"),
-  address: text("address"),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  country: varchar("country", { length: 100 }).default("Brasil"),
-  soilType: varchar("soil_type", { length: 100 }),
-  irrigationType: irrigationTypeEnum("irrigation_type").default("none"),
-  isActive: boolean("is_active").default(true),
-  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
-  lastNdviSync: timestamp("last_ndvi_sync"),
-  currentNdvi: integer("current_ndvi"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
 
 // Copernicus OAuth credentials
 const COPERNICUS_CLIENT_ID = process.env.COPERNICUS_CLIENT_ID || '';
@@ -129,7 +100,6 @@ function evaluatePixel(sample) {
     return [0, 0, 0, 0];
   }
   
-  // Normalize NDVI from -1,1 to 0,1 and adjust for vegetation
   ndvi = Math.max(0, Math.min(1, (ndvi + 0.2) / 1.0));
   
   const colorStops = [
@@ -149,7 +119,6 @@ function evaluatePixel(sample) {
     }
   }
   
-  // Cloud mask (SCL 8, 9, 10 are clouds)
   let alpha = sample.dataMask;
   if (sample.SCL === 8 || sample.SCL === 9 || sample.SCL === 10) {
     alpha = 0;
@@ -160,7 +129,6 @@ function evaluatePixel(sample) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Habilitar CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -176,53 +144,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dateTo = (req.query.dateTo as string) || new Date().toISOString().split('T')[0];
     const id = parseInt(fieldId as string);
 
-    console.log(`[Copernicus] Requisição para campo ${id}, paleta: ${palette}`);
+    console.log(`[Copernicus] Request for field ${id}, palette: ${palette}`);
 
     if (!fieldId) {
       return res.status(400).json({ error: 'Field ID is required' });
     }
 
-    // Check if Copernicus credentials are configured
     if (!COPERNICUS_CLIENT_ID || !COPERNICUS_CLIENT_SECRET) {
-      console.error('[Copernicus] Credenciais não configuradas');
+      console.error('[Copernicus] Credentials not configured');
       return res.status(500).json({ error: 'Copernicus credentials not configured' });
     }
 
     if (!process.env.DATABASE_URL) {
-      console.error("[Copernicus] DATABASE_URL não configurada");
+      console.error("[Copernicus] DATABASE_URL not configured");
       return res.status(500).json({ error: "Database not configured" });
     }
 
-    // Conectar ao banco de dados PostgreSQL
-    const client = postgres(process.env.DATABASE_URL, { 
+    // Connect to PostgreSQL directly
+    const sql = postgres(process.env.DATABASE_URL, { 
       connect_timeout: 10,
       idle_timeout: 20,
     });
-    const db = drizzle(client);
 
-    // Buscar campo
-    const result = await db.select().from(fields).where(eq(fields.id, id)).limit(1);
+    // Query field directly
+    const result = await sql`SELECT id, boundaries FROM fields WHERE id = ${id} LIMIT 1`;
     const field = result[0];
 
     if (!field) {
-      console.log(`[Copernicus] Campo ${id} não encontrado`);
-      await client.end();
+      console.log(`[Copernicus] Field ${id} not found`);
+      await sql.end();
       return res.status(404).json({ error: 'Field not found' });
     }
 
     const boundaries = field.boundaries as { lat: number; lng: number }[];
     if (!boundaries || !Array.isArray(boundaries) || boundaries.length < 3) {
-      console.log(`[Copernicus] Campo ${id} sem boundaries válidos`);
-      await client.end();
+      console.log(`[Copernicus] Field ${id} has no valid boundaries`);
+      await sql.end();
       return res.status(400).json({ error: 'Field has no valid boundaries' });
     }
 
-    await client.end();
-    console.log(`[Copernicus] Campo ${id} tem ${boundaries.length} pontos`);
+    await sql.end();
+    console.log(`[Copernicus] Field ${id} has ${boundaries.length} points`);
 
     // Get access token
     const token = await getAccessToken();
-    console.log(`[Copernicus] Token obtido com sucesso`);
+    console.log(`[Copernicus] Token obtained successfully`);
 
     // Convert polygon to GeoJSON format
     const coordinates = boundaries.map(p => [p.lng, p.lat]);
@@ -246,7 +212,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       width = Math.round(512 * aspectRatio);
     }
 
-    console.log(`[Copernicus] Tamanho da imagem: ${width}x${height}`);
+    console.log(`[Copernicus] Image size: ${width}x${height}`);
 
     const requestBody = {
       input: {
@@ -285,7 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       evalscript: generateEvalscript(palette),
     };
 
-    console.log(`[Copernicus] Enviando requisição para API...`);
+    console.log(`[Copernicus] Sending request to API...`);
 
     const response = await fetch(PROCESS_API_URL, {
       method: 'POST',
@@ -305,7 +271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    console.log(`[Copernicus] Imagem recebida: ${buffer.length} bytes`);
+    console.log(`[Copernicus] Image received: ${buffer.length} bytes`);
 
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=3600');
