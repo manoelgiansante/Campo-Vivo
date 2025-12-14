@@ -1,9 +1,23 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-// Generate login URL at runtime so redirect URI reflects the current origin.
-export const getLoginUrl = () => {
+// Check if OAuth is configured
+export const isOAuthConfigured = () => {
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
+  return !!(oauthPortalUrl && appId);
+};
+
+// Generate login URL at runtime so redirect URI reflects the current origin.
+export const getLoginUrl = (): string | null => {
+  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
+  const appId = import.meta.env.VITE_APP_ID;
+  
+  // Return null if OAuth not configured (allows app to work without auth)
+  if (!oauthPortalUrl || !appId) {
+    console.warn("OAuth not configured - running without authentication");
+    return null;
+  }
+  
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
   const state = btoa(redirectUri);
 

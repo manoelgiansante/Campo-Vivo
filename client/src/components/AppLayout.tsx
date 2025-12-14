@@ -20,7 +20,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, isOAuthConfigured } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { 
   LayoutDashboard, 
@@ -77,6 +77,25 @@ export default function AppLayout({
   }
 
   if (!user) {
+    // If OAuth not configured, show content anyway (demo mode)
+    if (!isOAuthConfigured()) {
+      return (
+        <SidebarProvider
+          style={
+            {
+              "--sidebar-width": `${sidebarWidth}px`,
+            } as CSSProperties
+          }
+        >
+          <AppLayoutContent setSidebarWidth={setSidebarWidth}>
+            {children}
+          </AppLayoutContent>
+          <OfflineIndicator />
+        </SidebarProvider>
+      );
+    }
+    
+    const loginUrl = getLoginUrl();
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-primary/5 to-background p-4">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full bg-card rounded-2xl shadow-lg border">
@@ -91,15 +110,17 @@ export default function AppLayout({
               Plataforma de monitoramento agrícola. Faça login para acessar seus campos e cultivos.
             </p>
           </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Entrar
-          </Button>
+          {loginUrl && (
+            <Button
+              onClick={() => {
+                window.location.href = loginUrl;
+              }}
+              size="lg"
+              className="w-full shadow-lg hover:shadow-xl transition-all"
+            >
+              Entrar
+            </Button>
+          )}
         </div>
       </div>
     );

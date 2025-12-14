@@ -1,6 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, isOAuthConfigured } from "@/const";
 import { Leaf, Loader2 } from "lucide-react";
 import { BottomNav } from "./BottomNav";
 import { OfflineIndicator } from "./OfflineIndicator";
@@ -22,7 +22,21 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
     );
   }
 
+  // If no user but OAuth not configured, render content anyway (demo mode)
+  if (!user && !isOAuthConfigured()) {
+    return (
+      <div className={`min-h-screen bg-gray-100 ${fullScreen ? "" : "pb-16"}`}>
+        <main className={fullScreen ? "h-screen" : ""}>
+          {children}
+        </main>
+        {!hideNav && <BottomNav />}
+        <OfflineIndicator />
+      </div>
+    );
+  }
+
   if (!user) {
+    const loginUrl = getLoginUrl();
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
         <div className="flex flex-col items-center gap-6 max-w-sm w-full">
@@ -35,15 +49,17 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
               Monitore seus campos com imagens de satélite e dados de vegetação em tempo real.
             </p>
           </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl"
-          >
-            Entrar
-          </Button>
+          {loginUrl && (
+            <Button
+              onClick={() => {
+                window.location.href = loginUrl;
+              }}
+              size="lg"
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold h-12 rounded-xl"
+            >
+              Entrar
+            </Button>
+          )}
         </div>
       </div>
     );
