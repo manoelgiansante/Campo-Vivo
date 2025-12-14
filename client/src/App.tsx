@@ -13,6 +13,7 @@ import FieldDetailPro from "./pages/FieldDetailPro";
 import FieldDrawNew from "./pages/FieldDrawNew";
 import NotesNew from "./pages/NotesNew";
 import ProfileNew from "./pages/ProfileNew";
+import FieldsOneSoil from "./pages/FieldsOneSoil";
 
 function Router() {
   return (
@@ -57,6 +58,9 @@ function Router() {
       </Route>
       <Route path="/fields/:id/pro">
         {() => <FieldDetailPro />}
+      </Route>
+      <Route path="/dashboard">
+        {() => <FieldsOneSoil />}
       </Route>
 
       {/* Notes */}

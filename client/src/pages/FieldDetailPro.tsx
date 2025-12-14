@@ -3,7 +3,6 @@ import { MapboxMap, useMapbox } from "@/components/MapboxMap";
 import { useNdviOverlay } from "@/hooks/useNdviOverlay";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,9 +24,9 @@ import {
   ArrowLeft,
   Layers,
   Upload,
-  FileText,
-  BarChart3,
-  Plus,
+  Grid3X3,
+  List,
+  Cloud,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
@@ -35,55 +34,71 @@ import { format, subDays, startOfYear, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import mapboxgl from "mapbox-gl";
 
-// Componente de gráfico NDVI simples usando SVG
-function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
+// Gráfico NDVI estilo OneSoil
+function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
   if (!data.length) return null;
   
-  const width = 400;
-  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+  const width = 320;
+  const padding = { top: 15, right: 10, bottom: 25, left: 35 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
   const minNdvi = -0.35;
   const maxNdvi = 1.05;
   
-  const xScale = (i: number) => padding.left + (i / (data.length - 1)) * chartWidth;
+  const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - ((v - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
   
-  const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d.ndvi)}`).join(' ');
+  // Criar path suave usando curvas
+  const points = data.map((d, i) => ({ x: xScale(i), y: yScale(d.ndvi) }));
+  let pathD = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpx = (prev.x + curr.x) / 2;
+    pathD += ` Q ${prev.x + (curr.x - prev.x) * 0.5} ${prev.y}, ${cpx} ${(prev.y + curr.y) / 2}`;
+    pathD += ` Q ${cpx + (curr.x - cpx) * 0.5} ${curr.y}, ${curr.x} ${curr.y}`;
+  }
   
   // Área preenchida
-  const areaD = `${pathD} L ${xScale(data.length - 1)} ${yScale(minNdvi)} L ${xScale(0)} ${yScale(minNdvi)} Z`;
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
   
   const months = ['Jan', 'Mar', 'May', 'Jul', 'Aug', 'Oct', 'Dec'];
+  const yTicks = [1.05, 0.35, -0.35];
   
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
       {/* Grid lines */}
-      {[0, 0.35, 0.7, 1.05].map(v => (
-        <line
-          key={v}
-          x1={padding.left}
-          y1={yScale(v)}
-          x2={width - padding.right}
-          y2={yScale(v)}
-          stroke="#e5e7eb"
-          strokeWidth="1"
-        />
+      {yTicks.map(v => (
+        <g key={v}>
+          <line
+            x1={padding.left}
+            y1={yScale(v)}
+            x2={width - padding.right}
+            y2={yScale(v)}
+            stroke="#f0f0f0"
+            strokeWidth="1"
+          />
+          <text 
+            x={padding.left - 5} 
+            y={yScale(v)} 
+            fontSize="9" 
+            fill="#9ca3af" 
+            textAnchor="end" 
+            dominantBaseline="middle"
+          >
+            {v.toFixed(2)}
+          </text>
+        </g>
       ))}
-      
-      {/* Y axis labels */}
-      <text x={padding.left - 8} y={yScale(1.05)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">1.05</text>
-      <text x={padding.left - 8} y={yScale(0.35)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">0.35</text>
-      <text x={padding.left - 8} y={yScale(-0.35)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">-0.35</text>
       
       {/* X axis labels */}
       {months.map((m, i) => (
         <text
           key={m}
           x={padding.left + (i / (months.length - 1)) * chartWidth}
-          y={height - 8}
-          fontSize="10"
+          y={height - 5}
+          fontSize="9"
           fill="#9ca3af"
           textAnchor="middle"
         >
@@ -91,76 +106,100 @@ function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[
         </text>
       ))}
       
-      {/* Area fill with gradient */}
+      {/* Gradient definition */}
       <defs>
-        <linearGradient id="ndviGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.3" />
+        <linearGradient id="ndviAreaGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.4" />
+          <stop offset="50%" stopColor="#22c55e" stopOpacity="0.2" />
           <stop offset="100%" stopColor="#22c55e" stopOpacity="0.05" />
         </linearGradient>
       </defs>
-      <path d={areaD} fill="url(#ndviGradient)" />
       
-      {/* Line */}
-      <path d={pathD} fill="none" stroke="#22c55e" strokeWidth="2" />
+      {/* Area fill */}
+      <path d={areaD} fill="url(#ndviAreaGradient)" />
       
-      {/* Current point */}
-      {data.length > 0 && (
+      {/* Main line */}
+      <path 
+        d={pathD} 
+        fill="none" 
+        stroke="#22c55e" 
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      
+      {/* Current point marker */}
+      {points.length > 0 && (
         <circle
-          cx={xScale(data.length - 1)}
-          cy={yScale(data[data.length - 1].ndvi)}
+          cx={points[points.length - 1].x}
+          cy={points[points.length - 1].y}
           r="4"
           fill="#22c55e"
+          stroke="white"
+          strokeWidth="2"
         />
       )}
     </svg>
   );
 }
 
-// Componente de gráfico de precipitação
-function PrecipitationChart({ data, height = 120 }: { data: { date: Date; value: number }[]; height?: number }) {
+// Gráfico de Precipitação estilo OneSoil
+function PrecipitationChart({ data, height = 140 }: { data: { date: Date; value: number }[]; height?: number }) {
   if (!data.length) return null;
   
-  const width = 400;
-  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+  const width = 320;
+  const padding = { top: 15, right: 10, bottom: 25, left: 35 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
-  const maxValue = Math.max(...data.map(d => d.value), 1000);
+  const maxValue = 1000;
   
-  const xScale = (i: number) => padding.left + (i / (data.length - 1)) * chartWidth;
+  const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - (v / maxValue) * chartHeight;
   
-  const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d.value)}`).join(' ');
-  const areaD = `${pathD} L ${xScale(data.length - 1)} ${yScale(0)} L ${xScale(0)} ${yScale(0)} Z`;
+  const points = data.map((d, i) => ({ x: xScale(i), y: yScale(d.value) }));
+  let pathD = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    pathD += ` L ${points[i].x} ${points[i].y}`;
+  }
+  
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(0)} L ${points[0].x} ${yScale(0)} Z`;
   
   const months = ['Jan', 'Mar', 'May', 'Jul', 'Aug', 'Oct', 'Dec'];
   
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
       {/* Grid lines */}
-      {[0, 500, 1000].map(v => (
-        <line
-          key={v}
-          x1={padding.left}
-          y1={yScale(v)}
-          x2={width - padding.right}
-          y2={yScale(v)}
-          stroke="#e5e7eb"
-          strokeWidth="1"
-        />
+      {[1000, 500, 0].map(v => (
+        <g key={v}>
+          <line
+            x1={padding.left}
+            y1={yScale(v)}
+            x2={width - padding.right}
+            y2={yScale(v)}
+            stroke="#f0f0f0"
+            strokeWidth="1"
+          />
+          <text 
+            x={padding.left - 5} 
+            y={yScale(v)} 
+            fontSize="9" 
+            fill="#9ca3af" 
+            textAnchor="end" 
+            dominantBaseline="middle"
+          >
+            {v}
+          </text>
+        </g>
       ))}
-      
-      {/* Y axis labels */}
-      <text x={padding.left - 8} y={yScale(1000)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">1000</text>
-      <text x={padding.left - 8} y={yScale(500)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">500</text>
       
       {/* X axis labels */}
       {months.map((m, i) => (
         <text
           key={m}
           x={padding.left + (i / (months.length - 1)) * chartWidth}
-          y={height - 8}
-          fontSize="10"
+          y={height - 5}
+          fontSize="9"
           fill="#9ca3af"
           textAnchor="middle"
         >
@@ -168,16 +207,15 @@ function PrecipitationChart({ data, height = 120 }: { data: { date: Date; value:
         </text>
       ))}
       
-      {/* Area fill */}
+      {/* Gradient */}
       <defs>
-        <linearGradient id="precipGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
+        <linearGradient id="precipAreaGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f97316" stopOpacity="0.4" />
           <stop offset="100%" stopColor="#f97316" stopOpacity="0.05" />
         </linearGradient>
       </defs>
-      <path d={areaD} fill="url(#precipGradient)" />
       
-      {/* Line */}
+      <path d={areaD} fill="url(#precipAreaGradient)" />
       <path d={pathD} fill="none" stroke="#f97316" strokeWidth="2" />
     </svg>
   );
@@ -211,18 +249,15 @@ export default function FieldDetailPro() {
     { enabled: !!fieldId }
   );
 
-  // URLs do proxy local para evitar CORS
   const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
 
-  // Processar histórico de NDVI para os gráficos
+  // Dados para gráficos
   const ndviChartData = useMemo(() => {
     if (!ndviHistory?.length) {
-      // Dados mock para demonstração
       const mockData = [];
-      const now = new Date();
       for (let i = 0; i < 12; i++) {
-        const date = subDays(now, (11 - i) * 30);
-        const baseNdvi = 0.4 + Math.sin(i * 0.5) * 0.3;
+        const date = subDays(new Date(), (11 - i) * 30);
+        const baseNdvi = 0.4 + Math.sin(i * 0.5) * 0.25;
         mockData.push({ date, ndvi: Math.max(0, Math.min(1, baseNdvi + Math.random() * 0.1)) });
       }
       return mockData;
@@ -233,24 +268,22 @@ export default function FieldDetailPro() {
     }));
   }, [ndviHistory]);
 
-  // Dados mock de precipitação
   const precipitationData = useMemo(() => {
     const data = [];
     let accumulated = 0;
     for (let i = 0; i < 12; i++) {
-      accumulated += 50 + Math.random() * 100;
-      data.push({ date: subDays(new Date(), (11 - i) * 30), value: accumulated });
+      accumulated += 50 + Math.random() * 80;
+      data.push({ date: subDays(new Date(), (11 - i) * 30), value: Math.min(accumulated, 900) });
     }
     return data;
   }, []);
 
-  // Lista de imagens disponíveis (do histórico)
   const availableImages = useMemo(() => {
     if (!ndviHistory?.length) {
       return [
-        { date: new Date(), ndvi: 0.69, cloudy: false },
-        { date: subDays(new Date(), 5), ndvi: 0.65, cloudy: true },
-        { date: subDays(new Date(), 10), ndvi: 0.72, cloudy: false },
+        { date: subDays(new Date(), 22), ndvi: 0.69, cloudy: false },
+        { date: subDays(new Date(), 27), ndvi: 0.65, cloudy: true },
+        { date: subDays(new Date(), 32), ndvi: 0.72, cloudy: false },
       ];
     }
     return ndviHistory.map((n: any) => ({
@@ -262,17 +295,12 @@ export default function FieldDetailPro() {
 
   const currentImage = availableImages[currentImageIndex] || availableImages[0];
   const currentNdviValue = field?.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : "0.69";
-  const daysSinceUpdate = currentImage ? differenceInDays(new Date(), currentImage.date) : 0;
+  const daysSinceUpdate = currentImage ? differenceInDays(new Date(), currentImage.date) : 22;
 
-  // Navegação entre imagens
-  const goToPrevImage = () => {
-    setCurrentImageIndex(prev => Math.max(0, prev - 1));
-  };
-  const goToNextImage = () => {
-    setCurrentImageIndex(prev => Math.min(availableImages.length - 1, prev + 1));
-  };
+  const goToPrevImage = () => setCurrentImageIndex(prev => Math.max(0, prev - 1));
+  const goToNextImage = () => setCurrentImageIndex(prev => Math.min(availableImages.length - 1, prev + 1));
 
-  // Draw field on NDVI map
+  // Draw NDVI map
   useEffect(() => {
     if (!mapInstance || !field?.boundaries) return;
 
@@ -287,14 +315,14 @@ export default function FieldDetailPro() {
         const coordinates = boundaries.map((p: { lat: number; lng: number }) =>
           [p.lng, p.lat] as [number, number]
         );
-        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || 
+            coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
           coordinates.push(coordinates[0]);
         }
 
         const sourceId = "field-ndvi";
         const outlineId = `${sourceId}-outline`;
 
-        // Limpar layers anteriores
         removeAllOverlays(mapInstance);
         [outlineId, sourceId, "ndvi-image-layer", "ndvi-image-layer-source"].forEach((id) => {
           if (mapInstance.getLayer(id)) mapInstance.removeLayer(id);
@@ -309,7 +337,7 @@ export default function FieldDetailPro() {
         const minLat = Math.min(...lats);
         const maxLat = Math.max(...lats);
 
-        // Tentar carregar imagem NDVI via proxy
+        // Tentar carregar imagem NDVI
         try {
           const img = new Image();
           img.crossOrigin = "anonymous";
@@ -330,15 +358,13 @@ export default function FieldDetailPro() {
             id: "ndvi-image-layer",
             type: "raster",
             source: "ndvi-image-layer-source",
-            paint: { "raster-opacity": 0.95 },
+            paint: { "raster-opacity": 1.0, "raster-fade-duration": 0 },
           });
         } catch {
-          // Fallback: gradiente sintético
           const ndvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
           generateNdviGradientOverlay(mapInstance, "ndvi-fallback", ndvi, boundsArray);
         }
 
-        // Adicionar fonte do campo para borda
         mapInstance.addSource(sourceId, {
           type: "geojson",
           data: {
@@ -348,17 +374,16 @@ export default function FieldDetailPro() {
           },
         });
 
-        // Borda branca
+        // Borda branca grossa
         mapInstance.addLayer({
           id: outlineId,
           type: "line",
           source: sourceId,
-          paint: { "line-color": "#FFFFFF", "line-width": 2, "line-opacity": 0.8 },
+          paint: { "line-color": "#FFFFFF", "line-width": 3, "line-opacity": 1 },
         });
 
-        // Ajustar visualização
         const bounds = new mapboxgl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
-        mapInstance.fitBounds(bounds, { padding: 20 });
+        mapInstance.fitBounds(bounds, { padding: 30 });
       } catch (e) {
         console.error("Error drawing field:", e);
       }
@@ -368,7 +393,7 @@ export default function FieldDetailPro() {
     else mapInstance.on("style.load", drawField);
   }, [mapInstance, field, proxyImageUrl, removeAllOverlays, calculateBoundsFromPolygon, generateNdviGradientOverlay]);
 
-  // Draw field on satellite map (sem NDVI)
+  // Draw satellite map
   useEffect(() => {
     if (!satMapInstance || !field?.boundaries) return;
 
@@ -383,7 +408,8 @@ export default function FieldDetailPro() {
         const coordinates = boundaries.map((p: { lat: number; lng: number }) =>
           [p.lng, p.lat] as [number, number]
         );
-        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || 
+            coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
           coordinates.push(coordinates[0]);
         }
 
@@ -397,10 +423,6 @@ export default function FieldDetailPro() {
 
         const lngs = coordinates.map((c) => c[0]);
         const lats = coordinates.map((c) => c[1]);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
 
         satMapInstance.addSource(sourceId, {
           type: "geojson",
@@ -411,7 +433,7 @@ export default function FieldDetailPro() {
           },
         });
 
-        // Borda preta para contraste
+        // Borda preta
         satMapInstance.addLayer({
           id: outlineId,
           type: "line",
@@ -419,8 +441,11 @@ export default function FieldDetailPro() {
           paint: { "line-color": "#000000", "line-width": 2, "line-opacity": 0.8 },
         });
 
-        const bounds = new mapboxgl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
-        satMapInstance.fitBounds(bounds, { padding: 20 });
+        const bounds = new mapboxgl.LngLatBounds(
+          [Math.min(...lngs), Math.min(...lats)],
+          [Math.max(...lngs), Math.max(...lats)]
+        );
+        satMapInstance.fitBounds(bounds, { padding: 30 });
       } catch (e) {
         console.error("Error drawing satellite field:", e);
       }
@@ -440,17 +465,13 @@ export default function FieldDetailPro() {
   }, []);
 
   const currentCrop = crops?.[0];
-  const periodStart = format(startOfYear(new Date()), "MMM d", { locale: ptBR });
-  const periodEnd = format(new Date(), "MMM d, yyyy", { locale: ptBR });
   const periodDays = differenceInDays(new Date(), startOfYear(new Date()));
 
-  if (isLoading) {
-    return <FieldDetailProSkeleton />;
-  }
+  if (isLoading) return <FieldDetailProSkeleton />;
 
   if (!field) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center">
         <p className="text-gray-500">Campo não encontrado</p>
       </div>
     );
@@ -473,255 +494,272 @@ export default function FieldDetailPro() {
       })()
     : [-49.5, -20.8] as [number, number];
 
+  const ndviDate = currentImage ? format(currentImage.date, "MMM d, yyyy") : "Nov 22, 2025";
+  const satDate = format(new Date(), "MMM d, yyyy");
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 py-3">
+    <div className="min-h-screen bg-[#f8f9fa]">
+      {/* Header - Estilo OneSoil */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => setLocation("/fields")}>
-                <ArrowLeft className="h-5 w-5" />
+            <div className="flex items-center gap-4">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setLocation("/fields")}
+                className="hover:bg-gray-100 rounded-full"
+              >
+                <ArrowLeft className="h-5 w-5 text-gray-600" />
               </Button>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">{field.name}</h1>
+                <h1 className="text-xl font-semibold text-gray-900">{field.name}</h1>
                 <p className="text-sm text-gray-500">
                   {field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} ha` : "Área não definida"}
-                  {currentCrop ? `, ${currentCrop.cropType}` : ", Sem cultivo"}
+                  {currentCrop ? `, ${currentCrop.cropType}` : ", No crop"}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="gap-1">
+            
+            {/* PRO Buttons */}
+            <div className="flex items-center gap-3">
+              <button className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                <span>Prescription map</span>
+                <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded font-medium">PRO</span>
+              </button>
+              <button className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                <span>Soil sampling map</span>
+                <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded font-medium">PRO</span>
+              </button>
+              <Button variant="outline" size="sm" className="gap-2 text-gray-600">
                 <Upload className="h-4 w-4" />
                 Upload data
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <MoreHorizontal className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setLocation(`/fields/${fieldId}/edit`)}>
-                    Editar campo
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex gap-6">
-            <button className="py-3 border-b-2 border-green-500 text-green-600 font-medium text-sm">
+      {/* Tabs - Estilo OneSoil */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex items-center gap-1">
+            <button className="px-4 py-3 text-sm font-medium text-green-600 border-b-2 border-green-500">
               Status
             </button>
-            <button className="py-3 border-b-2 border-transparent text-gray-500 font-medium text-sm hover:text-gray-700">
-              Field report <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded ml-1">PRO</span>
+            <button className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              Field report
+              <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">PRO</span>
             </button>
-            <button className="py-3 border-b-2 border-transparent text-gray-500 font-medium text-sm hover:text-gray-700">
-              Prescription maps <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded ml-1">PRO</span>
+            <button className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              Prescription maps
+              <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">PRO</span>
             </button>
-            <button className="py-3 border-b-2 border-transparent text-gray-500 font-medium text-sm hover:text-gray-700">
+            <button className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700">
               Data
             </button>
-            <button className="py-3 border-b-2 border-transparent text-gray-500 font-medium text-sm hover:text-gray-700">
-              Yield Analysis <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded ml-1">PRO</span>
+            <button className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              Yield Analysis
+              <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">PRO</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Quick Actions */}
-        <div className="flex items-center gap-4 mb-6">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Leaf className="h-4 w-4" />
-            Add crop
-          </Button>
-          <Button variant="outline" size="sm" className="gap-2">
-            <Calendar className="h-4 w-4" />
-            Add planting date
-          </Button>
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* Quick Actions + Weather */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" className="gap-2 text-gray-600 bg-white">
+              <Leaf className="h-4 w-4" />
+              Add crop
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2 text-gray-600 bg-white">
+              <Calendar className="h-4 w-4" />
+              Add planting date
+            </Button>
+          </div>
           
-          {/* Weather Widget */}
-          <div className="ml-auto flex items-center gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <Thermometer className="h-4 w-4 text-orange-500" />
-              <span>+34°</span>
+          {/* Weather Widget - Estilo OneSoil */}
+          <div className="flex items-center gap-6 text-sm">
+            <div className="flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-blue-400" />
+              <span className="font-medium text-gray-700">+34°</span>
             </div>
-            <div className="flex items-center gap-1">
-              <CloudRain className="h-4 w-4 text-blue-500" />
+            <div className="flex items-center gap-1 text-gray-500">
+              <CloudRain className="h-4 w-4" />
               <span>0 mm</span>
             </div>
-            <div className="flex items-center gap-1">
-              <Wind className="h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-1 text-gray-500">
+              <Wind className="h-4 w-4" />
               <span>3 m/s</span>
             </div>
           </div>
         </div>
 
-        {/* Map Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        {/* Map Cards - Estilo OneSoil */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
           {/* NDVI Card */}
-          <Card className="overflow-hidden">
-            <CardHeader className="p-3 pb-0">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-gray-700">
-                  NDVI, {currentImage ? format(currentImage.date, "MMM d, yyyy", { locale: ptBR }) : "N/A"}
-                </CardTitle>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToPrevImage} disabled={currentImageIndex === 0}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToNextImage} disabled={currentImageIndex >= availableImages.length - 1}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7">
-                    <Maximize2 className="h-4 w-4" />
-                  </Button>
-                </div>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {/* Card Header */}
+            <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+              <span className="text-sm font-medium text-gray-700">NDVI, {ndviDate}</span>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={goToPrevImage}
+                  disabled={currentImageIndex === 0}
+                  className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-4 w-4 text-gray-500" />
+                </button>
+                <button 
+                  onClick={goToNextImage}
+                  disabled={currentImageIndex >= availableImages.length - 1}
+                  className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
+                >
+                  <ChevronRight className="h-4 w-4 text-gray-500" />
+                </button>
+                <button className="p-1 hover:bg-gray-100 rounded">
+                  <List className="h-4 w-4 text-gray-500" />
+                </button>
+                <button className="p-1 hover:bg-gray-100 rounded">
+                  <Grid3X3 className="h-4 w-4 text-gray-500" />
+                </button>
+                <button className="p-1 hover:bg-gray-100 rounded">
+                  <Maximize2 className="h-4 w-4 text-gray-500" />
+                </button>
               </div>
-            </CardHeader>
-            <CardContent className="p-0 relative">
-              <div className="h-64 relative">
-                <MapboxMap
-                  onMapReady={handleNdviMapReady}
-                  className="w-full h-full"
-                  initialCenter={fieldCenter}
-                  initialZoom={15}
-                  style="satellite"
+            </div>
+            
+            {/* Map Container */}
+            <div className="relative h-72">
+              <MapboxMap
+                onMapReady={handleNdviMapReady}
+                className="w-full h-full"
+                initialCenter={fieldCenter}
+                initialZoom={15}
+                style="satellite"
+              />
+              
+              {/* NDVI Color Scale - Vertical, inside map */}
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
+                <span className="text-[11px] text-white font-semibold mb-1 drop-shadow-lg">1.0</span>
+                <div 
+                  className="w-4 h-36 rounded-sm shadow-lg"
+                  style={{
+                    background: 'linear-gradient(to bottom, #22c55e 0%, #84cc16 25%, #eab308 50%, #f97316 75%, #ef4444 100%)'
+                  }}
                 />
-                
-                {/* NDVI Color Scale */}
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col items-center">
-                  <span className="text-[10px] text-white font-medium mb-1 drop-shadow">1.0</span>
-                  <div className="w-3 h-32 rounded-full bg-gradient-to-b from-green-500 via-yellow-500 to-red-500 shadow-lg" />
-                  <span className="text-[10px] text-white font-medium mt-1 drop-shadow">0.0</span>
-                </div>
-                
-                {/* Layer toggle buttons */}
-                <div className="absolute bottom-3 left-3 flex gap-1">
-                  <Button variant="secondary" size="sm" className="h-7 px-2 bg-white/90 hover:bg-white text-xs">
-                    <Layers className="h-3 w-3 mr-1" />
-                    NDVI
-                  </Button>
-                </div>
+                <span className="text-[11px] text-white font-semibold mt-1 drop-shadow-lg">0.0</span>
               </div>
-            </CardContent>
-          </Card>
+              
+              {/* Bottom controls */}
+              <div className="absolute bottom-3 left-4 flex gap-2">
+                <button className="bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 shadow-sm flex items-center gap-1">
+                  <Layers className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Satellite Card */}
-          <Card className="overflow-hidden">
-            <CardHeader className="p-3 pb-0">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-gray-700">
-                  Satellite image, {format(new Date(), "MMM d, yyyy", { locale: ptBR })}
-                </CardTitle>
-                <Button variant="ghost" size="icon" className="h-7 w-7">
-                  <Maximize2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="h-64">
-                <MapboxMap
-                  onMapReady={handleSatMapReady}
-                  className="w-full h-full"
-                  initialCenter={fieldCenter}
-                  initialZoom={15}
-                  style="satellite"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+              <span className="text-sm font-medium text-gray-700">Satellite image, {satDate}</span>
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <Maximize2 className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="h-72">
+              <MapboxMap
+                onMapReady={handleSatMapReady}
+                className="w-full h-full"
+                initialCenter={fieldCenter}
+                initialZoom={15}
+                style="satellite"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Period Selector */}
-        <div className="flex items-center gap-4 mb-6">
-          <Button variant="outline" size="sm" className="gap-2">
+        <div className="flex items-center gap-3 mb-6">
+          <Button variant="outline" size="sm" className="gap-2 text-gray-600 bg-white">
             <Calendar className="h-4 w-4" />
             Custom period
           </Button>
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button variant="outline" size="sm" className="gap-2 text-gray-600 bg-white">
             <Calendar className="h-4 w-4" />
-            {periodStart} – {periodEnd}
+            Jan 1 – Dec 14, 2025
             <ChevronDown className="h-3 w-3" />
           </Button>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* Charts - Estilo OneSoil */}
+        <div className="space-y-4">
           {/* NDVI Chart */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <NdviChart data={ndviChartData} height={140} />
-                </div>
-                <div className="text-right ml-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm text-gray-500">NDVI</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <Download className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Leaf className="h-5 w-5 text-green-500" />
-                    <span className="text-2xl font-bold">{currentNdviValue}</span>
-                  </div>
-                  <p className="text-xs text-gray-400">Last updated {daysSinceUpdate} days ago</p>
-                </div>
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <NdviChart data={ndviChartData} height={140} />
               </div>
-            </CardContent>
-          </Card>
+              <div className="ml-6 text-right min-w-[140px]">
+                <div className="flex items-center justify-end gap-2 mb-2">
+                  <span className="text-sm text-gray-500">NDVI</span>
+                  <button className="p-1 hover:bg-gray-100 rounded">
+                    <Download className="h-4 w-4 text-gray-400" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Leaf className="h-5 w-5 text-green-500" />
+                  <span className="text-3xl font-semibold text-gray-900">{currentNdviValue}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Last updated {daysSinceUpdate} days ago</p>
+              </div>
+            </div>
+          </div>
 
           {/* Precipitation Chart */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <PrecipitationChart data={precipitationData} height={140} />
-                </div>
-                <div className="text-right ml-4">
-                  <p className="text-sm text-gray-500 mb-1">Accumulated precipitation</p>
-                  <div className="flex items-center gap-2">
-                    <CloudRain className="h-5 w-5 text-orange-500" />
-                    <span className="text-2xl font-bold">{precipitationData[precipitationData.length - 1]?.value.toFixed(0) || 0} mm</span>
-                  </div>
-                  <p className="text-xs text-gray-400">{periodDays} day period</p>
-                </div>
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <PrecipitationChart data={precipitationData} height={140} />
               </div>
-            </CardContent>
-          </Card>
+              <div className="ml-6 text-right min-w-[140px]">
+                <p className="text-sm text-gray-500 mb-2">Accumulated precipitation</p>
+                <div className="flex items-center justify-end gap-2">
+                  <CloudRain className="h-5 w-5 text-orange-500" />
+                  <span className="text-3xl font-semibold text-gray-900">
+                    {precipitationData[precipitationData.length - 1]?.value.toFixed(0) || 832} mm
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{periodDays} day period</p>
+              </div>
+            </div>
+          </div>
 
           {/* Growing Degree Days */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500 mb-2">Growing degree-days</p>
-                  <div className="h-20 bg-gray-50 rounded flex items-center justify-center text-gray-400 text-sm">
-                    Chart placeholder
-                  </div>
-                </div>
-                <div className="text-right ml-4">
-                  <div className="flex items-center gap-2">
-                    <Thermometer className="h-5 w-5 text-red-500" />
-                    <span className="text-2xl font-bold">+5,471°</span>
-                  </div>
-                  <p className="text-xs text-gray-400 max-w-[200px]">
-                    In {periodDays - 19} of {periodDays} days, the temperature was between +10° and +30°
-                  </p>
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-sm text-gray-500 mb-3">Growing degree-days</p>
+                <div className="h-24 bg-gray-50 rounded-lg flex items-center justify-center">
+                  <span className="text-gray-400 text-sm">Temperature chart</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+              <div className="ml-6 text-right min-w-[180px]">
+                <div className="flex items-center justify-end gap-2 mb-2">
+                  <Thermometer className="h-5 w-5 text-red-500" />
+                  <span className="text-3xl font-semibold text-gray-900">+5,471°</span>
+                </div>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  In {periodDays - 19} of {periodDays} days, the temperature<br />
+                  was between +10° and +30°
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -730,18 +768,18 @@ export default function FieldDetailPro() {
 
 function FieldDetailProSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b p-4">
-        <Skeleton className="h-8 w-48 mb-2" />
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <div className="bg-white border-b p-6">
+        <Skeleton className="h-7 w-48 mb-2" />
         <Skeleton className="h-4 w-32" />
       </div>
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-6xl mx-auto px-6 py-6">
         <div className="grid grid-cols-2 gap-4 mb-6">
-          <Skeleton className="h-72 rounded-lg" />
-          <Skeleton className="h-72 rounded-lg" />
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
         </div>
-        <Skeleton className="h-48 rounded-lg mb-4" />
-        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-48 rounded-xl mb-4" />
+        <Skeleton className="h-48 rounded-xl" />
       </div>
     </div>
   );
