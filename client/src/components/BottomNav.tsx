@@ -2,10 +2,10 @@ import { useLocation } from "wouter";
 import { Globe, LayoutGrid, FileText, User } from "lucide-react";
 
 const navItems = [
-  { icon: Globe, label: "Map", path: "/map" },
-  { icon: LayoutGrid, label: "Fields", path: "/fields" },
-  { icon: FileText, label: "Notes", path: "/notes" },
-  { icon: User, label: "Profile", path: "/profile" },
+  { icon: Globe, label: "Mapa", path: "/map" },
+  { icon: LayoutGrid, label: "Campos", path: "/fields" },
+  { icon: FileText, label: "Notas", path: "/notes" },
+  { icon: User, label: "Perfil", path: "/profile" },
 ];
 
 export function BottomNav() {

@@ -5,93 +5,79 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MobileLayout } from "./components/MobileLayout";
 
-// New OneSoil-style pages
+// Pages
 import MapView from "./pages/MapView";
-import FieldsList from "./pages/FieldsList";
+import FieldsOneSoil from "./pages/FieldsOneSoil";
 import FieldDetailNew from "./pages/FieldDetailNew";
 import FieldDetailPro from "./pages/FieldDetailPro";
 import FieldDrawNew from "./pages/FieldDrawNew";
 import NotesNew from "./pages/NotesNew";
 import ProfileNew from "./pages/ProfileNew";
-import FieldsOneSoil from "./pages/FieldsOneSoil";
 
 function Router() {
   return (
     <Switch>
-      {/* Main Map View (home) */}
+      {/* Mapa - Tela principal */}
       <Route path="/">
-        {() => (
-          <MobileLayout fullScreen>
-            <MapView />
-          </MobileLayout>
-        )}
+        <MobileLayout fullScreen>
+          <MapView />
+        </MobileLayout>
       </Route>
+      
       <Route path="/map">
-        {() => (
-          <MobileLayout fullScreen>
-            <MapView />
-          </MobileLayout>
-        )}
+        <MobileLayout fullScreen>
+          <MapView />
+        </MobileLayout>
       </Route>
 
-      {/* Fields - Interface estilo OneSoil */}
+      {/* Campos */}
       <Route path="/fields">
-        {() => <FieldsOneSoil />}
+        <FieldsOneSoil />
       </Route>
+      
       <Route path="/fields/new">
-        {() => (
-          <MobileLayout hideNav fullScreen>
-            <FieldDrawNew />
-          </MobileLayout>
-        )}
+        <MobileLayout hideNav fullScreen>
+          <FieldDrawNew />
+        </MobileLayout>
       </Route>
+      
       <Route path="/fields/:id">
-        {() => (
-          <MobileLayout>
-            <FieldDetailNew />
-          </MobileLayout>
-        )}
+        <MobileLayout>
+          <FieldDetailNew />
+        </MobileLayout>
       </Route>
+      
       <Route path="/fields/:id/pro">
-        {() => <FieldDetailPro />}
-      </Route>
-      <Route path="/dashboard">
-        {() => <FieldsOneSoil />}
+        <FieldDetailPro />
       </Route>
 
-      {/* Notes */}
+      {/* Notas */}
       <Route path="/notes">
-        {() => (
-          <MobileLayout>
-            <NotesNew />
-          </MobileLayout>
-        )}
+        <MobileLayout>
+          <NotesNew />
+        </MobileLayout>
       </Route>
 
-      {/* Profile */}
+      {/* Perfil */}
       <Route path="/profile">
-        {() => (
-          <MobileLayout>
-            <ProfileNew />
-          </MobileLayout>
-        )}
+        <MobileLayout>
+          <ProfileNew />
+        </MobileLayout>
       </Route>
 
-      {/* Fallback */}
+      {/* 404 */}
       <Route>
-        {() => (
-          <MobileLayout>
-            <div className="flex items-center justify-center min-h-[60vh]">
-              <p className="text-gray-500">Página não encontrada</p>
-            </div>
-          </MobileLayout>
-        )}
+        <MobileLayout>
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <p className="text-gray-500">Página não encontrada</p>
+          </div>
+        </MobileLayout>
       </Route>
     </Switch>
   );
 }
 
-function App() {
+export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -103,5 +89,3 @@ function App() {
     </ErrorBoundary>
   );
 }
-
-export default App;
