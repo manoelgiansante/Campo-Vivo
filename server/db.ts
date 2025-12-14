@@ -169,6 +169,52 @@ export async function updateUserProfile(userId: number, data: Partial<InsertUser
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
+// ==================== USER PREFERENCES FUNCTIONS ====================
+export interface UserPreferences {
+  mapPosition?: {
+    center: [number, number];
+    zoom: number;
+    updatedAt: string;
+  };
+  [key: string]: any;
+}
+
+export async function getUserPreferences(userId: number): Promise<UserPreferences | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  try {
+    const result = await db.select({ preferences: users.preferences })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    return (result[0]?.preferences as UserPreferences) || null;
+  } catch (error) {
+    console.error("[getUserPreferences] Error:", error);
+    return null;
+  }
+}
+
+export async function updateUserPreferences(userId: number, newPrefs: Partial<UserPreferences>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  try {
+    // Get current preferences
+    const current = await getUserPreferences(userId);
+    const merged = { ...(current || {}), ...newPrefs };
+    
+    await db.update(users)
+      .set({ preferences: merged })
+      .where(eq(users.id, userId));
+  } catch (error) {
+    console.error("[updateUserPreferences] Error:", error);
+    throw error;
+  }
+}
+
+
 // ==================== FIELD FUNCTIONS ====================
 export async function createField(field: InsertField): Promise<number> {
   const db = await getDb();

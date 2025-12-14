@@ -60,6 +60,33 @@ export const appRouter = router({
         await db.updateUserProfile(ctx.user.id, input);
         return { success: true };
       }),
+    
+    // ==================== USER PREFERENCES ====================
+    getPreferences: protectedProcedure.query(async ({ ctx }) => {
+      const prefs = await db.getUserPreferences(ctx.user.id);
+      return prefs || {};
+    }),
+    
+    saveMapPosition: protectedProcedure
+      .input(z.object({
+        center: z.tuple([z.number(), z.number()]),
+        zoom: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.updateUserPreferences(ctx.user.id, {
+          mapPosition: {
+            center: input.center,
+            zoom: input.zoom,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        return { success: true };
+      }),
+    
+    getMapPosition: protectedProcedure.query(async ({ ctx }) => {
+      const prefs = await db.getUserPreferences(ctx.user.id);
+      return prefs?.mapPosition || null;
+    }),
   }),
 
   // ==================== FARMS (Fazendas/Grupos) ====================

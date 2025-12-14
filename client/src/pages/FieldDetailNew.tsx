@@ -40,12 +40,19 @@ export default function FieldDetailNew() {
     { fieldId, days: 30 },
     { enabled: !!fieldId }
   );
+
+  // Fetch latest NDVI image for map overlay (OneSoil-style)
+  const { data: ndviImage } = (trpc as any).ndvi.getLatestNdviImage.useQuery(
+    { fieldId },
+    { enabled: !!fieldId }
+  );
   const { data: crops } = trpc.crops.listByField.useQuery(
     { fieldId },
     { enabled: !!fieldId }
   );
 
   // Draw field on map
+  // Draw field on map with NDVI overlay
   useEffect(() => {
     if (!mapInstance || !field?.boundaries) return;
 
@@ -63,13 +70,25 @@ export default function FieldDetailNew() {
         coordinates.push(coordinates[0]); // Close polygon
 
         const sourceId = "field-detail";
+        const ndviLayerId = "ndvi-image-layer";
+        const ndviSourceId = "ndvi-image";
 
-        // Remove existing
+        // Remove existing layers
         if (mapInstance.getLayer(sourceId)) mapInstance.removeLayer(sourceId);
         if (mapInstance.getLayer(`${sourceId}-outline`)) mapInstance.removeLayer(`${sourceId}-outline`);
+        if (mapInstance.getLayer(ndviLayerId)) mapInstance.removeLayer(ndviLayerId);
         if (mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
+        if (mapInstance.getSource(ndviSourceId)) mapInstance.removeSource(ndviSourceId);
 
-        // Add source
+        // Calculate bounds
+        const lngs = coordinates.map((c: [number, number]) => c[0]);
+        const lats = coordinates.map((c: [number, number]) => c[1]);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+
+        // Add field source
         mapInstance.addSource(sourceId, {
           type: "geojson",
           data: {
@@ -82,16 +101,40 @@ export default function FieldDetailNew() {
           },
         });
 
-        // Add fill layer
-        mapInstance.addLayer({
-          id: sourceId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": "#22C55E",
-            "fill-opacity": 0.6,
-          },
-        });
+        // Add NDVI image overlay if available (OneSoil-style pixel overlay)
+        if (ndviImage?.imageUrl) {
+          mapInstance.addSource(ndviSourceId, {
+            type: "image",
+            url: ndviImage.imageUrl,
+            coordinates: [
+              [minLng, maxLat], // top-left
+              [maxLng, maxLat], // top-right
+              [maxLng, minLat], // bottom-right
+              [minLng, minLat], // bottom-left
+            ],
+          });
+
+          mapInstance.addLayer({
+            id: ndviLayerId,
+            type: "raster",
+            source: ndviSourceId,
+            paint: {
+              "raster-opacity": 0.85,
+              "raster-fade-duration": 0,
+            },
+          });
+        } else {
+          // Fallback to solid fill if no NDVI image
+          mapInstance.addLayer({
+            id: sourceId,
+            type: "fill",
+            source: sourceId,
+            paint: {
+              "fill-color": "#22C55E",
+              "fill-opacity": 0.6,
+            },
+          });
+        }
 
         // Add outline
         mapInstance.addLayer({
@@ -99,17 +142,15 @@ export default function FieldDetailNew() {
           type: "line",
           source: sourceId,
           paint: {
-            "line-color": "#000000",
+            "line-color": "#ffffff",
             "line-width": 2,
           },
         });
 
         // Fit bounds
-        const lngs = coordinates.map((c: [number, number]) => c[0]);
-        const lats = coordinates.map((c: [number, number]) => c[1]);
         const bounds = new mapboxgl.LngLatBounds(
-          [Math.min(...lngs), Math.min(...lats)],
-          [Math.max(...lngs), Math.max(...lats)]
+          [minLng, minLat],
+          [maxLng, maxLat]
         );
         mapInstance.fitBounds(bounds, { padding: 40 });
       } catch (e) {
@@ -122,7 +163,8 @@ export default function FieldDetailNew() {
     } else {
       mapInstance.on("style.load", drawField);
     }
-  }, [mapInstance, field]);
+  }, [mapInstance, field, ndviImage]);
+
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
