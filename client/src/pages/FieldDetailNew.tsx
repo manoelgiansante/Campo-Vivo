@@ -103,22 +103,19 @@ export default function FieldDetailNew() {
           },
         });
 
-        // 1) Tentar sobrepor imagem NDVI (OneSoil-style)
+        // 1) Tentar sobrepor NDVI: preferir tile (melhor nitidez), fallback imagem proxy
         let ndviLoaded = false;
-        const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
 
-        if (ndviUrl) {
+        // 1a) Raster tile (Agromonitoring tile URL já vem com {z}/{x}/{y})
+        if (ndviImage?.tileUrl) {
           try {
-            console.log("[Map] Tentando overlay NDVI:", ndviUrl);
+            const tileUrl = ndviImage.tileUrl;
+            console.log("[Map] Tentando overlay NDVI via tile:", tileUrl);
             mapInstance.addSource(ndviSourceId, {
-              type: "image",
-              url: ndviUrl,
-              coordinates: [
-                [minLng, maxLat], // top-left
-                [maxLng, maxLat], // top-right
-                [maxLng, minLat], // bottom-right
-                [minLng, minLat], // bottom-left
-              ],
+              type: "raster",
+              tiles: [tileUrl],
+              tileSize: 256,
+              bounds: [minLng, minLat, maxLng, maxLat],
             });
 
             mapInstance.addLayer({
@@ -126,15 +123,50 @@ export default function FieldDetailNew() {
               type: "raster",
               source: ndviSourceId,
               paint: {
-                "raster-opacity": 0.75,
+                "raster-opacity": 0.7,
                 "raster-fade-duration": 0,
               },
             });
 
             ndviLoaded = true;
-            console.log("[Map] Overlay NDVI adicionado com sucesso");
+            console.log("[Map] Overlay NDVI (tile) adicionado");
           } catch (error) {
-            console.warn("[Map] Falha ao adicionar overlay NDVI, usando fill:", error);
+            console.warn("[Map] Falha tile NDVI, tentando imagem:", error);
+          }
+        }
+
+        // 1b) Imagem simples (proxy) se tile falhar ou não existir
+        if (!ndviLoaded) {
+          const ndviUrl = ndviImage?.imageUrl || `/api/ndvi-image/${fieldId}`;
+          if (ndviUrl) {
+            try {
+              console.log("[Map] Tentando overlay NDVI via imagem:", ndviUrl);
+              mapInstance.addSource(ndviSourceId, {
+                type: "image",
+                url: ndviUrl,
+                coordinates: [
+                  [minLng, maxLat], // top-left
+                  [maxLng, maxLat], // top-right
+                  [maxLng, minLat], // bottom-right
+                  [minLng, minLat], // bottom-left
+                ],
+              });
+
+              mapInstance.addLayer({
+                id: ndviLayerId,
+                type: "raster",
+                source: ndviSourceId,
+                paint: {
+                  "raster-opacity": 0.7,
+                  "raster-fade-duration": 0,
+                },
+              });
+
+              ndviLoaded = true;
+              console.log("[Map] Overlay NDVI (imagem) adicionado");
+            } catch (error) {
+              console.warn("[Map] Falha overlay NDVI imagem, usando fill:", error);
+            }
           }
         }
 
