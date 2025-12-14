@@ -123,7 +123,7 @@ export default function FieldDetailNew() {
               type: "raster",
               source: ndviSourceId,
               paint: {
-                "raster-opacity": 0.7,
+                "raster-opacity": 0.9,
                 "raster-fade-duration": 0,
               },
             });
@@ -157,7 +157,7 @@ export default function FieldDetailNew() {
                 type: "raster",
                 source: ndviSourceId,
                 paint: {
-                  "raster-opacity": 0.7,
+                  "raster-opacity": 0.9,
                   "raster-fade-duration": 0,
                 },
               });
@@ -171,23 +171,22 @@ export default function FieldDetailNew() {
         }
 
         // 2) Fallback: fill colorido baseado no NDVI atual
-        if (!ndviLoaded) {
-          const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
-          const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
-                           currentNdvi >= 0.4 ? "#EAB308" : 
-                           currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
-          console.log("[Map] Fallback fill NDVI:", currentNdvi, fillColor);
+        // 2) Base fill SEMPRE (mesmo com NDVI) para garantir percepção de área
+        const currentNdvi = (field as any).currentNdvi ? (field as any).currentNdvi / 100 : 0.5;
+        const fillColor = currentNdvi >= 0.6 ? "#22C55E" : 
+                         currentNdvi >= 0.4 ? "#EAB308" : 
+                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+        console.log("[Map] Fill NDVI base:", currentNdvi, fillColor);
 
-          mapInstance.addLayer({
-            id: fillLayerId,
-            type: "fill",
-            source: sourceId,
-            paint: {
-              "fill-color": fillColor,
-              "fill-opacity": 0.6,
-            },
-          });
-        }
+        mapInstance.addLayer({
+          id: fillLayerId,
+          type: "fill",
+          source: sourceId,
+          paint: {
+            "fill-color": fillColor,
+            "fill-opacity": ndviLoaded ? 0.25 : 0.55, // se NDVI carregou, deixa só um realce
+          },
+        });
 
         // 3) Contorno para melhor visibilidade
         mapInstance.addLayer({
@@ -216,6 +215,16 @@ export default function FieldDetailNew() {
     } else {
       mapInstance.on("style.load", drawField);
     }
+
+    // Log errors do Mapbox para capturar falhas de carregamento de imagem/tile
+    const errorHandler = (e: any) => {
+      console.warn("[Map] erro mapbox:", e?.error || e);
+    };
+    mapInstance.on("error", errorHandler);
+
+    return () => {
+      mapInstance.off("error", errorHandler);
+    };
   }, [mapInstance, field, fieldId, ndviImage]);
 
 
