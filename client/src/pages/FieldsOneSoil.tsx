@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { MapboxMap, useMapbox } from "@/components/MapboxMap";
 import { useNdviOverlay } from "@/hooks/useNdviOverlay";
+import { clipImageToPolygon, generateClippedNdviGradient } from "@/utils/clipImageToPolygon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -235,22 +236,23 @@ export default function FieldsOneSoil() {
         const minLat = Math.min(...lats);
         const maxLat = Math.max(...lats);
 
-        // Try to load NDVI image
+        // Try to load NDVI image and clip to polygon
+        const bounds = { minLng, maxLng, minLat, maxLat };
+        const boundsArray = calculateBoundsFromPolygon(coordinates);
+        let ndviLoaded = false;
+
         if (proxyImageUrl) {
           try {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve();
-              img.onerror = () => reject();
-              img.src = proxyImageUrl + "?t=" + Date.now();
-            });
-
-            const boundsArray = calculateBoundsFromPolygon(coordinates);
+            // Carregar e recortar a imagem NDVI pelo polígono
+            const clippedImageUrl = await clipImageToPolygon(
+              proxyImageUrl + "?t=" + Date.now(),
+              coordinates,
+              bounds
+            );
             
             ndviMapInstance.addSource("ndvi-image", {
               type: "image",
-              url: proxyImageUrl,
+              url: clippedImageUrl,
               coordinates: boundsArray,
             });
 
@@ -260,27 +262,29 @@ export default function FieldsOneSoil() {
               source: "ndvi-image",
               paint: { "raster-opacity": 1.0 },
             });
-          } catch {
-            // Fallback: draw colored polygon
-            ndviMapInstance.addSource("ndvi-overlay", {
-              type: "geojson",
-              data: {
-                type: "Feature",
-                properties: {},
-                geometry: { type: "Polygon", coordinates: [coordinates] },
-              },
-            });
-
-            ndviMapInstance.addLayer({
-              id: "ndvi-overlay",
-              type: "fill",
-              source: "ndvi-overlay",
-              paint: {
-                "fill-color": "#22c55e",
-                "fill-opacity": 0.7,
-              },
-            });
+            ndviLoaded = true;
+          } catch (e) {
+            console.warn("Falha ao carregar imagem NDVI:", e);
           }
+        }
+
+        // Fallback: usar gradiente sintético recortado pelo polígono
+        if (!ndviLoaded) {
+          const ndviValue = selectedField.currentNdvi ? selectedField.currentNdvi / 100 : 0.65;
+          const gradientUrl = generateClippedNdviGradient(ndviValue, coordinates, bounds);
+          
+          ndviMapInstance.addSource("ndvi-image", {
+            type: "image",
+            url: gradientUrl,
+            coordinates: boundsArray,
+          });
+
+          ndviMapInstance.addLayer({
+            id: "ndvi-image",
+            type: "raster",
+            source: "ndvi-image",
+            paint: { "raster-opacity": 1.0 },
+          });
         }
 
         // Add outline
@@ -301,8 +305,8 @@ export default function FieldsOneSoil() {
         });
 
         // Fit bounds
-        const bounds = new mapboxgl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
-        ndviMapInstance.fitBounds(bounds, { padding: 40 });
+        const mapBounds = new mapboxgl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
+        ndviMapInstance.fitBounds(mapBounds, { padding: 40 });
       } catch (e) {
         console.error("Error drawing NDVI:", e);
       }
