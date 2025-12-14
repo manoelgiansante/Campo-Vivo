@@ -172,6 +172,9 @@ export default function FieldDetailNew() {
             });
             
             // Adicionar source de imagem do Copernicus
+            console.log("[NDVI] Adicionando source com bounds:", boundsArray);
+            console.log("[NDVI] URL da imagem:", copernicusImageUrl);
+            
             mapInstance.addSource("ndvi-image-layer-source", {
               type: "image",
               url: copernicusImageUrl,
