@@ -138,6 +138,105 @@ export const appRouter = router({
         await db.deleteField(input.id);
         return { success: true };
       }),
+    
+    // Vincular campo existente ao Agromonitoring
+    linkToAgromonitoring: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const field = await db.getFieldById(input.id);
+        if (!field || field.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Campo não encontrado" });
+        }
+        
+        if (field.agroPolygonId) {
+          return { success: true, agroPolygonId: field.agroPolygonId, message: "Campo já vinculado" };
+        }
+        
+        if (!field.boundaries) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Campo não possui boundaries definidos" });
+        }
+        
+        if (!ENV.agromonitoringApiKey) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "API key do Agromonitoring não configurada" });
+        }
+        
+        try {
+          const boundaries = typeof field.boundaries === "string" 
+            ? JSON.parse(field.boundaries) 
+            : field.boundaries;
+          
+          if (!Array.isArray(boundaries) || boundaries.length < 3) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Boundaries inválidos" });
+          }
+          
+          console.log(`[Fields] Vinculando campo ${input.id} ao Agromonitoring...`);
+          const agroPolygon = await agromonitoring.createPolygon(field.name, boundaries);
+          const agroPolygonId = agroPolygon.id;
+          console.log(`[Fields] Polígono criado: ${agroPolygonId}`);
+          
+          await db.updateField(input.id, { agroPolygonId });
+          
+          return { success: true, agroPolygonId, message: "Campo vinculado com sucesso" };
+        } catch (error) {
+          console.error(`[Fields] Erro ao vincular campo ao Agromonitoring:`, error);
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: error instanceof Error ? error.message : "Erro ao vincular ao Agromonitoring" 
+          });
+        }
+      }),
+    
+    // Vincular todos os campos do usuário ao Agromonitoring
+    linkAllToAgromonitoring: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const fields = await db.getFieldsByUserId(ctx.user.id);
+        const results: { id: number; name: string; success: boolean; agroPolygonId?: string; error?: string }[] = [];
+        
+        for (const field of fields) {
+          if (field.agroPolygonId) {
+            results.push({ id: field.id, name: field.name, success: true, agroPolygonId: field.agroPolygonId });
+            continue;
+          }
+          
+          if (!field.boundaries) {
+            results.push({ id: field.id, name: field.name, success: false, error: "Sem boundaries" });
+            continue;
+          }
+          
+          try {
+            const boundaries = typeof field.boundaries === "string" 
+              ? JSON.parse(field.boundaries as string) 
+              : field.boundaries;
+            
+            if (!Array.isArray(boundaries) || boundaries.length < 3) {
+              results.push({ id: field.id, name: field.name, success: false, error: "Boundaries inválidos" });
+              continue;
+            }
+            
+            console.log(`[Fields] Vinculando campo ${field.id} (${field.name}) ao Agromonitoring...`);
+            const agroPolygon = await agromonitoring.createPolygon(field.name, boundaries);
+            await db.updateField(field.id, { agroPolygonId: agroPolygon.id });
+            
+            results.push({ id: field.id, name: field.name, success: true, agroPolygonId: agroPolygon.id });
+            console.log(`[Fields] Campo ${field.id} vinculado: ${agroPolygon.id}`);
+          } catch (error) {
+            console.error(`[Fields] Erro ao vincular campo ${field.id}:`, error);
+            results.push({ 
+              id: field.id, 
+              name: field.name, 
+              success: false, 
+              error: error instanceof Error ? error.message : "Erro desconhecido" 
+            });
+          }
+        }
+        
+        return { 
+          success: true, 
+          total: fields.length, 
+          linked: results.filter(r => r.success).length,
+          results 
+        };
+      }),
   }),
 
   // ==================== CROPS ====================

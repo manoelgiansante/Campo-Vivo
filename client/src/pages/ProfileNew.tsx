@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { 
   User, 
-  Mail, 
   Phone, 
   Building2, 
   LogOut,
@@ -29,30 +27,22 @@ import {
   Shield,
   Bell,
   Leaf,
-  Loader2
+  Satellite,
+  RefreshCw
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
-import { PushNotificationManager } from "@/components/PushNotificationManager";
 
 export default function ProfileNew() {
-  const { user, logout, loading, isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [isLinkingFields, setIsLinkingFields] = useState(false);
   const [editData, setEditData] = useState({
     name: user?.name || "",
     phone: "",
     company: "",
     userType: "farmer" as "farmer" | "agronomist" | "consultant",
   });
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      setLocation("/login");
-    }
-  }, [loading, isAuthenticated, setLocation]);
 
   const updateProfile = trpc.user.updateProfile.useMutation({
     onSuccess: () => {
@@ -64,14 +54,40 @@ export default function ProfileNew() {
     },
   });
 
+  const linkAllFields = trpc.fields.linkAllToAgromonitoring.useMutation({
+    onSuccess: (data) => {
+      setIsLinkingFields(false);
+      if (data.linked === data.total) {
+        toast.success(`Todos os ${data.total} campos foram vinculados ao Agromonitoring!`);
+      } else {
+        toast.success(`${data.linked} de ${data.total} campos vinculados ao Agromonitoring`);
+        // Mostrar detalhes dos erros
+        const errors = data.results.filter(r => !r.success);
+        if (errors.length > 0) {
+          errors.forEach(e => {
+            toast.error(`${e.name}: ${e.error}`);
+          });
+        }
+      }
+    },
+    onError: (error) => {
+      setIsLinkingFields(false);
+      toast.error(`Erro ao vincular campos: ${error.message}`);
+    },
+  });
+
   const handleLogout = async () => {
     await logout();
-    // Sempre redirecionar para login após logout
-    window.location.href = "/login";
+    window.location.href = "/";
   };
 
   const handleSaveProfile = () => {
     updateProfile.mutate(editData);
+  };
+
+  const handleLinkAllFields = () => {
+    setIsLinkingFields(true);
+    linkAllFields.mutate();
   };
 
   const userTypeLabels = {
@@ -80,28 +96,11 @@ export default function ProfileNew() {
     consultant: "Consultor",
   };
 
-  // Show loading while checking auth
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto" />
-          <p className="text-gray-500 mt-2">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render if not authenticated (will redirect)
-  if (!isAuthenticated) {
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-gray-100 pb-20">
       {/* Header */}
       <div className="bg-green-600 px-4 pt-8 pb-16">
-        <h1 className="text-2xl font-bold text-white">Perfil</h1>
+        <h1 className="text-2xl font-bold text-white">Profile</h1>
       </div>
 
       {/* Profile Card */}
@@ -131,19 +130,49 @@ export default function ProfileNew() {
         </div>
       </div>
 
+      {/* NDVI Integration Card */}
+      <div className="px-4 mt-4">
+        <div className="bg-white rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+              <Satellite className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Integração NDVI</h3>
+              <p className="text-xs text-gray-500">Agromonitoring API</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">
+            Vincule seus campos ao serviço de satélite para visualizar dados NDVI em tempo real.
+          </p>
+          <Button
+            onClick={handleLinkAllFields}
+            disabled={isLinkingFields}
+            className="w-full bg-blue-600 hover:bg-blue-700"
+          >
+            {isLinkingFields ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Vinculando campos...
+              </>
+            ) : (
+              <>
+                <Satellite className="h-4 w-4 mr-2" />
+                Vincular todos os campos
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
       {/* Menu Items */}
       <div className="px-4 mt-4">
         <div className="bg-white rounded-2xl overflow-hidden">
-          {/* Push Notifications Section */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                <Bell className="h-5 w-5 text-blue-600" />
-              </div>
-              <span className="font-medium text-gray-900">Notificações</span>
-            </div>
-            <PushNotificationManager />
-          </div>
+          <MenuItem
+            icon={<Bell className="h-5 w-5" />}
+            label="Notificações"
+            onClick={() => toast.info("Em breve!")}
+          />
           <MenuItem
             icon={<Settings className="h-5 w-5" />}
             label="Configurações"

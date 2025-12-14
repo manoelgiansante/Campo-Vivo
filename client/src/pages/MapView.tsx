@@ -23,9 +23,10 @@ import {
   Satellite,
   Wheat
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import mapboxgl from "mapbox-gl";
+import { clipImageToPolygon } from "@/utils/clipImageToPolygon";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
@@ -38,109 +39,209 @@ export default function MapView() {
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const loadedOverlaysRef = useRef<Set<number>>(new Set());
 
   const { data: fields } = trpc.fields.list.useQuery();
 
-  // Add fields to map when data loads
+  // Função para obter cor NDVI
+  const getNdviColor = (value: number): string => {
+    if (value < 0.2) return "#EF4444"; // Vermelho
+    if (value < 0.4) return "#F97316"; // Laranja
+    if (value < 0.5) return "#EAB308"; // Amarelo
+    if (value < 0.6) return "#84CC16"; // Verde-amarelo
+    if (value < 0.7) return "#22C55E"; // Verde
+    return "#15803D"; // Verde escuro
+  };
+
+  // Função para carregar overlay NDVI de um campo específico
+  const loadNdviOverlayForField = useCallback(async (
+    map: mapboxgl.Map,
+    field: { id: number; boundaries: string | null; agroPolygonId?: string | null; currentNdvi?: number | null; areaHectares?: number | null; name: string }
+  ) => {
+    if (!field.boundaries || loadedOverlaysRef.current.has(field.id)) return;
+    
+    try {
+      const points = (typeof field.boundaries === 'string' ? JSON.parse(field.boundaries) : field.boundaries) as { lat: number; lng: number }[];
+      if (points.length < 3) return;
+
+      const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
+      if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || 
+          coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+        coordinates.push(coordinates[0]);
+      }
+
+      const sourceId = `field-${field.id}`;
+      const ndviImageSourceId = `field-ndvi-image-${field.id}`;
+      const ndviImageLayerId = `field-ndvi-layer-${field.id}`;
+      const fillLayerId = `field-fill-${field.id}`;
+      const outlineLayerId = `field-outline-${field.id}`;
+
+      // Calcular bounds
+      const lngs = coordinates.map(c => c[0]);
+      const lats = coordinates.map(c => c[1]);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+
+      // Limpar layers/sources existentes
+      [ndviImageLayerId, fillLayerId, outlineLayerId].forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+      });
+      [ndviImageSourceId, sourceId].forEach(id => {
+        if (map.getSource(id)) map.removeSource(id);
+      });
+
+      // Adicionar source do polígono
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: { id: field.id, name: field.name },
+          geometry: {
+            type: "Polygon",
+            coordinates: [coordinates],
+          },
+        },
+      });
+
+      // Se o campo tem agroPolygonId, tentar carregar imagem NDVI real
+      if (field.agroPolygonId && mapLayer === "vegetation") {
+        try {
+          const proxyUrl = `/api/ndvi-image/${field.id}?t=${Date.now()}`;
+          
+          // Tentar carregar e recortar a imagem NDVI
+          const clippedImageUrl = await clipImageToPolygon(
+            proxyUrl,
+            coordinates,
+            { minLng, maxLng, minLat, maxLat }
+          );
+
+          // Adicionar source da imagem NDVI recortada
+          map.addSource(ndviImageSourceId, {
+            type: "image",
+            url: clippedImageUrl,
+            coordinates: [
+              [minLng, maxLat], // top-left
+              [maxLng, maxLat], // top-right
+              [maxLng, minLat], // bottom-right
+              [minLng, minLat], // bottom-left
+            ],
+          });
+
+          // Adicionar layer da imagem NDVI
+          map.addLayer({
+            id: ndviImageLayerId,
+            type: "raster",
+            source: ndviImageSourceId,
+            paint: {
+              "raster-opacity": 0.9,
+              "raster-fade-duration": 0,
+            },
+          });
+
+          console.log(`[MapView] NDVI overlay loaded for field ${field.id}`);
+          loadedOverlaysRef.current.add(field.id);
+        } catch (error) {
+          console.warn(`[MapView] Failed to load NDVI for field ${field.id}:`, error);
+          // Fallback: usar cor sólida baseada no NDVI
+          addFallbackFill(map, fillLayerId, sourceId, field.currentNdvi);
+        }
+      } else {
+        // Sem agroPolygonId ou não está em modo vegetation
+        addFallbackFill(map, fillLayerId, sourceId, field.currentNdvi);
+      }
+
+      // Adicionar contorno do campo (sempre visível)
+      map.addLayer({
+        id: outlineLayerId,
+        type: "line",
+        source: sourceId,
+        paint: {
+          "line-color": mapLayer === "vegetation" ? "#FFFFFF" : "#000000",
+          "line-width": 2,
+          "line-opacity": 0.9,
+        },
+      });
+
+      // Click handler
+      map.on("click", outlineLayerId, () => {
+        setLocation(`/fields/${field.id}`);
+      });
+
+      // Cursor handlers
+      map.on("mouseenter", outlineLayerId, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", outlineLayerId, () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // Adicionar label com área em hectares
+      const centerLng = (minLng + maxLng) / 2;
+      const centerLat = (minLat + maxLat) / 2;
+      const areaText = field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} ha` : "";
+
+      if (areaText) {
+        const el = document.createElement("div");
+        el.innerHTML = `
+          <div class="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg cursor-pointer hover:bg-white transition-colors flex items-center gap-1.5 border border-gray-200/50">
+            <span class="text-gray-500 text-sm font-medium">+</span>
+            <span class="font-semibold text-gray-800 text-sm">${areaText}</span>
+          </div>
+        `;
+        el.onclick = () => setLocation(`/fields/${field.id}`);
+
+        const marker = new mapboxgl.Marker({ element: el })
+          .setLngLat([centerLng, centerLat])
+          .addTo(map);
+        
+        markersRef.current.push(marker);
+      }
+    } catch (e) {
+      console.error(`[MapView] Error processing field ${field.id}:`, e);
+    }
+  }, [mapLayer, setLocation]);
+
+  // Função auxiliar para adicionar fill de fallback
+  const addFallbackFill = (
+    map: mapboxgl.Map,
+    layerId: string,
+    sourceId: string,
+    currentNdvi: number | null | undefined
+  ) => {
+    const ndviValue = currentNdvi ? currentNdvi / 100 : 0.5;
+    const fillColor = mapLayer === "vegetation" ? getNdviColor(ndviValue) : "#666666";
+    const fillOpacity = mapLayer === "vegetation" ? 0.6 : 0.3;
+
+    map.addLayer({
+      id: layerId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": fillColor,
+        "fill-opacity": fillOpacity,
+      },
+    });
+  };
+
+  // Adicionar campos ao mapa quando os dados carregam
   useEffect(() => {
     if (!mapInstance || !fields) return;
 
-    const addFieldsToMap = () => {
-      fields.forEach((field) => {
-        if (field.boundaries) {
-          try {
-            const points = (typeof field.boundaries === 'string' ? JSON.parse(field.boundaries) : field.boundaries) as { lat: number; lng: number }[];
-            if (points.length >= 3) {
-              // Convert to Mapbox format [lng, lat]
-              const coordinates = points.map(p => [p.lng, p.lat] as [number, number]);
-              coordinates.push(coordinates[0]); // Close polygon
+    const addFieldsToMap = async () => {
+      // Limpar markers anteriores
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
+      loadedOverlaysRef.current.clear();
 
-              const sourceId = `field-${field.id}`;
-              const ndviValue = 0.7; // Default NDVI value for visualization
-              const fillColor = mapLayer === "vegetation" ? getNdviColor(ndviValue) : "#666666";
-              const fillOpacity = mapLayer === "vegetation" ? 0.6 : 0.3;
+      // Carregar overlays para cada campo
+      for (const field of fields) {
+        await loadNdviOverlayForField(mapInstance, field as any);
+      }
 
-              // Remove existing layers/sources
-              if (mapInstance.getLayer(sourceId)) mapInstance.removeLayer(sourceId);
-              if (mapInstance.getLayer(`${sourceId}-outline`)) mapInstance.removeLayer(`${sourceId}-outline`);
-              if (mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
-
-              // Add source
-              mapInstance.addSource(sourceId, {
-                type: "geojson",
-                data: {
-                  type: "Feature",
-                  properties: { id: field.id, name: field.name },
-                  geometry: {
-                    type: "Polygon",
-                    coordinates: [coordinates],
-                  },
-                },
-              });
-
-              // Add fill layer
-              mapInstance.addLayer({
-                id: sourceId,
-                type: "fill",
-                source: sourceId,
-                paint: {
-                  "fill-color": fillColor,
-                  "fill-opacity": fillOpacity,
-                },
-              });
-
-              // Add outline layer
-              mapInstance.addLayer({
-                id: `${sourceId}-outline`,
-                type: "line",
-                source: sourceId,
-                paint: {
-                  "line-color": "#FFFFFF",
-                  "line-width": 2,
-                },
-              });
-
-              // Add click handler
-              mapInstance.on("click", sourceId, () => {
-                setLocation(`/fields/${field.id}`);
-              });
-
-              // Change cursor on hover
-              mapInstance.on("mouseenter", sourceId, () => {
-                mapInstance.getCanvas().style.cursor = "pointer";
-              });
-              mapInstance.on("mouseleave", sourceId, () => {
-                mapInstance.getCanvas().style.cursor = "";
-              });
-
-              // Add label marker
-              const lngs = coordinates.map(c => c[0]);
-              const lats = coordinates.map(c => c[1]);
-              const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-              const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-
-              const areaText = field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} ha` : "";
-              
-              const el = document.createElement("div");
-              el.innerHTML = `
-                <div class="bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md cursor-pointer hover:bg-white transition-colors flex items-center gap-2">
-                  <span class="text-gray-600 text-sm">+</span>
-                  <span class="font-medium text-gray-800 text-sm">${areaText}</span>
-                </div>
-              `;
-              el.onclick = () => setLocation(`/fields/${field.id}`);
-
-              new mapboxgl.Marker({ element: el })
-                .setLngLat([centerLng, centerLat])
-                .addTo(mapInstance);
-            }
-          } catch (e) {
-            console.error("Error parsing boundaries:", e);
-          }
-        }
-      });
-
-      // Fit bounds to show all fields
+      // Ajustar bounds para mostrar todos os campos
       if (fields.length > 0) {
         const allCoords: [number, number][] = [];
         fields.forEach((field) => {
@@ -169,21 +270,13 @@ export default function MapView() {
     } else {
       mapInstance.on("style.load", addFieldsToMap);
     }
-  }, [mapInstance, fields, mapLayer, setLocation]);
-
-  const getNdviColor = (value: number): string => {
-    if (value < 0.3) return "#EF4444";
-    if (value < 0.5) return "#F59E0B";
-    if (value < 0.7) return "#EAB308";
-    if (value < 0.85) return "#84CC16";
-    return "#22C55E";
-  };
+  }, [mapInstance, fields, mapLayer, loadNdviOverlayForField]);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
     setMapInstance(map);
 
-    // Try to get user location
+    // Tentar obter localização do usuário
     getUserLocation()
       .then(([lng, lat]) => {
         map.flyTo({
@@ -193,7 +286,7 @@ export default function MapView() {
         });
       })
       .catch(() => {
-        // Keep default center
+        // Manter centro padrão
       });
   }, [setMap, getUserLocation]);
 
@@ -267,12 +360,14 @@ export default function MapView() {
         </div>
       </div>
 
-      {/* NDVI Scale (left side) */}
+      {/* NDVI Scale (left side) - Estilo OneSoil */}
       {mapLayer === "vegetation" && (
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <div className="w-3 h-32 rounded-full overflow-hidden" style={{
-            background: "linear-gradient(to bottom, #22C55E, #EAB308, #EF4444)"
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10 flex flex-col items-center gap-1">
+          <span className="text-white text-xs font-medium drop-shadow-lg">1.0</span>
+          <div className="w-3 h-32 rounded-full overflow-hidden shadow-lg" style={{
+            background: "linear-gradient(to bottom, #15803D, #22C55E, #84CC16, #EAB308, #F97316, #EF4444)"
           }} />
+          <span className="text-white text-xs font-medium drop-shadow-lg">0.0</span>
         </div>
       )}
 
