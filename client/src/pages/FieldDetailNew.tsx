@@ -67,10 +67,11 @@ export default function FieldDetailNew() {
   const proxyTileUrl = useMemo(() => `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`, [fieldId]);
   
   // URL do Copernicus para imagens de alta qualidade
-  const copernicusImageUrl = useMemo(() => 
-    `/api/copernicus-ndvi/${fieldId}?palette=${selectedPalette}`, 
-    [fieldId, selectedPalette]
-  );
+  const copernicusImageUrl = useMemo(() => {
+    const dateFrom = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const dateTo = new Date().toISOString().split('T')[0];
+    return `/api/copernicus-ndvi/${fieldId}?palette=${selectedPalette}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+  }, [fieldId, selectedPalette]);
 
   // Paletas de cores disponíveis
   const palettes = [
