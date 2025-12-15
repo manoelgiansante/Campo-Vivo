@@ -1,14 +1,10 @@
 // Service Worker for Campo Vivo PWA
-const CACHE_NAME = 'campovivo-v1';
+const CACHE_NAME = 'campovivo-v2';
 const OFFLINE_URL = '/offline.html';
 
-// Assets to cache on install
+// Assets to cache on install - only essential files that definitely exist
 const PRECACHE_ASSETS = [
-  '/',
   '/offline.html',
-  '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
 ];
 
 // Install event - cache essential assets
@@ -16,7 +12,10 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Pre-caching offline assets');
-      return cache.addAll(PRECACHE_ASSETS);
+      // Use addAll with catch to handle missing files gracefully
+      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+        console.warn('[SW] Failed to cache some assets:', err);
+      });
     })
   );
   self.skipWaiting();
