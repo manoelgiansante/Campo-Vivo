@@ -119,14 +119,14 @@ export default function NotesNew() {
                 <FileText className="h-8 w-8 text-gray-400" />
               </div>
               <p className="text-gray-500 text-center max-w-xs mb-6">
-                Add noted when you conduct field scouting or when you want to mark an important place on the map.
+                Adicione notas durante suas vistorias de campo ou quando quiser marcar um local importante no mapa.
               </p>
               <Button 
                 onClick={() => setShowAddDialog(true)}
                 className="bg-green-600 hover:bg-green-700 rounded-full px-6 h-11 gap-2"
               >
                 <FilePlus className="h-5 w-5" />
-                Add note
+                Adicionar nota
               </Button>
             </div>
           </div>
@@ -141,7 +141,7 @@ export default function NotesNew() {
             className="bg-green-600 hover:bg-green-700 rounded-full px-6 h-11 gap-2 shadow-lg"
           >
             <FilePlus className="h-5 w-5" />
-            Add note
+            Adicionar nota
           </Button>
         </div>
       )}

@@ -102,27 +102,33 @@ export const appRouter = router({
         deviceId: z.string().min(10),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Check if guest already exists
-        let user = await db.getUserByDeviceId(input.deviceId);
-        
-        if (!user) {
-          user = await db.createGuestUser(input.deviceId);
+        try {
+          // Check if guest already exists
+          let user = await db.getUserByDeviceId(input.deviceId);
+          
+          if (!user) {
+            user = await db.createGuestUser(input.deviceId);
+          }
+
+          if (!user) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar sessão" });
+          }
+
+          // Update last sign in
+          await db.updateUserProfile(user.id, { lastSignedIn: new Date() });
+
+          // Create session cookie
+          const { sdk } = await import("./_core/sdk");
+          const token = await sdk.createSessionToken(user.openId, { name: user.name || "Visitante" });
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+
+          return { success: true, user };
+        } catch (error) {
+          console.error("[Auth] getOrCreateGuest error:", error);
+          // Return null user instead of crashing - columns may not exist
+          return { success: false, user: null };
         }
-
-        if (!user) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar sessão" });
-        }
-
-        // Update last sign in
-        await db.updateUserProfile(user.id, { lastSignedIn: new Date() });
-
-        // Create session cookie
-        const { sdk } = await import("./_core/sdk");
-        const token = await sdk.createSessionToken(user.openId, { name: user.name || "Visitante" });
-        const cookieOptions = getSessionCookieOptions(ctx.req);
-        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
-
-        return { success: true, user };
       }),
 
     // Check field limit

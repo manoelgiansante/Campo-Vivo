@@ -39,8 +39,13 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const createGuestMutation = trpc.auth.getOrCreateGuest.useMutation({
-    onSuccess: () => {
-      utils.auth.me.invalidate();
+    onSuccess: (data) => {
+      if (data.success) {
+        utils.auth.me.invalidate();
+      }
+    },
+    onError: (error) => {
+      console.warn("[Auth] Failed to create guest:", error);
     },
   });
 

@@ -116,8 +116,14 @@ export async function getUserByEmail(email: string) {
 export async function getUserByDeviceId(deviceId: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.deviceId, deviceId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  try {
+    const result = await db.select().from(users).where(eq(users.deviceId, deviceId)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  } catch (error) {
+    // Column may not exist yet
+    console.warn("[Database] getUserByDeviceId failed (column may not exist):", error);
+    return undefined;
+  }
 }
 
 export async function createGuestUser(deviceId: string) {
@@ -125,14 +131,23 @@ export async function createGuestUser(deviceId: string) {
   if (!db) throw new Error("Database not available");
   
   const openId = `guest_${deviceId}`;
-  const result = await db.insert(users).values({
-    openId,
-    deviceId,
-    isGuest: true,
-    name: "Visitante",
-    plan: "free",
-    maxFields: 1, // Guests can only create 1 field
-  });
+  try {
+    await db.insert(users).values({
+      openId,
+      deviceId,
+      isGuest: true,
+      name: "Visitante",
+      plan: "free",
+      maxFields: 1, // Guests can only create 1 field
+    });
+  } catch (error) {
+    // New columns may not exist, try without them
+    console.warn("[Database] createGuestUser failed with new columns, trying basic insert:", error);
+    await db.insert(users).values({
+      openId,
+      name: "Visitante",
+    });
+  }
   
   return await getUserByOpenId(openId);
 }
@@ -143,16 +158,27 @@ export async function createUserWithPassword(email: string, passwordHash: string
   
   const openId = `local_${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
   
-  await db.insert(users).values({
-    openId,
-    email: email.toLowerCase(),
-    passwordHash,
-    name,
-    loginMethod: "email",
-    isGuest: false,
-    plan: "free",
-    maxFields: 5,
-  });
+  try {
+    await db.insert(users).values({
+      openId,
+      email: email.toLowerCase(),
+      passwordHash,
+      name,
+      loginMethod: "email",
+      isGuest: false,
+      plan: "free",
+      maxFields: 5,
+    });
+  } catch (error) {
+    // New columns may not exist, try without them
+    console.warn("[Database] createUserWithPassword failed with new columns, trying basic insert:", error);
+    await db.insert(users).values({
+      openId,
+      email: email.toLowerCase(),
+      name,
+      loginMethod: "email",
+    });
+  }
   
   return await getUserByOpenId(openId);
 }

@@ -447,7 +447,7 @@ export default function MapView() {
           className="pointer-events-auto bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-6 h-10 gap-2"
         >
           <Leaf className="h-4 w-4" />
-          <span>Vegetation</span>
+          <span>Vegetação</span>
         </Button>
       </div>
 
@@ -467,27 +467,27 @@ export default function MapView() {
       <Sheet open={showLayerSheet} onOpenChange={setShowLayerSheet}>
         <SheetContent side="bottom" className="rounded-t-3xl">
           <SheetHeader>
-            <SheetTitle>Map layer</SheetTitle>
+            <SheetTitle>Camada do Mapa</SheetTitle>
           </SheetHeader>
           <div className="py-6">
             <div className="flex gap-4 mb-6">
               <LayerButton
                 icon={<Satellite className="h-6 w-6" />}
-                label="Satellite image"
+                label="Imagem Satélite"
                 active={mapLayer === "satellite"}
                 onClick={() => setMapLayer("satellite")}
                 color="green"
               />
               <LayerButton
                 icon={<Wheat className="h-6 w-6" />}
-                label="Crop"
+                label="Cultivo"
                 active={mapLayer === "crop"}
                 onClick={() => setMapLayer("crop")}
                 color="blue"
               />
               <LayerButton
                 icon={<Leaf className="h-6 w-6" />}
-                label="Vegetation"
+                label="Vegetação"
                 active={mapLayer === "vegetation"}
                 onClick={() => setMapLayer("vegetation")}
                 color="green"
@@ -497,22 +497,22 @@ export default function MapView() {
             {mapLayer === "vegetation" && (
               <div className="space-y-2">
                 <NdviOption
-                  label="Basic NDVI"
+                  label="NDVI Básico"
                   active={ndviType === "basic"}
                   onClick={() => setNdviType("basic")}
                 />
                 <NdviOption
-                  label="Contrasted NDVI"
+                  label="NDVI Contrastado"
                   active={ndviType === "contrasted"}
                   onClick={() => setNdviType("contrasted")}
                 />
                 <NdviOption
-                  label="Average NDVI"
+                  label="NDVI Médio"
                   active={ndviType === "average"}
                   onClick={() => setNdviType("average")}
                 />
                 <NdviOption
-                  label="Heterogenity NDVI"
+                  label="NDVI Heterogeneidade"
                   active={ndviType === "heterogenity"}
                   onClick={() => setNdviType("heterogenity")}
                 />
