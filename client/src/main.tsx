@@ -61,8 +61,15 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
+        // Get user ID from localStorage and add as header
+        const userId = localStorage.getItem("campovivo_user_id");
+        const headers = new Headers(init?.headers);
+        if (userId) {
+          headers.set("X-User-Id", userId);
+        }
         return globalThis.fetch(input, {
           ...(init ?? {}),
+          headers,
           credentials: "include",
         });
       },

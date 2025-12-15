@@ -35,6 +35,10 @@ export default function Auth() {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: (data) => {
+      // Save user ID to localStorage for auth header
+      if (data.user?.id) {
+        localStorage.setItem("campovivo_user_id", String(data.user.id));
+      }
       toast.success("Login realizado com sucesso!");
       utils.auth.me.invalidate();
       setLocation("/");
@@ -46,6 +50,10 @@ export default function Auth() {
 
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: (data) => {
+      // Save user ID to localStorage for auth header
+      if (data.user?.id) {
+        localStorage.setItem("campovivo_user_id", String(data.user.id));
+      }
       toast.success("Conta criada com sucesso!");
       utils.auth.me.invalidate();
       // After registration, log them in

@@ -40,7 +40,9 @@ export function useAuth(options?: UseAuthOptions) {
 
   const createGuestMutation = trpc.auth.getOrCreateGuest.useMutation({
     onSuccess: (data) => {
-      if (data.success) {
+      if (data.success && data.user?.id) {
+        // Save guest user ID to localStorage
+        localStorage.setItem("campovivo_user_id", String(data.user.id));
         utils.auth.me.invalidate();
       }
     },
@@ -51,6 +53,8 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
+      // Clear user ID from localStorage
+      localStorage.removeItem("campovivo_user_id");
       utils.auth.me.setData(undefined, null);
       // Reset guest creation flag so a new guest can be created
       guestCreationAttempted.current = false;

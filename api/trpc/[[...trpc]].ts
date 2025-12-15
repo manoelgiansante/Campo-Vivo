@@ -521,6 +521,17 @@ const appRouter = t.router({
           .where(and(eq(fields.id, input.id), eq(fields.userId, ctx.user.id)));
         return { success: true };
       }),
+    
+    // Link all fields to Agromonitoring (placeholder - actual integration would require API key)
+    linkAllToAgromonitoring: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        // This is a placeholder - in production, this would connect to Agromonitoring API
+        return { 
+          success: true, 
+          message: "Funcionalidade de integração com Agromonitoring será implementada em breve",
+          linkedCount: 0 
+        };
+      }),
   }),
   
   ndvi: t.router({
@@ -820,6 +831,30 @@ const appRouter = t.router({
             rain: Math.random() > 0.8 ? Math.random() * 5 : 0,
           })),
         };
+      }),
+    
+    // Get historical weather data
+    getHistorical: protectedProcedure
+      .input(z.object({ 
+        fieldId: z.number(),
+        days: z.number().optional().default(30)
+      }))
+      .query(async ({ input }) => {
+        const { days } = input;
+        // Simulated historical weather data
+        return Array.from({ length: days }, (_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() - (days - i));
+          return {
+            date: date.toISOString().split('T')[0],
+            tempMin: 15 + Math.random() * 8,
+            tempMax: 25 + Math.random() * 10,
+            tempAvg: 20 + Math.random() * 5,
+            humidity: 50 + Math.random() * 30,
+            precipitation: Math.random() > 0.7 ? Math.random() * 20 : 0,
+            windSpeed: 5 + Math.random() * 15,
+          };
+        });
       }),
       
     getAlerts: protectedProcedure
