@@ -129,11 +129,14 @@ const appRouter = t.router({
         userType: z.enum(["farmer", "agronomist", "consultant"]).default("farmer"),
       }))
       .mutation(async ({ input }) => {
+        console.log("[Signup] Starting signup for:", input.email);
         const database = await getDb();
         
         // Check if email already exists
+        console.log("[Signup] Checking if email exists...");
         const [existing] = await database.select().from(users).where(eq(users.email, input.email)).limit(1);
         if (existing) {
+          console.log("[Signup] Email already exists");
           throw new Error("Email já cadastrado");
         }
         
@@ -141,25 +144,33 @@ const appRouter = t.router({
         const hashedPassword = simpleHash(input.password);
         const openId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
-        const [newUser] = await database.insert(users).values({
-          openId,
-          name: input.name,
-          email: input.email,
-          passwordHash: hashedPassword,
-          phone: input.phone,
-          company: input.company,
-          userType: input.userType,
-          loginMethod: "email",
-        }).returning();
-        
-        return {
-          user: {
-            id: newUser.id,
-            name: newUser.name,
-            email: newUser.email,
-            userType: newUser.userType,
-          },
-        };
+        console.log("[Signup] Creating user with openId:", openId);
+        try {
+          const [newUser] = await database.insert(users).values({
+            openId,
+            name: input.name,
+            email: input.email,
+            passwordHash: hashedPassword,
+            phone: input.phone,
+            company: input.company,
+            userType: input.userType,
+            loginMethod: "email",
+          }).returning();
+          
+          console.log("[Signup] User created successfully with id:", newUser.id);
+          
+          return {
+            user: {
+              id: newUser.id,
+              name: newUser.name,
+              email: newUser.email,
+              userType: newUser.userType,
+            },
+          };
+        } catch (dbError: any) {
+          console.error("[Signup] Database error:", dbError.message || dbError);
+          throw new Error("Erro ao criar conta: " + (dbError.message || "erro desconhecido"));
+        }
       }),
     
     login: publicProcedure
@@ -168,17 +179,22 @@ const appRouter = t.router({
         password: z.string().min(1, "Senha obrigatória"),
       }))
       .mutation(async ({ input }) => {
+        console.log("[Login] Attempting login for:", input.email);
         const database = await getDb();
         
         // Find user by email
+        console.log("[Login] Searching for user...");
         const [user] = await database.select().from(users).where(eq(users.email, input.email)).limit(1);
         if (!user) {
+          console.log("[Login] User not found");
           throw new Error("Email ou senha incorretos");
         }
+        console.log("[Login] User found with id:", user.id);
         
         // Check password
         const hashedPassword = simpleHash(input.password);
         if (user.passwordHash !== hashedPassword) {
+          console.log("[Login] Password mismatch");
           throw new Error("Email ou senha incorretos");
         }
         
@@ -187,6 +203,7 @@ const appRouter = t.router({
           .set({ lastSignedIn: new Date() })
           .where(eq(users.id, user.id));
         
+        console.log("[Login] Login successful for user:", user.id);
         return {
           user: {
             id: user.id,
