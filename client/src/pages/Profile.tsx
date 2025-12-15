@@ -17,10 +17,13 @@ import {
   MapPin,
   Leaf,
   Settings,
-  Star
+  Star,
+  Crown,
+  Lock
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 interface MenuItem {
   icon: React.ElementType;
@@ -41,7 +44,13 @@ export default function Profile() {
   const [, setLocation] = useLocation();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  const { data: fields } = trpc.fields.list.useQuery();
+  const { data: fields } = trpc.fields.list.useQuery(undefined, {
+    enabled: !!user && !user.isGuest,
+  });
+  
+  const { data: fieldLimit } = trpc.auth.checkFieldLimit.useQuery(undefined, {
+    enabled: !!user,
+  });
 
   const stats = useMemo(() => {
     if (!fields) return null;
@@ -55,34 +64,135 @@ export default function Profile() {
   }, [fields]);
 
   const handleLogout = async () => {
-    await logout();
-    setLocation('/');
+    try {
+      await logout();
+      toast.success("Logout realizado com sucesso");
+      setShowLogoutConfirm(false);
+      setLocation('/');
+    } catch (error) {
+      toast.error("Erro ao fazer logout");
+    }
   };
+
+  // Se não tem usuário ou é guest, mostrar tela de login
+  const isGuest = !user || user.isGuest;
+
+  if (isGuest) {
+    return (
+      <div 
+        className="min-h-[100dvh] bg-gray-50 flex flex-col"
+        style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}
+      >
+        {/* Header */}
+        <div 
+          className="bg-gradient-to-br from-green-500 to-green-600 text-white"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}
+        >
+          <div className="px-4 pb-8">
+            <h1 className="text-xl font-bold mb-6">Perfil</h1>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center">
+                <User className="h-10 w-10 text-white/70" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Visitante</h2>
+                <p className="text-white/80 text-sm">Crie uma conta para salvar seus dados</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 px-4 py-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <Leaf className="h-6 w-6 text-green-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Conta Gratuita</h3>
+                <p className="text-sm text-gray-500">Até 5 campos grátis</p>
+              </div>
+            </div>
+            
+            <ul className="space-y-3 mb-6">
+              <li className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-xs">✓</span>
+                </div>
+                Mapeamento de áreas
+              </li>
+              <li className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-xs">✓</span>
+                </div>
+                Análise NDVI em tempo real
+              </li>
+              <li className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-xs">✓</span>
+                </div>
+                Previsão do tempo 7 dias
+              </li>
+            </ul>
+
+            <button
+              onClick={() => setLocation('/auth')}
+              className="w-full bg-green-600 text-white py-4 rounded-xl font-semibold"
+            >
+              Criar Conta Grátis
+            </button>
+            
+            <button
+              onClick={() => setLocation('/auth')}
+              className="w-full text-green-600 py-3 font-medium"
+            >
+              Já tem conta? Entrar
+            </button>
+          </div>
+
+          {/* Pro Plan */}
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-6 text-white">
+            <div className="flex items-center gap-2 mb-2">
+              <Crown className="h-5 w-5" />
+              <span className="font-bold">Plano Pro</span>
+            </div>
+            <p className="text-white/90 text-sm mb-4">
+              Campos ilimitados, relatórios avançados e suporte prioritário
+            </p>
+            <button className="w-full bg-white text-orange-600 py-3 rounded-xl font-semibold">
+              Ver Planos
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const menuItems: MenuSection[] = [
     {
       section: 'Conta',
       items: [
-        { icon: User, label: 'Editar Perfil', action: () => {} },
-        { icon: Bell, label: 'Notificações', action: () => {} },
-        { icon: Shield, label: 'Privacidade', action: () => {} },
+        { icon: User, label: 'Editar Perfil', action: () => toast.info("Em breve") },
+        { icon: Bell, label: 'Notificações', action: () => toast.info("Em breve") },
+        { icon: Shield, label: 'Privacidade', action: () => toast.info("Em breve") },
       ]
     },
     {
       section: 'Preferências',
       items: [
-        { icon: Moon, label: 'Modo Escuro', action: () => {}, toggle: true },
-        { icon: Globe, label: 'Idioma', value: 'Português', action: () => {} },
-        { icon: MapPin, label: 'Unidades', value: 'Hectares', action: () => {} },
+        { icon: Moon, label: 'Modo Escuro', action: () => toast.info("Em breve"), toggle: true },
+        { icon: Globe, label: 'Idioma', value: 'Português', action: () => toast.info("Em breve") },
+        { icon: MapPin, label: 'Unidades', value: 'Hectares', action: () => toast.info("Em breve") },
       ]
     },
     {
       section: 'Suporte',
       items: [
-        { icon: HelpCircle, label: 'Central de Ajuda', action: () => {} },
+        { icon: HelpCircle, label: 'Central de Ajuda', action: () => toast.info("Em breve") },
         { icon: Mail, label: 'Contato', action: () => window.open('mailto:suporte@campovivo.app') },
-        { icon: FileText, label: 'Termos de Uso', action: () => {} },
-        { icon: Star, label: 'Avaliar o App', action: () => {} },
+        { icon: FileText, label: 'Termos de Uso', action: () => toast.info("Em breve") },
+        { icon: Star, label: 'Avaliar o App', action: () => toast.info("Em breve") },
       ]
     },
   ];

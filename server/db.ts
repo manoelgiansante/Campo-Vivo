@@ -106,6 +106,85 @@ export async function getUserById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByDeviceId(deviceId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.deviceId, deviceId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createGuestUser(deviceId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const openId = `guest_${deviceId}`;
+  const result = await db.insert(users).values({
+    openId,
+    deviceId,
+    isGuest: true,
+    name: "Visitante",
+    plan: "free",
+    maxFields: 1, // Guests can only create 1 field
+  });
+  
+  return await getUserByOpenId(openId);
+}
+
+export async function createUserWithPassword(email: string, passwordHash: string, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const openId = `local_${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+  
+  await db.insert(users).values({
+    openId,
+    email: email.toLowerCase(),
+    passwordHash,
+    name,
+    loginMethod: "email",
+    isGuest: false,
+    plan: "free",
+    maxFields: 5,
+  });
+  
+  return await getUserByOpenId(openId);
+}
+
+export async function upgradeGuestToUser(guestId: number, email: string, passwordHash: string, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const openId = `local_${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+  
+  await db.update(users).set({
+    openId,
+    email: email.toLowerCase(),
+    passwordHash,
+    name,
+    loginMethod: "email",
+    isGuest: false,
+    maxFields: 5, // Upgrade to 5 fields
+  }).where(eq(users.id, guestId));
+  
+  return await getUserById(guestId);
+}
+
+export async function countUserFields(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` })
+    .from(fields)
+    .where(and(eq(fields.userId, userId), eq(fields.isActive, true)));
+  return result[0]?.count || 0;
+}
+
 export async function updateUserProfile(userId: number, data: Partial<InsertUser>) {
   const db = await getDb();
   if (!db) return;

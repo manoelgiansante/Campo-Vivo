@@ -14,18 +14,22 @@ import FieldDetailPro from "./pages/FieldDetailPro";
 import FieldDrawNew from "./pages/FieldDrawNew";
 import Notes from "./pages/Notes";
 import Profile from "./pages/Profile";
+import Auth from "./pages/Auth";
 
 function Router() {
   const [location] = useLocation();
   
   // Esconder navbar em telas específicas
-  const hideNavbar = location.startsWith('/fields/new') || location.includes('/edit');
+  const hideNavbar = location.startsWith('/fields/new') || location.includes('/edit') || location === '/auth';
 
   return (
     <>
       <Switch>
         {/* Home - Tela principal com mapa e resumo */}
         <Route path="/" component={Home} />
+        
+        {/* Autenticação */}
+        <Route path="/auth" component={Auth} />
         
         {/* Mapa - Tela dedicada ao mapa */}
         <Route path="/map" component={MapView} />

@@ -8,20 +8,138 @@ import { TRPCError } from "@trpc/server";
 import { ENV } from "./_core/env";
 import * as agromonitoring from "./services/agromonitoring";
 import * as weather from "./services/weather";
+import { createHash } from "crypto";
 
 // Helper para converter URLs HTTP para HTTPS
 const toHttps = (url: string | null | undefined): string | null => 
   url ? url.replace('http://', 'https://') : null;
+
+// Helper para hash de senha (simples, para produção usar bcrypt)
+const hashPassword = (password: string): string => {
+  return createHash('sha256').update(password + ENV.cookieSecret).digest('hex');
+};
 
 export const appRouter = router({
   system: systemRouter,
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1, path: '/' });
+      // Also try without domain in case it was set differently
+      ctx.res.clearCookie(COOKIE_NAME, { path: '/' });
       return { success: true } as const;
+    }),
+
+    // Register with email/password
+    register: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Check if email already exists
+        const existingUser = await db.getUserByEmail(input.email);
+        if (existingUser) {
+          throw new TRPCError({ code: "CONFLICT", message: "Este email já está cadastrado" });
+        }
+
+        const passwordHash = hashPassword(input.password);
+        
+        // If current user is guest, upgrade them
+        if (ctx.user?.isGuest) {
+          const user = await db.upgradeGuestToUser(ctx.user.id, input.email, passwordHash, input.name);
+          if (!user) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar conta" });
+          }
+          return { success: true, user };
+        }
+        
+        // Create new user
+        const user = await db.createUserWithPassword(input.email, passwordHash, input.name);
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar conta" });
+        }
+
+        return { success: true, user };
+      }),
+
+    // Login with email/password
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await db.getUserByEmail(input.email);
+        if (!user || !user.passwordHash) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Email ou senha incorretos" });
+        }
+
+        const passwordHash = hashPassword(input.password);
+        if (user.passwordHash !== passwordHash) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Email ou senha incorretos" });
+        }
+
+        // Update last sign in
+        await db.updateUserProfile(user.id, { lastSignedIn: new Date() });
+
+        // Create session cookie
+        const { sdk } = await import("./_core/sdk");
+        const token = await sdk.createSessionToken(user.openId, { name: user.name || "" });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+
+        return { success: true, user };
+      }),
+
+    // Get or create guest user by device ID
+    getOrCreateGuest: publicProcedure
+      .input(z.object({
+        deviceId: z.string().min(10),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Check if guest already exists
+        let user = await db.getUserByDeviceId(input.deviceId);
+        
+        if (!user) {
+          user = await db.createGuestUser(input.deviceId);
+        }
+
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar sessão" });
+        }
+
+        // Update last sign in
+        await db.updateUserProfile(user.id, { lastSignedIn: new Date() });
+
+        // Create session cookie
+        const { sdk } = await import("./_core/sdk");
+        const token = await sdk.createSessionToken(user.openId, { name: user.name || "Visitante" });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+
+        return { success: true, user };
+      }),
+
+    // Check field limit
+    checkFieldLimit: protectedProcedure.query(async ({ ctx }) => {
+      const fieldCount = await db.countUserFields(ctx.user.id);
+      const maxFields = ctx.user.maxFields || 5;
+      const isGuest = ctx.user.isGuest || false;
+      
+      return {
+        currentCount: fieldCount,
+        maxFields,
+        canCreateMore: fieldCount < maxFields,
+        isGuest,
+        needsAccount: isGuest && fieldCount >= 1,
+        needsUpgrade: !isGuest && fieldCount >= maxFields,
+        plan: ctx.user.plan || "free",
+      };
     }),
   }),
 
@@ -73,6 +191,25 @@ export const appRouter = router({
         irrigationType: z.enum(["none", "drip", "sprinkler", "pivot", "flood"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Verificar limite de campos
+        const fieldCount = await db.countUserFields(ctx.user.id);
+        const maxFields = ctx.user.maxFields || 5;
+        const isGuest = ctx.user.isGuest || false;
+
+        if (fieldCount >= maxFields) {
+          if (isGuest) {
+            throw new TRPCError({ 
+              code: "FORBIDDEN", 
+              message: "Crie uma conta gratuita para adicionar mais campos" 
+            });
+          } else {
+            throw new TRPCError({ 
+              code: "FORBIDDEN", 
+              message: `Você atingiu o limite de ${maxFields} campos. Faça upgrade para o plano Pro.` 
+            });
+          }
+        }
+
         // Criar campo no banco de dados
         const id = await db.createField({
           ...input,

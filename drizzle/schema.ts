@@ -5,13 +5,21 @@ export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }), // Para login local
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   userType: mysqlEnum("userType", ["farmer", "agronomist", "consultant"]).default("farmer").notNull(),
   phone: varchar("phone", { length: 20 }),
   company: varchar("company", { length: 255 }),
   avatarUrl: text("avatarUrl"),
+  // Plano e limites
+  plan: mysqlEnum("plan", ["free", "pro", "enterprise"]).default("free").notNull(),
+  maxFields: int("maxFields").default(5).notNull(), // Limite de campos (free = 5)
+  planExpiresAt: timestamp("planExpiresAt"),
+  // Status
+  isGuest: boolean("isGuest").default(false).notNull(), // Usuário anônimo/guest
+  deviceId: varchar("deviceId", { length: 64 }), // Para identificar dispositivo guest
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
