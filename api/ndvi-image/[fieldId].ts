@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import mysql from "mysql2/promise";
+import postgres from "postgres";
 
 // Função para buscar imagens de satélite do Agromonitoring
 async function searchSatelliteImages(polygonId: string, startDate: Date, endDate: Date) {
@@ -42,20 +42,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).send("Database not configured");
     }
 
-    // Conectar ao MySQL
-    const connection = await mysql.createConnection(process.env.DATABASE_URL);
+    // Conectar ao PostgreSQL
+    const sql = postgres(process.env.DATABASE_URL, { 
+      connect_timeout: 10,
+      idle_timeout: 20,
+    });
 
     // Buscar campo
-    const [rows] = await connection.execute(
-      'SELECT id, agroPolygonId FROM fields WHERE id = ? LIMIT 1', 
-      [id]
-    );
-    const result = rows as any[];
+    const result = await sql`SELECT id, "agroPolygonId" FROM fields WHERE id = ${id} LIMIT 1`;
     const field = result[0];
 
     if (!field || !field.agroPolygonId) {
       console.log(`[NDVI Proxy] Campo ${id} não encontrado ou sem polígono`);
-      await connection.end();
+      await sql.end();
       return res.status(404).send("Field not found or no polygon configured");
     }
 
@@ -102,14 +101,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!imageResponse.ok) {
       console.log(`[NDVI Proxy] Erro ao buscar imagem: ${imageResponse.status}`);
-      await connection.end();
+      await sql.end();
       return res.status(imageResponse.status).send("Failed to fetch NDVI image");
     }
 
     const buffer = await imageResponse.arrayBuffer();
     console.log(`[NDVI Proxy] Imagem carregada: ${buffer.byteLength} bytes`);
 
-    await connection.end();
+    await sql.end();
 
     res.setHeader("Content-Type", imageResponse.headers.get("content-type") || "image/png");
     res.setHeader("Cache-Control", "public, max-age=3600");

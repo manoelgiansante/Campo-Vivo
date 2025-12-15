@@ -2,10 +2,10 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { initTRPC } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { z } from "zod";
-import mysql from "mysql2/promise";
-import { drizzle } from "drizzle-orm/mysql2";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, desc, and } from "drizzle-orm";
-import { mysqlTable, serial, varchar, text, timestamp, int, json, boolean, mysqlEnum } from "drizzle-orm/mysql-core";
+import { pgTable, serial, varchar, text, timestamp, integer, json, boolean, pgEnum } from "drizzle-orm/pg-core";
 
 // Simple hash function for passwords (in production use bcrypt)
 function simpleHash(str: string): string {
@@ -19,32 +19,37 @@ function simpleHash(str: string): string {
 }
 
 // ==================== SCHEMA ====================
-const roleEnum = mysqlEnum("role", ["user", "admin"]);
-const userTypeEnum = mysqlEnum("userType", ["farmer", "agronomist", "consultant"]);
+const roleEnum = pgEnum("role", ["user", "admin"]);
+const userTypeEnum = pgEnum("userType", ["farmer", "agronomist", "consultant"]);
+const planEnum = pgEnum("plan", ["free", "pro", "enterprise"]);
 
-const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: roleEnum.default("user").notNull(),
-  userType: userTypeEnum.default("farmer").notNull(),
+  role: roleEnum("role").default("user").notNull(),
+  userType: userTypeEnum("userType").default("farmer").notNull(),
   phone: varchar("phone", { length: 20 }),
   company: varchar("company", { length: 255 }),
   avatarUrl: text("avatarUrl"),
+  plan: planEnum("plan").default("free"),
+  maxFields: integer("maxFields").default(5),
+  isGuest: boolean("isGuest").default(false),
+  deviceId: varchar("deviceId", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
-const fields = mysqlTable("fields", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+const fields = pgTable("fields", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  areaHectares: int("areaHectares"),
+  areaHectares: integer("areaHectares"),
   latitude: varchar("latitude", { length: 20 }),
   longitude: varchar("longitude", { length: 20 }),
   boundaries: json("boundaries"),
@@ -56,15 +61,15 @@ const fields = mysqlTable("fields", {
   irrigationType: varchar("irrigationType", { length: 50 }),
   isActive: boolean("isActive").default(true),
   agroPolygonId: varchar("agroPolygonId", { length: 64 }),
-  currentNdvi: int("currentNdvi"),
+  currentNdvi: integer("currentNdvi"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 // Notification history
-const notifications = mysqlTable("notifications", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull(),
   type: varchar("type", { length: 50 }).notNull(),
@@ -77,15 +82,15 @@ type User = typeof users.$inferSelect;
 type Field = typeof fields.$inferSelect;
 
 // ==================== DATABASE ====================
-let connection: mysql.Connection | null = null;
+let client: ReturnType<typeof postgres> | null = null;
 let db: ReturnType<typeof drizzle> | null = null;
 
 async function getDb() {
   if (!db) {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) throw new Error("DATABASE_URL not set");
-    connection = await mysql.createConnection(dbUrl);
-    db = drizzle(connection);
+    client = postgres(dbUrl);
+    db = drizzle(client);
   }
   return db;
 }
