@@ -1517,15 +1517,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const responseBody = await response.text();
     response.headers.forEach((value, key) => res.setHeader(key, value));
     
-    // Check if this was a login/signup response and set cookie
-    if (responseBody.includes('"user":{') && responseBody.includes('"id":')) {
+    // Check if this was a login/signup/register response and set cookie
+    // superjson format: {"result":{"data":{"json":{"user":{"id":1,...}}}}}
+    if (responseBody.includes('"user"') && responseBody.includes('"id"')) {
       try {
         const parsed = JSON.parse(responseBody);
-        if (parsed.result?.data?.user?.id) {
-          const userId = parsed.result.data.user.id;
+        // Handle superjson format
+        const data = parsed.result?.data?.json || parsed.result?.data;
+        if (data?.user?.id) {
+          const userId = data.user.id;
           res.setHeader("Set-Cookie", `campovivo_user_id=${userId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
         }
-      } catch {}
+      } catch (e) {
+        console.error("Failed to parse response for cookie:", e);
+      }
     }
     
     // Check if this was a logout and clear cookie
