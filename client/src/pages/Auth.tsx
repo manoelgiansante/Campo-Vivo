@@ -38,10 +38,14 @@ export default function Auth() {
       // Save user ID to localStorage for auth header
       if (data.user?.id) {
         localStorage.setItem("campovivo_user_id", String(data.user.id));
+        console.log("[Auth] Saved user ID to localStorage:", data.user.id);
       }
       toast.success("Login realizado com sucesso!");
-      utils.auth.me.invalidate();
-      setLocation("/");
+      // Force refetch of auth.me with new header
+      setTimeout(() => {
+        utils.auth.me.invalidate();
+        setLocation("/");
+      }, 100);
     },
     onError: (error) => {
       toast.error(error.message || "Erro ao fazer login");
@@ -53,11 +57,14 @@ export default function Auth() {
       // Save user ID to localStorage for auth header
       if (data.user?.id) {
         localStorage.setItem("campovivo_user_id", String(data.user.id));
+        console.log("[Auth] Saved user ID to localStorage:", data.user.id);
       }
       toast.success("Conta criada com sucesso!");
-      utils.auth.me.invalidate();
-      // After registration, log them in
-      loginMutation.mutate({ email, password });
+      // Force refetch then login
+      setTimeout(() => {
+        utils.auth.me.invalidate();
+        loginMutation.mutate({ email, password });
+      }, 100);
     },
     onError: (error) => {
       toast.error(error.message || "Erro ao criar conta");

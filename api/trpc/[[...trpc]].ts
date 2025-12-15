@@ -1529,14 +1529,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
 
   try {
-    // Get user from cookie or header
+    // Get user from cookie or header (headers are case-insensitive in HTTP)
     let user: User | null = null;
-    const userId = sessionUserId || (req.headers["x-user-id"] as string);
+    const headerUserId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+    const userId = sessionUserId || (headerUserId as string);
     
-    if (userId) {
+    console.log("[Auth] X-User-Id header:", headerUserId || "none");
+    console.log("[Auth] Final userId to lookup:", userId || "none");
+    
+    if (userId && !isNaN(parseInt(userId))) {
       const database = await getDb();
       const [foundUser] = await database.select().from(users).where(eq(users.id, parseInt(userId))).limit(1);
       user = foundUser || null;
+      console.log("[Auth] Found user:", user ? user.id : "null");
     }
     
     // User will be null if not logged in - that's fine, public procedures will work

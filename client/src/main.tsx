@@ -66,6 +66,9 @@ const trpcClient = trpc.createClient({
         const headers = new Headers(init?.headers);
         if (userId) {
           headers.set("X-User-Id", userId);
+          console.log("[Auth] Sending X-User-Id header:", userId);
+        } else {
+          console.log("[Auth] No user ID in localStorage");
         }
         return globalThis.fetch(input, {
           ...(init ?? {}),
