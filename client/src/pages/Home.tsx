@@ -30,7 +30,7 @@ interface Field {
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth({ autoCreateGuest: true });
   const [mapStyle, setMapStyle] = useState<MapStyle>("satellite-streets");
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [showFieldsPanel, setShowFieldsPanel] = useState(false);

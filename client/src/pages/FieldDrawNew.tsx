@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { MapboxMap, useMapbox } from "@/components/MapboxMap";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,8 @@ import {
   Undo2,
   Square,
   Check,
-  Locate
+  Locate,
+  Crown
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
@@ -33,10 +35,12 @@ export default function FieldDrawNew() {
   const isEditMode = editId !== null;
 
   const [, setLocation] = useLocation();
+  const { user, isGuest } = useAuth();
   const [mode, setMode] = useState<DrawMode>("draw");
   const [points, setPoints] = useState<[number, number][]>([]); // [lng, lat]
   const [area, setArea] = useState<number>(0);
   const [showNameDialog, setShowNameDialog] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation, watchUserLocation, clearWatchLocation } = useMapbox();
@@ -46,6 +50,11 @@ export default function FieldDrawNew() {
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const initialCenterRef = useRef<[number, number] | null>(null);
+
+  // Check field limit
+  const { data: fieldLimit } = trpc.auth.checkFieldLimit.useQuery(undefined, {
+    enabled: !!user && !isEditMode,
+  });
 
   // Fetch existing field data if editing
   const { data: existingField } = trpc.fields.getById.useQuery(
@@ -347,6 +356,13 @@ export default function FieldDrawNew() {
       toast.error("Desenhe pelo menos 3 pontos para criar um campo");
       return;
     }
+
+    // Check field limit before allowing creation (only for new fields)
+    if (!isEditMode && fieldLimit && !fieldLimit.canCreateMore) {
+      setShowLimitDialog(true);
+      return;
+    }
+
     setShowNameDialog(true);
   };
 
@@ -577,6 +593,67 @@ export default function FieldDrawNew() {
                 ? (isEditMode ? "Salvando..." : "Criando...") 
                 : (isEditMode ? "Salvar Alterações" : "Criar Campo")}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Field Limit Dialog */}
+      <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="h-5 w-5 text-amber-500" />
+              Limite de Campos Atingido
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {fieldLimit?.needsAccount ? (
+              <>
+                <p className="text-gray-600 mb-4">
+                  Visitantes podem criar apenas <strong>1 campo</strong>. 
+                  Crie uma conta gratuita para ter até <strong>5 campos</strong>!
+                </p>
+                <div className="bg-green-50 rounded-lg p-4 mb-4">
+                  <h4 className="font-semibold text-green-800 mb-2">Conta Gratuita</h4>
+                  <ul className="text-sm text-green-700 space-y-1">
+                    <li>✓ Até 5 campos</li>
+                    <li>✓ Análise NDVI em tempo real</li>
+                    <li>✓ Previsão do tempo 7 dias</li>
+                  </ul>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowLimitDialog(false)}>
+                    Cancelar
+                  </Button>
+                  <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => setLocation('/auth')}>
+                    Criar Conta Grátis
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-600 mb-4">
+                  Você atingiu o limite de <strong>{fieldLimit?.maxFields} campos</strong> do plano gratuito.
+                  Faça upgrade para o plano Pro e tenha campos ilimitados!
+                </p>
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg p-4 mb-4 text-white">
+                  <h4 className="font-semibold mb-2">Plano Pro</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>✓ Campos ilimitados</li>
+                    <li>✓ Relatórios avançados</li>
+                    <li>✓ Suporte prioritário</li>
+                  </ul>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowLimitDialog(false)}>
+                    Voltar
+                  </Button>
+                  <Button className="flex-1 bg-amber-500 hover:bg-amber-600" onClick={() => toast.info("Em breve!")}>
+                    Ver Planos
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
