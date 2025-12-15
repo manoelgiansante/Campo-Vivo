@@ -18,7 +18,7 @@ import {
   Square
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
@@ -26,6 +26,10 @@ import * as turf from "@turf/turf";
 type DrawMode = "select" | "draw";
 
 export default function FieldDrawNew() {
+  const params = useParams<{ id?: string }>();
+  const editId = params.id ? parseInt(params.id) : null;
+  const isEditMode = editId !== null;
+
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<DrawMode>("draw");
   const [points, setPoints] = useState<[number, number][]>([]); // [lng, lat]
@@ -35,6 +39,46 @@ export default function FieldDrawNew() {
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const { setMap, getUserLocation } = useMapbox();
   const markersRef = useState<mapboxgl.Marker[]>([])[0];
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Fetch existing field data if editing
+  const { data: existingField } = trpc.fields.getById.useQuery(
+    { id: editId! },
+    { enabled: isEditMode }
+  );
+
+  // Load existing boundaries for edit mode
+  useEffect(() => {
+    if (isEditMode && existingField && !isLoaded) {
+      setFieldName(existingField.name);
+      if (existingField.boundaries) {
+        try {
+          const boundaries = typeof existingField.boundaries === 'string'
+            ? JSON.parse(existingField.boundaries)
+            : existingField.boundaries;
+          if (Array.isArray(boundaries) && boundaries.length > 0) {
+            const loadedPoints: [number, number][] = boundaries.map((p: any) => [p.lng, p.lat]);
+            setPoints(loadedPoints);
+            setMode("select");
+            setIsLoaded(true);
+
+            // Center map on field
+            if (mapInstance && loadedPoints.length > 0) {
+              const avgLng = loadedPoints.reduce((sum, p) => sum + p[0], 0) / loadedPoints.length;
+              const avgLat = loadedPoints.reduce((sum, p) => sum + p[1], 0) / loadedPoints.length;
+              mapInstance.flyTo({
+                center: [avgLng, avgLat],
+                zoom: 16,
+                duration: 1500,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing boundaries:', e);
+        }
+      }
+    }
+  }, [isEditMode, existingField, isLoaded, mapInstance]);
 
   const createField = trpc.fields.create.useMutation({
     onSuccess: (data) => {
@@ -43,6 +87,16 @@ export default function FieldDrawNew() {
     },
     onError: () => {
       toast.error("Erro ao criar campo");
+    },
+  });
+
+  const updateField = trpc.fields.update.useMutation({
+    onSuccess: () => {
+      toast.success("Campo atualizado com sucesso!");
+      setLocation(`/fields/${editId}`);
+    },
+    onError: () => {
+      toast.error("Erro ao atualizar campo");
     },
   });
 
@@ -200,13 +254,24 @@ export default function FieldDrawNew() {
     // Convert to lat/lng format for storage
     const boundariesForStorage = points.map(p => ({ lat: p[1], lng: p[0] }));
 
-    createField.mutate({
-      name: fieldName,
-      areaHectares: Math.round(area * 100), // Store as integer (hectares * 100)
-      latitude: centerLat.toString(),
-      longitude: centerLng.toString(),
-      boundaries: JSON.stringify(boundariesForStorage),
-    });
+    if (isEditMode && editId) {
+      updateField.mutate({
+        id: editId,
+        name: fieldName,
+        areaHectares: Math.round(area * 100), // Store as integer (hectares * 100)
+        latitude: centerLat.toString(),
+        longitude: centerLng.toString(),
+        boundaries: JSON.stringify(boundariesForStorage),
+      });
+    } else {
+      createField.mutate({
+        name: fieldName,
+        areaHectares: Math.round(area * 100), // Store as integer (hectares * 100)
+        latitude: centerLat.toString(),
+        longitude: centerLng.toString(),
+        boundaries: JSON.stringify(boundariesForStorage),
+      });
+    }
   };
 
   const handleLocateMe = async () => {
@@ -335,7 +400,7 @@ export default function FieldDrawNew() {
           onClick={handleFinish}
           disabled={points.length < 3}
         >
-          Finish field boundary
+          {isEditMode ? 'Salvar limites' : 'Finish field boundary'}
           {area > 0 && (
             <span className="ml-2 font-normal">
               Area {area.toFixed(1)} ha
@@ -348,7 +413,7 @@ export default function FieldDrawNew() {
       <Dialog open={showNameDialog} onOpenChange={setShowNameDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nome do Campo</DialogTitle>
+            <DialogTitle>{isEditMode ? 'Editar Campo' : 'Nome do Campo'}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <Input
@@ -367,10 +432,12 @@ export default function FieldDrawNew() {
             </Button>
             <Button
               onClick={handleCreateField}
-              disabled={createField.isPending}
+              disabled={createField.isPending || updateField.isPending}
               className="bg-green-600 hover:bg-green-700"
             >
-              {createField.isPending ? "Criando..." : "Criar Campo"}
+              {createField.isPending || updateField.isPending 
+                ? (isEditMode ? "Salvando..." : "Criando...") 
+                : (isEditMode ? "Salvar Alterações" : "Criar Campo")}
             </Button>
           </div>
         </DialogContent>

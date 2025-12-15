@@ -320,7 +320,7 @@ export default function FieldDetail() {
                     <span className="text-sm text-gray-500">Umidade</span>
                   </div>
                   <p className="text-lg font-bold text-gray-900">
-                    {weather?.humidity || '--'}%
+                    {weather?.current?.humidity || '--'}%
                   </p>
                 </div>
 
@@ -332,7 +332,7 @@ export default function FieldDetail() {
                     <span className="text-sm text-gray-500">Temperatura</span>
                   </div>
                   <p className="text-lg font-bold text-gray-900">
-                    {weather?.temperature || '--'}°C
+                    {weather?.current?.temperature?.toFixed(0) || '--'}°C
                   </p>
                 </div>
 
@@ -344,7 +344,7 @@ export default function FieldDetail() {
                     <span className="text-sm text-gray-500">Vento</span>
                   </div>
                   <p className="text-lg font-bold text-gray-900">
-                    {weather?.windSpeed || '--'} km/h
+                    {weather?.current?.windSpeed?.toFixed(0) || '--'} km/h
                   </p>
                 </div>
               </div>
@@ -469,10 +469,10 @@ export default function FieldDetail() {
                   <div>
                     <p className="text-blue-100 text-sm">Agora</p>
                     <p className="text-5xl font-light mt-1">
-                      {weather?.temperature || '--'}°
+                      {weather?.current?.temperature?.toFixed(0) || '--'}°
                     </p>
                     <p className="text-blue-100 mt-1">
-                      {weather?.description || 'Carregando...'}
+                      {weather?.current?.precipitation ? `Precipitação: ${weather.current.precipitation}mm` : 'Sem chuva'}
                     </p>
                   </div>
                   <Cloud className="h-16 w-16 text-white/50" />
@@ -487,7 +487,7 @@ export default function FieldDetail() {
                     <span className="text-sm">Umidade</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
-                    {weather?.humidity || '--'}%
+                    {weather?.current?.humidity || '--'}%
                   </p>
                 </div>
 
@@ -497,37 +497,60 @@ export default function FieldDetail() {
                     <span className="text-sm">Vento</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
-                    {weather?.windSpeed || '--'} km/h
+                    {weather?.current?.windSpeed?.toFixed(0) || '--'} km/h
                   </p>
                 </div>
 
                 <div className="bg-white rounded-xl p-4 shadow-sm">
                   <div className="flex items-center gap-2 text-gray-500 mb-1">
                     <Thermometer className="h-4 w-4" />
-                    <span className="text-sm">Sensação</span>
+                    <span className="text-sm">Precipitação</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
-                    {weather?.feelsLike || weather?.temperature || '--'}°C
+                    {weather?.current?.precipitation?.toFixed(1) || '0'} mm
                   </p>
                 </div>
 
                 <div className="bg-white rounded-xl p-4 shadow-sm">
                   <div className="flex items-center gap-2 text-gray-500 mb-1">
                     <Cloud className="h-4 w-4" />
-                    <span className="text-sm">Nuvens</span>
+                    <span className="text-sm">Dir. Vento</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
-                    {weather?.clouds || '--'}%
+                    {weather?.current?.windDirection || '--'}°
                   </p>
                 </div>
               </div>
+
+              {/* Forecast */}
+              {weather?.daily && weather.daily.length > 0 && (
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <h3 className="font-semibold text-gray-900 mb-3">Previsão 7 dias</h3>
+                  <div className="space-y-2">
+                    {weather.daily.slice(0, 5).map((day: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                        <span className="text-sm text-gray-500">
+                          {new Date(day.date).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' })}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-blue-500">{day.temperatureMin?.toFixed(0)}°</span>
+                          <span className="text-sm text-gray-400">/</span>
+                          <span className="text-sm text-red-500">{day.temperatureMax?.toFixed(0)}°</span>
+                          <Droplets className="h-3 w-3 text-blue-400 ml-2" />
+                          <span className="text-xs text-gray-400">{day.precipitationProbability}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'notes' && (
             <div className="space-y-4">
               <button 
-                onClick={() => setLocation(`/notes/new?fieldId=${id}`)}
+                onClick={() => setLocation('/notes')}
                 className="w-full bg-green-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
               >
                 <StickyNote className="h-5 w-5" />

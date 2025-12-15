@@ -156,7 +156,7 @@ export default function Home() {
     return mapStyle;
   };
 
-  const unreadAlerts = 0;
+
 
   return (
     <div className="h-[100dvh] relative bg-black">
@@ -184,15 +184,10 @@ export default function Home() {
             </div>
             
             <button 
-              onClick={() => setLocation('/alerts')}
+              onClick={() => setLocation('/profile')}
               className="relative w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center"
             >
               <Bell className="h-5 w-5 text-white" />
-              {unreadAlerts > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">
-                  {unreadAlerts}
-                </span>
-              )}
             </button>
           </div>
         </div>
@@ -256,7 +251,7 @@ export default function Home() {
             Novo Campo
           </button>
           <button
-            onClick={() => setLocation('/weather')}
+            onClick={() => setLocation('/map')}
             className="w-14 h-14 bg-white rounded-xl shadow-lg flex items-center justify-center"
           >
             <CloudSun className="h-6 w-6 text-blue-500" />

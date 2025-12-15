@@ -18,7 +18,7 @@ import {
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-type FilterType = "all" | "pest" | "disease" | "weather" | "general";
+type FilterType = "all" | "observation" | "problem" | "task" | "harvest" | "application";
 type SeverityType = "all" | "low" | "medium" | "high";
 
 export default function Notes() {
@@ -39,7 +39,7 @@ export default function Notes() {
       if (searchQuery && !note.title.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
-      if (filterType !== "all" && note.type !== filterType) {
+      if (filterType !== "all" && note.noteType !== filterType) {
         return false;
       }
       if (filterSeverity !== "all" && note.severity !== filterSeverity) {
@@ -86,10 +86,11 @@ export default function Notes() {
 
   const getTypeLabel = (type: string) => {
     switch (type) {
-      case 'pest': return '🐛 Praga';
-      case 'disease': return '🦠 Doença';
-      case 'weather': return '🌦️ Clima';
-      case 'general': return '📝 Geral';
+      case 'observation': return '📝 Observação';
+      case 'problem': return '⚠️ Problema';
+      case 'task': return '✅ Tarefa';
+      case 'harvest': return '🌾 Colheita';
+      case 'application': return '💧 Aplicação';
       default: return '📝 Nota';
     }
   };
@@ -131,10 +132,10 @@ export default function Notes() {
           <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-4 px-4">
             {([
               { value: 'all', label: 'Todas' },
-              { value: 'pest', label: '🐛 Pragas' },
-              { value: 'disease', label: '🦠 Doenças' },
-              { value: 'weather', label: '🌦️ Clima' },
-              { value: 'general', label: '📝 Geral' },
+              { value: 'observation', label: '📝 Observação' },
+              { value: 'problem', label: '⚠️ Problema' },
+              { value: 'task', label: '✅ Tarefa' },
+              { value: 'harvest', label: '🌾 Colheita' },
             ] as const).map((filter) => (
               <button
                 key={filter.value}
@@ -208,7 +209,7 @@ export default function Notes() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        onClick={() => setLocation(`/notes/${note.id}`)}
+                        onClick={() => note.fieldId && setLocation(`/fields/${note.fieldId}`)}
                         className="w-full bg-white rounded-2xl p-4 shadow-sm text-left active:scale-[0.98] transition-transform"
                       >
                         <div className="flex items-start gap-3">
@@ -231,8 +232,8 @@ export default function Notes() {
                             </p>
 
                             <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                              {note.type && (
-                                <span>{getTypeLabel(note.type)}</span>
+                              {note.noteType && (
+                                <span>{getTypeLabel(note.noteType)}</span>
                               )}
                               {fieldName && (
                                 <span className="flex items-center gap-1">

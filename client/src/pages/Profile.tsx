@@ -63,9 +63,9 @@ export default function Profile() {
     {
       section: 'Conta',
       items: [
-        { icon: User, label: 'Editar Perfil', action: () => setLocation('/profile/edit') },
-        { icon: Bell, label: 'Notificações', action: () => setLocation('/notifications/settings'), badge: '3' },
-        { icon: Shield, label: 'Privacidade', action: () => setLocation('/privacy') },
+        { icon: User, label: 'Editar Perfil', action: () => {} },
+        { icon: Bell, label: 'Notificações', action: () => {} },
+        { icon: Shield, label: 'Privacidade', action: () => {} },
       ]
     },
     {
@@ -79,9 +79,9 @@ export default function Profile() {
     {
       section: 'Suporte',
       items: [
-        { icon: HelpCircle, label: 'Central de Ajuda', action: () => setLocation('/help') },
+        { icon: HelpCircle, label: 'Central de Ajuda', action: () => {} },
         { icon: Mail, label: 'Contato', action: () => window.open('mailto:suporte@campovivo.app') },
-        { icon: FileText, label: 'Termos de Uso', action: () => setLocation('/terms') },
+        { icon: FileText, label: 'Termos de Uso', action: () => {} },
         { icon: Star, label: 'Avaliar o App', action: () => {} },
       ]
     },
