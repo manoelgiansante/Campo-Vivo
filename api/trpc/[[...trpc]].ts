@@ -1467,6 +1467,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   );
   const sessionUserId = cookies["campovivo_user_id"];
+  
+  // Debug logging
+  console.log("[Auth] Cookie header:", cookieHeader ? "present" : "empty");
+  console.log("[Auth] Session user ID from cookie:", sessionUserId || "none");
 
   // Convert request
   const protocol = req.headers["x-forwarded-proto"] || "https";
@@ -1526,7 +1530,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const data = parsed.result?.data?.json || parsed.result?.data;
         if (data?.user?.id) {
           const userId = data.user.id;
-          res.setHeader("Set-Cookie", `campovivo_user_id=${userId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
+          // Use Secure flag for HTTPS in production
+          const isProduction = process.env.NODE_ENV === 'production' || req.headers['x-forwarded-proto'] === 'https';
+          const cookieValue = `campovivo_user_id=${userId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${isProduction ? '; Secure' : ''}`;
+          res.setHeader("Set-Cookie", cookieValue);
+          console.log("[Auth] Setting cookie for user:", userId);
         }
       } catch (e) {
         console.error("Failed to parse response for cookie:", e);
