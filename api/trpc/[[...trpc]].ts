@@ -298,6 +298,25 @@ const appRouter = t.router({
           },
         };
       }),
+    
+    // Check field limit for current user
+    checkFieldLimit: protectedProcedure.query(async ({ ctx }) => {
+      const database = await getDb();
+      const userFields = await database.select().from(fields).where(eq(fields.userId, ctx.user.id));
+      const fieldCount = userFields.length;
+      const maxFields = ctx.user.maxFields || 5;
+      const isGuest = ctx.user.isGuest || false;
+      
+      return {
+        currentCount: fieldCount,
+        maxFields,
+        canCreateMore: fieldCount < maxFields,
+        isGuest,
+        needsAccount: isGuest && fieldCount >= 1,
+        needsUpgrade: !isGuest && fieldCount >= maxFields,
+        plan: ctx.user.plan || "free",
+      };
+    }),
   }),
   
   // ==================== AI ====================
