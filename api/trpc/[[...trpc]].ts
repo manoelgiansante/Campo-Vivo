@@ -5,7 +5,7 @@ import { z } from "zod";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, desc, and } from "drizzle-orm";
-import { pgTable, serial, varchar, text, timestamp, integer, json, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, timestamp, integer, json, boolean } from "drizzle-orm/pg-core";
 
 // Simple hash function for passwords (in production use bcrypt)
 function simpleHash(str: string): string {
@@ -19,10 +19,7 @@ function simpleHash(str: string): string {
 }
 
 // ==================== SCHEMA ====================
-const roleEnum = pgEnum("role", ["user", "admin"]);
-const userTypeEnum = pgEnum("userType", ["farmer", "agronomist", "consultant"]);
-const planEnum = pgEnum("plan", ["free", "pro", "enterprise"]);
-
+// Use varchar instead of pgEnum to avoid issues with missing enum types in database
 const users = pgTable("users", {
   id: serial("id").primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
@@ -30,12 +27,12 @@ const users = pgTable("users", {
   email: varchar("email", { length: 320 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: roleEnum("role").default("user").notNull(),
-  userType: userTypeEnum("userType").default("farmer").notNull(),
+  role: varchar("role", { length: 20 }).default("user").notNull(),
+  userType: varchar("userType", { length: 30 }).default("farmer").notNull(),
   phone: varchar("phone", { length: 20 }),
   company: varchar("company", { length: 255 }),
   avatarUrl: text("avatarUrl"),
-  plan: planEnum("plan").default("free"),
+  plan: varchar("plan", { length: 20 }).default("free"),
   maxFields: integer("maxFields").default(5),
   isGuest: boolean("isGuest").default(false),
   deviceId: varchar("deviceId", { length: 64 }),
@@ -138,7 +135,7 @@ const appRouter = t.router({
           openId,
           name: input.name,
           email: input.email,
-          password: hashedPassword,
+          passwordHash: hashedPassword,
           phone: input.phone,
           company: input.company,
           userType: input.userType,
@@ -171,7 +168,7 @@ const appRouter = t.router({
         
         // Check password
         const hashedPassword = simpleHash(input.password);
-        if (user.password !== hashedPassword) {
+        if (user.passwordHash !== hashedPassword) {
           throw new Error("Email ou senha incorretos");
         }
         
@@ -196,6 +193,111 @@ const appRouter = t.router({
     logout: publicProcedure.mutation(async () => {
       return { success: true };
     }),
+    
+    // Register (alias for signup - used by client)
+    register: publicProcedure
+      .input(z.object({
+        name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        phone: z.string().optional(),
+        company: z.string().optional(),
+        userType: z.enum(["farmer", "agronomist", "consultant"]).default("farmer"),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await getDb();
+        
+        // Check if email already exists
+        const [existing] = await database.select().from(users).where(eq(users.email, input.email)).limit(1);
+        if (existing) {
+          throw new Error("Email já cadastrado");
+        }
+        
+        // Create user
+        const hashedPassword = simpleHash(input.password);
+        const openId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const [newUser] = await database.insert(users).values({
+          openId,
+          name: input.name,
+          email: input.email,
+          passwordHash: hashedPassword,
+          phone: input.phone,
+          company: input.company,
+          userType: input.userType,
+          loginMethod: "email",
+        }).returning();
+        
+        return {
+          user: {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            userType: newUser.userType,
+          },
+        };
+      }),
+    
+    // Get or create guest user for anonymous access
+    getOrCreateGuest: publicProcedure
+      .input(z.object({
+        deviceId: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await getDb();
+        
+        // Check if guest user exists for this device
+        const [existing] = await database.select().from(users)
+          .where(eq(users.deviceId, input.deviceId))
+          .limit(1);
+        
+        if (existing) {
+          // Update last signed in
+          await database.update(users)
+            .set({ lastSignedIn: new Date() })
+            .where(eq(users.id, existing.id));
+          
+          return {
+            success: true,
+            isNew: false,
+            user: {
+              id: existing.id,
+              openId: existing.openId,
+              name: existing.name,
+              isGuest: existing.isGuest,
+              maxFields: existing.maxFields,
+              plan: existing.plan,
+            },
+          };
+        }
+        
+        // Create new guest user
+        const openId = `guest-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const guestName = `Visitante ${Math.floor(Math.random() * 10000)}`;
+        
+        const [newUser] = await database.insert(users).values({
+          openId,
+          name: guestName,
+          deviceId: input.deviceId,
+          isGuest: true,
+          loginMethod: "guest",
+          maxFields: 3, // Guests get fewer fields
+          plan: "free",
+        }).returning();
+        
+        return {
+          success: true,
+          isNew: true,
+          user: {
+            id: newUser.id,
+            openId: newUser.openId,
+            name: newUser.name,
+            isGuest: newUser.isGuest,
+            maxFields: newUser.maxFields,
+            plan: newUser.plan,
+          },
+        };
+      }),
   }),
   
   // ==================== AI ====================
