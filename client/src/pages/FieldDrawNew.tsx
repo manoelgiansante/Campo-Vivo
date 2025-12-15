@@ -50,6 +50,7 @@ export default function FieldDrawNew() {
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const initialCenterRef = useRef<[number, number] | null>(null);
+  const hasInitializedLocationRef = useRef(false);
 
   // Check field limit
   const { data: fieldLimit } = trpc.auth.checkFieldLimit.useQuery(undefined, {
@@ -301,8 +302,9 @@ export default function FieldDrawNew() {
     const currentCenter = map.getCenter();
     initialCenterRef.current = [currentCenter.lng, currentCenter.lat];
 
-    // Se não estiver editando, tentar obter localização do usuário
-    if (!isEditMode) {
+    // Se não estiver editando e ainda não buscou localização, tentar obter localização do usuário
+    if (!isEditMode && !hasInitializedLocationRef.current) {
+      hasInitializedLocationRef.current = true;
       getUserLocation()
         .then(([lng, lat]) => {
           initialCenterRef.current = [lng, lat];
@@ -319,15 +321,6 @@ export default function FieldDrawNew() {
           // Manter centro padrão (Brasil)
         });
     }
-
-    // Add click listener for drawing - usando closure para capturar modo atual
-    const handleClick = (e: mapboxgl.MapMouseEvent) => {
-      // Verificar modo atual através do DOM ou state
-      setPoints(prev => {
-        // Este callback só adiciona pontos se estiver no modo draw
-        return prev;
-      });
-    };
 
   }, [setMap, getUserLocation, isEditMode, updateUserMarker]);
 
@@ -447,22 +440,28 @@ export default function FieldDrawNew() {
         {/* Mode Toggle */}
         <div className="pointer-events-auto bg-gray-800/90 rounded-full p-1 flex">
           <button
-            onClick={() => setMode("select")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMode("select");
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full transition-colors ${
               mode === "select" ? "bg-gray-700 text-white" : "text-gray-400"
             }`}
           >
             <Hand className="h-4 w-4" />
-            <span className="text-sm">Select</span>
+            <span className="text-sm">Mover</span>
           </button>
           <button
-            onClick={() => setMode("draw")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMode("draw");
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full transition-colors ${
               mode === "draw" ? "bg-gray-700 text-white" : "text-gray-400"
             }`}
           >
             <Pencil className="h-4 w-4" />
-            <span className="text-sm">Draw</span>
+            <span className="text-sm">Desenhar</span>
           </button>
         </div>
 
