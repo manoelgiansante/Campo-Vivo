@@ -85,9 +85,19 @@ let db: ReturnType<typeof drizzle> | null = null;
 async function getDb() {
   if (!db) {
     const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) throw new Error("DATABASE_URL not set");
-    client = postgres(dbUrl);
-    db = drizzle(client);
+    if (!dbUrl) {
+      console.error("[DB] DATABASE_URL environment variable is not set!");
+      throw new Error("DATABASE_URL not set - check Vercel environment variables");
+    }
+    console.log("[DB] Connecting to database...");
+    try {
+      client = postgres(dbUrl);
+      db = drizzle(client);
+      console.log("[DB] Database connected successfully");
+    } catch (err) {
+      console.error("[DB] Failed to connect to database:", err);
+      throw err;
+    }
   }
   return db;
 }
