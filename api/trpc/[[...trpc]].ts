@@ -2,10 +2,10 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { initTRPC } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { z } from "zod";
-import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
+import mysql from "mysql2/promise";
+import { drizzle } from "drizzle-orm/mysql2";
 import { eq, desc, and } from "drizzle-orm";
-import { pgTable, serial, varchar, text, timestamp, integer, json, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { mysqlTable, serial, varchar, text, timestamp, int, json, boolean, mysqlEnum } from "drizzle-orm/mysql-core";
 
 // Simple hash function for passwords (in production use bcrypt)
 function simpleHash(str: string): string {
@@ -19,33 +19,32 @@ function simpleHash(str: string): string {
 }
 
 // ==================== SCHEMA ====================
-const roleEnum = pgEnum("role", ["user", "admin"]);
-const userTypeEnum = pgEnum("user_type", ["farmer", "agronomist", "consultant"]);
+const roleEnum = mysqlEnum("role", ["user", "admin"]);
+const userTypeEnum = mysqlEnum("userType", ["farmer", "agronomist", "consultant"]);
 
-const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  openId: varchar("open_id", { length: 64 }).notNull().unique(),
+const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
-  password: varchar("password", { length: 255 }),
-  loginMethod: varchar("login_method", { length: 64 }),
-  role: roleEnum("role").default("user").notNull(),
-  userType: userTypeEnum("user_type").default("farmer").notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: roleEnum.default("user").notNull(),
+  userType: userTypeEnum.default("farmer").notNull(),
   phone: varchar("phone", { length: 20 }),
   company: varchar("company", { length: 255 }),
-  avatarUrl: text("avatar_url"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),
+  avatarUrl: text("avatarUrl"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
-const fields = pgTable("fields", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  farmId: integer("farm_id"),
+const fields = mysqlTable("fields", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  areaHectares: integer("area_hectares"),
+  areaHectares: int("areaHectares"),
   latitude: varchar("latitude", { length: 20 }),
   longitude: varchar("longitude", { length: 20 }),
   boundaries: json("boundaries"),
@@ -53,50 +52,40 @@ const fields = pgTable("fields", {
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   country: varchar("country", { length: 100 }).default("Brasil"),
-  soilType: varchar("soil_type", { length: 100 }),
-  irrigationType: varchar("irrigation_type", { length: 50 }),
-  isActive: boolean("is_active").default(true),
-  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
-  lastNdviSync: timestamp("last_ndvi_sync"),
-  currentNdvi: integer("current_ndvi"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-// Push notification subscriptions
-const pushSubscriptions = pgTable("push_subscriptions", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  endpoint: text("endpoint").notNull(),
-  p256dh: text("p256dh").notNull(),
-  auth: text("auth").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  soilType: varchar("soilType", { length: 100 }),
+  irrigationType: varchar("irrigationType", { length: 50 }),
+  isActive: boolean("isActive").default(true),
+  agroPolygonId: varchar("agroPolygonId", { length: 64 }),
+  currentNdvi: int("currentNdvi"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 // Notification history
-const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull(),
-  type: varchar("type", { length: 50 }).notNull(), // alert, ndvi, weather, task
+  type: varchar("type", { length: 50 }).notNull(),
   data: json("data"),
-  read: boolean("read").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  isRead: boolean("isRead").default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 type User = typeof users.$inferSelect;
 type Field = typeof fields.$inferSelect;
 
 // ==================== DATABASE ====================
+let connection: mysql.Connection | null = null;
 let db: ReturnType<typeof drizzle> | null = null;
 
 async function getDb() {
   if (!db) {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) throw new Error("DATABASE_URL not set");
-    const client = postgres(dbUrl);
-    db = drizzle(client);
+    connection = await mysql.createConnection(dbUrl);
+    db = drizzle(connection);
   }
   return db;
 }

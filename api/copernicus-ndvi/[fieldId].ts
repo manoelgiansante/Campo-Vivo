@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import postgres from 'postgres';
+import mysql from 'mysql2/promise';
 
 // Copernicus OAuth credentials
 const COPERNICUS_CLIENT_ID = process.env.COPERNICUS_CLIENT_ID || '';
@@ -160,30 +160,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: "Database not configured" });
     }
 
-    // Connect to PostgreSQL directly
-    const sql = postgres(process.env.DATABASE_URL, { 
-      connect_timeout: 10,
-      idle_timeout: 20,
-    });
+    // Connect to MySQL directly
+    const connection = await mysql.createConnection(process.env.DATABASE_URL!);
 
     // Query field directly
-    const result = await sql`SELECT id, boundaries FROM fields WHERE id = ${id} LIMIT 1`;
+    const [rows] = await connection.execute('SELECT id, boundaries FROM fields WHERE id = ? LIMIT 1', [id]);
+    const result = rows as any[];
     const field = result[0];
 
     if (!field) {
       console.log(`[Copernicus] Field ${id} not found`);
-      await sql.end();
+      await connection.end();
       return res.status(404).json({ error: 'Field not found' });
     }
 
-    const boundaries = field.boundaries as { lat: number; lng: number }[];
+    // Parse boundaries (may be stored as JSON string)
+    let boundaries = field.boundaries;
+    if (typeof boundaries === 'string') {
+      boundaries = JSON.parse(boundaries);
+    }
+    
     if (!boundaries || !Array.isArray(boundaries) || boundaries.length < 3) {
       console.log(`[Copernicus] Field ${id} has no valid boundaries`);
-      await sql.end();
+      await connection.end();
       return res.status(400).json({ error: 'Field has no valid boundaries' });
     }
 
-    await sql.end();
+    await connection.end();
     console.log(`[Copernicus] Field ${id} has ${boundaries.length} points`);
 
     // Get access token

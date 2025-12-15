@@ -1,34 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { eq } from "drizzle-orm";
-import { pgTable, serial, integer, varchar, text, boolean, timestamp, json, pgEnum } from "drizzle-orm/pg-core";
-
-// Schema simplificado para fields
-const irrigationTypeEnum = pgEnum("irrigation_type", ["none", "drip", "sprinkler", "pivot", "flood"]);
-const fields = pgTable("fields", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  farmId: integer("farm_id"),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  areaHectares: integer("area_hectares"),
-  latitude: varchar("latitude", { length: 20 }),
-  longitude: varchar("longitude", { length: 20 }),
-  boundaries: json("boundaries"),
-  address: text("address"),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  country: varchar("country", { length: 100 }).default("Brasil"),
-  soilType: varchar("soil_type", { length: 100 }),
-  irrigationType: irrigationTypeEnum("irrigation_type").default("none"),
-  isActive: boolean("is_active").default(true),
-  agroPolygonId: varchar("agro_polygon_id", { length: 50 }),
-  lastNdviSync: timestamp("last_ndvi_sync"),
-  currentNdvi: integer("current_ndvi"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+import mysql from "mysql2/promise";
 
 // Função para buscar imagens de satélite do Agromonitoring
 async function searchSatelliteImages(polygonId: string, startDate: Date, endDate: Date) {
@@ -71,20 +42,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).send("Database not configured");
     }
 
-    // Conectar ao banco de dados
-    const client = postgres(process.env.DATABASE_URL, { 
-      connect_timeout: 10,
-      idle_timeout: 20,
-    });
-    const db = drizzle(client);
+    // Conectar ao MySQL
+    const connection = await mysql.createConnection(process.env.DATABASE_URL);
 
     // Buscar campo
-    const result = await db.select().from(fields).where(eq(fields.id, id)).limit(1);
+    const [rows] = await connection.execute(
+      'SELECT id, agroPolygonId FROM fields WHERE id = ? LIMIT 1', 
+      [id]
+    );
+    const result = rows as any[];
     const field = result[0];
 
     if (!field || !field.agroPolygonId) {
       console.log(`[NDVI Proxy] Campo ${id} não encontrado ou sem polígono`);
-      await client.end();
+      await connection.end();
       return res.status(404).send("Field not found or no polygon configured");
     }
 
@@ -110,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!image?.image?.ndvi) {
       console.log(`[NDVI Proxy] Nenhuma imagem NDVI disponível`);
-      await client.end();
+      await connection.end();
       return res.status(404).send("No NDVI image available");
     }
 
@@ -131,14 +102,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!imageResponse.ok) {
       console.log(`[NDVI Proxy] Erro ao buscar imagem: ${imageResponse.status}`);
-      await client.end();
+      await connection.end();
       return res.status(imageResponse.status).send("Failed to fetch NDVI image");
     }
 
     const buffer = await imageResponse.arrayBuffer();
     console.log(`[NDVI Proxy] Imagem carregada: ${buffer.byteLength} bytes`);
 
-    await client.end();
+    await connection.end();
 
     res.setHeader("Content-Type", imageResponse.headers.get("content-type") || "image/png");
     res.setHeader("Cache-Control", "public, max-age=3600");
