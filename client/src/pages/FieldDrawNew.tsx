@@ -15,9 +15,11 @@ import {
   Search,
   Navigation,
   Undo2,
-  Square
+  Square,
+  Check,
+  Locate
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
@@ -37,9 +39,13 @@ export default function FieldDrawNew() {
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
-  const { setMap, getUserLocation } = useMapbox();
-  const markersRef = useState<mapboxgl.Marker[]>([])[0];
+  const { setMap, getUserLocation, watchUserLocation, clearWatchLocation } = useMapbox();
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const initialCenterRef = useRef<[number, number] | null>(null);
 
   // Fetch existing field data if editing
   const { data: existingField } = trpc.fields.getById.useQuery(
@@ -66,6 +72,7 @@ export default function FieldDrawNew() {
             if (mapInstance && loadedPoints.length > 0) {
               const avgLng = loadedPoints.reduce((sum, p) => sum + p[0], 0) / loadedPoints.length;
               const avgLat = loadedPoints.reduce((sum, p) => sum + p[1], 0) / loadedPoints.length;
+              initialCenterRef.current = [avgLng, avgLat];
               mapInstance.flyTo({
                 center: [avgLng, avgLat],
                 zoom: 16,
@@ -79,6 +86,55 @@ export default function FieldDrawNew() {
       }
     }
   }, [isEditMode, existingField, isLoaded, mapInstance]);
+
+  // Watch user location
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    // Start watching location
+    watchIdRef.current = watchUserLocation(
+      (coords) => {
+        setUserLocation(coords);
+        updateUserMarker(coords);
+      },
+      (error) => {
+        console.log("Location watch error:", error.message);
+      }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        clearWatchLocation(watchIdRef.current);
+      }
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+      }
+    };
+  }, [mapInstance, watchUserLocation, clearWatchLocation]);
+
+  // Update user marker on map
+  const updateUserMarker = useCallback((coords: [number, number]) => {
+    if (!mapInstance) return;
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLngLat(coords);
+    } else {
+      // Create pulsing blue dot marker
+      const el = document.createElement("div");
+      el.className = "user-location-marker";
+      el.innerHTML = `
+        <div class="relative">
+          <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-75" style="width: 24px; height: 24px;"></div>
+          <div class="relative bg-blue-500 rounded-full border-3 border-white shadow-lg" style="width: 16px; height: 16px;"></div>
+        </div>
+      `;
+      el.style.cssText = "width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;";
+
+      userMarkerRef.current = new mapboxgl.Marker({ element: el })
+        .setLngLat(coords)
+        .addTo(mapInstance);
+    }
+  }, [mapInstance]);
 
   const createField = trpc.fields.create.useMutation({
     onSuccess: (data) => {
@@ -117,30 +173,30 @@ export default function FieldDrawNew() {
     }
   }, [points]);
 
-  // Update polygon on map
+  // Update polygon and lines on map
   useEffect(() => {
     if (!mapInstance) return;
 
     // Clear existing markers
-    markersRef.forEach(m => m.remove());
-    markersRef.length = 0;
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
 
-    // Remove existing polygon
-    if (mapInstance.getLayer("draw-polygon")) {
-      mapInstance.removeLayer("draw-polygon");
-    }
-    if (mapInstance.getLayer("draw-polygon-outline")) {
-      mapInstance.removeLayer("draw-polygon-outline");
-    }
-    if (mapInstance.getSource("draw-polygon")) {
-      mapInstance.removeSource("draw-polygon");
-    }
+    // Remove existing layers
+    ["draw-polygon", "draw-polygon-outline", "draw-line"].forEach(id => {
+      if (mapInstance.getLayer(id)) mapInstance.removeLayer(id);
+    });
+    ["draw-polygon", "draw-line"].forEach(id => {
+      if (mapInstance.getSource(id)) mapInstance.removeSource(id);
+    });
 
     if (points.length > 0) {
       // Add markers for each point
       points.forEach((point, index) => {
         const el = document.createElement("div");
-        el.className = "w-5 h-5 bg-white rounded-full border-2 border-gray-500 shadow-md cursor-move";
+        el.className = `w-6 h-6 rounded-full border-3 shadow-lg cursor-move flex items-center justify-center text-xs font-bold ${
+          index === 0 ? "bg-green-500 border-white text-white" : "bg-white border-green-500 text-green-600"
+        }`;
+        el.textContent = String(index + 1);
         
         const marker = new mapboxgl.Marker({ 
           element: el, 
@@ -158,10 +214,38 @@ export default function FieldDrawNew() {
           });
         });
 
-        markersRef.push(marker);
+        markersRef.current.push(marker);
       });
 
-      // Draw polygon if we have at least 3 points
+      // Draw line between points (even with just 2 points)
+      if (points.length >= 2) {
+        const lineCoords = points.length >= 3 ? [...points, points[0]] : points;
+        
+        mapInstance.addSource("draw-line", {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "LineString",
+              coordinates: lineCoords,
+            },
+          },
+        });
+
+        mapInstance.addLayer({
+          id: "draw-line",
+          type: "line",
+          source: "draw-line",
+          paint: {
+            "line-color": "#22C55E",
+            "line-width": 3,
+            "line-dasharray": points.length < 3 ? [2, 2] : [1, 0],
+          },
+        });
+      }
+
+      // Draw polygon fill only if we have at least 3 points
       if (points.length >= 3) {
         const closedPoints = [...points, points[0]];
         
@@ -183,7 +267,7 @@ export default function FieldDrawNew() {
           source: "draw-polygon",
           paint: {
             "fill-color": "#22C55E",
-            "fill-opacity": 0.4,
+            "fill-opacity": 0.3,
           },
         });
 
@@ -198,34 +282,61 @@ export default function FieldDrawNew() {
         });
       }
     }
-  }, [points, mode, mapInstance, markersRef]);
+  }, [points, mode, mapInstance]);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => {
     setMap(map);
     setMapInstance(map);
 
-    // Try to get user location
-    getUserLocation()
-      .then(([lng, lat]) => {
-        map.flyTo({
-          center: [lng, lat],
-          zoom: 16,
-          duration: 2000,
-        });
-      })
-      .catch(() => {
-        // Keep default center (Brazil)
-        map.setCenter([-47.9292, -15.7801]);
-        map.setZoom(5);
-      });
+    // Salvar centro inicial
+    const currentCenter = map.getCenter();
+    initialCenterRef.current = [currentCenter.lng, currentCenter.lat];
 
-    // Add click listener for drawing
-    map.on("click", (e) => {
+    // Se não estiver editando, tentar obter localização do usuário
+    if (!isEditMode) {
+      getUserLocation()
+        .then(([lng, lat]) => {
+          initialCenterRef.current = [lng, lat];
+          map.flyTo({
+            center: [lng, lat],
+            zoom: 17,
+            duration: 2000,
+          });
+          setUserLocation([lng, lat]);
+          updateUserMarker([lng, lat]);
+        })
+        .catch((error) => {
+          console.log("Não foi possível obter localização:", error.message);
+          // Manter centro padrão (Brasil)
+        });
+    }
+
+    // Add click listener for drawing - usando closure para capturar modo atual
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
+      // Verificar modo atual através do DOM ou state
+      setPoints(prev => {
+        // Este callback só adiciona pontos se estiver no modo draw
+        return prev;
+      });
+    };
+
+  }, [setMap, getUserLocation, isEditMode, updateUserMarker]);
+
+  // Separar o listener de clique para reagir às mudanças de modo
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
       if (mode === "draw") {
         setPoints(prev => [...prev, [e.lngLat.lng, e.lngLat.lat]]);
       }
-    });
-  }, [setMap, getUserLocation, mode]);
+    };
+
+    mapInstance.on("click", handleClick);
+    return () => {
+      mapInstance.off("click", handleClick);
+    };
+  }, [mapInstance, mode]);
 
   const handleUndo = () => {
     setPoints(prev => prev.slice(0, -1));
@@ -276,15 +387,21 @@ export default function FieldDrawNew() {
 
   const handleLocateMe = async () => {
     if (!mapInstance) return;
+    
+    toast.loading("Obtendo localização...", { id: "location" });
+    
     try {
       const [lng, lat] = await getUserLocation();
+      setUserLocation([lng, lat]);
+      updateUserMarker([lng, lat]);
       mapInstance.flyTo({
         center: [lng, lat],
-        zoom: 16,
+        zoom: 17,
         duration: 1500,
       });
-    } catch (error) {
-      toast.error("Não foi possível obter sua localização");
+      toast.success("Localização encontrada!", { id: "location" });
+    } catch (error: any) {
+      toast.error(error.message || "Não foi possível obter sua localização", { id: "location" });
     }
   };
 
@@ -363,50 +480,71 @@ export default function FieldDrawNew() {
       </div>
 
       {/* Bottom Controls */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-none z-10">
-        {/* Field Name Label */}
+      <div 
+        className="absolute bottom-0 left-0 right-0 p-4 pointer-events-none z-10 bg-gradient-to-t from-black/50 to-transparent"
+        style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+      >
+        {/* Area info and point count */}
         {points.length > 0 && (
-          <div className="text-white text-sm mb-2 pointer-events-none">
-            <span className="bg-black/50 px-2 py-1 rounded">Novo campo</span>
+          <div className="flex items-center justify-between mb-3 pointer-events-none">
+            <span className="bg-black/70 text-white px-3 py-1.5 rounded-full text-sm font-medium">
+              {points.length} {points.length === 1 ? 'ponto' : 'pontos'}
+            </span>
+            {area > 0 && (
+              <span className="bg-green-600 text-white px-3 py-1.5 rounded-full text-sm font-medium">
+                {area.toFixed(2)} ha
+              </span>
+            )}
           </div>
         )}
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           {/* Undo Button */}
           <Button
             variant="secondary"
-            className="pointer-events-auto bg-gray-800/90 text-white hover:bg-gray-700 rounded-full px-4 h-10 gap-2"
+            className="pointer-events-auto bg-white/90 text-gray-800 hover:bg-white rounded-full px-4 h-12 gap-2 shadow-lg"
             onClick={handleUndo}
             disabled={points.length === 0}
           >
-            <Undo2 className="h-4 w-4" />
-            <span>Undo</span>
+            <Undo2 className="h-5 w-5" />
+            <span>Desfazer</span>
           </Button>
 
           {/* Location Button */}
           <Button
             variant="secondary"
             size="icon"
-            className="pointer-events-auto bg-gray-800/90 text-white hover:bg-gray-700 rounded-full h-10 w-10"
+            className="pointer-events-auto bg-blue-500 text-white hover:bg-blue-600 rounded-full h-12 w-12 shadow-lg"
             onClick={handleLocateMe}
           >
-            <Navigation className="h-5 w-5" />
+            <Locate className="h-5 w-5" />
           </Button>
         </div>
 
-        {/* Finish Button */}
+        {/* Finish Button - Always visible and prominent */}
         <Button
-          className="pointer-events-auto w-full mt-3 bg-green-600 hover:bg-green-700 text-white rounded-xl h-14 text-base font-semibold"
+          className={`pointer-events-auto w-full mt-3 text-white rounded-2xl h-16 text-lg font-bold shadow-xl transition-all ${
+            points.length >= 3 
+              ? 'bg-green-500 hover:bg-green-600 active:scale-[0.98]' 
+              : 'bg-gray-400 cursor-not-allowed'
+          }`}
           onClick={handleFinish}
           disabled={points.length < 3}
         >
-          {isEditMode ? 'Salvar limites' : 'Finish field boundary'}
+          <Check className="h-6 w-6 mr-2" />
+          {isEditMode ? 'Salvar Alterações' : 'Confirmar Área'}
           {area > 0 && (
-            <span className="ml-2 font-normal">
-              Area {area.toFixed(1)} ha
+            <span className="ml-2 opacity-90">
+              ({area.toFixed(1)} ha)
             </span>
           )}
         </Button>
+        
+        {points.length > 0 && points.length < 3 && (
+          <p className="text-center text-white/80 text-sm mt-2">
+            Adicione mais {3 - points.length} {3 - points.length === 1 ? 'ponto' : 'pontos'} para criar a área
+          </p>
+        )}
       </div>
 
       {/* Name Dialog */}

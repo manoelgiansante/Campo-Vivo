@@ -190,7 +190,7 @@ export function useMapbox() {
   const getUserLocation = (): Promise<[number, number]> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error("Geolocation not supported"));
+        reject(new Error("Geolocalização não suportada pelo navegador"));
         return;
       }
 
@@ -199,10 +199,56 @@ export function useMapbox() {
           resolve([position.coords.longitude, position.coords.latitude]);
         },
         (error) => {
-          reject(error);
+          let message = "Erro ao obter localização";
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              message = "Permissão de localização negada. Permita o acesso nas configurações.";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              message = "Localização indisponível. Verifique se o GPS está ativado.";
+              break;
+            case error.TIMEOUT:
+              message = "Tempo esgotado ao obter localização. Tente novamente.";
+              break;
+          }
+          reject(new Error(message));
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0
         }
       );
     });
+  };
+
+  // Watch user location continuously
+  const watchUserLocation = (
+    onUpdate: (coords: [number, number]) => void,
+    onError?: (error: Error) => void
+  ): number | null => {
+    if (!navigator.geolocation) {
+      onError?.(new Error("Geolocalização não suportada"));
+      return null;
+    }
+
+    return navigator.geolocation.watchPosition(
+      (position) => {
+        onUpdate([position.coords.longitude, position.coords.latitude]);
+      },
+      (error) => {
+        onError?.(new Error(error.message));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 1000
+      }
+    );
+  };
+
+  const clearWatchLocation = (watchId: number) => {
+    navigator.geolocation.clearWatch(watchId);
   };
 
   return {
@@ -213,6 +259,8 @@ export function useMapbox() {
     addPolygon,
     removePolygon,
     getUserLocation,
+    watchUserLocation,
+    clearWatchLocation,
   };
 }
 

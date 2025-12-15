@@ -21,10 +21,12 @@ import {
   Navigation,
   Leaf,
   Satellite,
-  Wheat
+  Wheat,
+  Locate
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import { clipImageToPolygon } from "@/utils/clipImageToPolygon";
 
@@ -38,11 +40,72 @@ export default function MapView() {
   const [ndviType, setNdviType] = useState<NdviType>("basic");
   const [showLayerSheet, setShowLayerSheet] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
-  const { setMap, getUserLocation } = useMapbox();
+  const { setMap, getUserLocation, watchUserLocation, clearWatchLocation } = useMapbox();
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const loadedOverlaysRef = useRef<Set<number>>(new Set());
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
   const { data: fields } = trpc.fields.list.useQuery();
+
+  // Watch user location continuously
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    watchIdRef.current = watchUserLocation(
+      (coords) => {
+        setUserLocation(coords);
+        updateUserMarker(coords);
+      },
+      (error) => {
+        console.log("Location watch:", error.message);
+      }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        clearWatchLocation(watchIdRef.current);
+      }
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+      }
+    };
+  }, [mapInstance, watchUserLocation, clearWatchLocation]);
+
+  // Update user marker on map
+  const updateUserMarker = useCallback((coords: [number, number]) => {
+    if (!mapInstance) return;
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLngLat(coords);
+    } else {
+      // Create pulsing blue dot
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div style="position: relative; width: 24px; height: 24px;">
+          <div style="position: absolute; inset: 0; background: #3B82F6; border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.75;"></div>
+          <div style="position: relative; width: 16px; height: 16px; margin: 4px; background: #3B82F6; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>
+        </div>
+      `;
+      
+      // Add CSS animation if not exists
+      if (!document.getElementById('user-marker-style')) {
+        const style = document.createElement('style');
+        style.id = 'user-marker-style';
+        style.textContent = `
+          @keyframes ping {
+            75%, 100% { transform: scale(2); opacity: 0; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      userMarkerRef.current = new mapboxgl.Marker({ element: el })
+        .setLngLat(coords)
+        .addTo(mapInstance);
+    }
+  }, [mapInstance]);
 
   // Função para obter cor NDVI
   const getNdviColor = (value: number): string => {
@@ -292,15 +355,21 @@ export default function MapView() {
 
   const handleLocateMe = async () => {
     if (!mapInstance) return;
+    
+    toast.loading("Obtendo localização...", { id: "map-location" });
+    
     try {
       const [lng, lat] = await getUserLocation();
+      setUserLocation([lng, lat]);
+      updateUserMarker([lng, lat]);
       mapInstance.flyTo({
         center: [lng, lat],
         zoom: 16,
         duration: 1500,
       });
-    } catch (error) {
-      console.error("Could not get location:", error);
+      toast.success("Localização encontrada!", { id: "map-location" });
+    } catch (error: any) {
+      toast.error(error.message || "Não foi possível obter sua localização", { id: "map-location" });
     }
   };
 
@@ -387,10 +456,10 @@ export default function MapView() {
         <Button
           variant="secondary"
           size="icon"
-          className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full h-10 w-10"
+          className="bg-blue-500 text-white hover:bg-blue-600 rounded-full h-12 w-12 shadow-lg"
           onClick={handleLocateMe}
         >
-          <Navigation className="h-5 w-5" />
+          <Locate className="h-5 w-5" />
         </Button>
       </div>
 
