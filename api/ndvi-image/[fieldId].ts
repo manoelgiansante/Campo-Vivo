@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!image?.image?.ndvi) {
       console.log(`[NDVI Proxy] Nenhuma imagem NDVI disponível`);
-      await connection.end();
+      await sql.end();
       return res.status(404).send("No NDVI image available");
     }
 
