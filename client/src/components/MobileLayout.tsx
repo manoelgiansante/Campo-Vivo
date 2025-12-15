@@ -16,7 +16,7 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen min-h-[100dvh] flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-green-600" />
       </div>
     );
@@ -25,8 +25,11 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
   // If no user but OAuth not configured, render content anyway (demo mode)
   if (!user && !isOAuthConfigured()) {
     return (
-      <div className={`min-h-screen bg-gray-100 ${fullScreen ? "" : "pb-16"}`}>
-        <main className={fullScreen ? "h-screen" : ""}>
+      <div 
+        className={`min-h-screen min-h-[100dvh] bg-gray-100 ${fullScreen ? "" : "pb-[calc(4rem+env(safe-area-inset-bottom))]"}`}
+        style={{ paddingTop: fullScreen ? 'env(safe-area-inset-top)' : undefined }}
+      >
+        <main className={fullScreen ? "h-[100dvh]" : ""}>
           {children}
         </main>
         {!hideNav && <BottomNav />}
@@ -38,7 +41,13 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
   if (!user) {
     const loginUrl = getLoginUrl();
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+      <div 
+        className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-gray-50 p-6"
+        style={{ 
+          paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
+          paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))'
+        }}
+      >
         <div className="flex flex-col items-center gap-6 max-w-sm w-full">
           <div className="h-20 w-20 rounded-2xl bg-green-100 flex items-center justify-center">
             <Leaf className="h-10 w-10 text-green-600" />
@@ -66,8 +75,11 @@ export function MobileLayout({ children, hideNav = false, fullScreen = false }: 
   }
 
   return (
-    <div className={`min-h-screen bg-gray-100 ${fullScreen ? "" : "pb-16"}`}>
-      <main className={fullScreen ? "h-screen" : ""}>
+    <div 
+      className={`min-h-screen min-h-[100dvh] bg-gray-100 ${fullScreen ? "" : "pb-[calc(4rem+env(safe-area-inset-bottom))]"}`}
+      style={{ paddingTop: fullScreen ? 'env(safe-area-inset-top)' : undefined }}
+    >
+      <main className={fullScreen ? "h-[100dvh]" : ""}>
         {children}
       </main>
       {!hideNav && <BottomNav />}

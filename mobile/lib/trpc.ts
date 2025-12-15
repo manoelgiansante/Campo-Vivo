@@ -1,7 +1,8 @@
 import { createTRPCReact } from '@trpc/react-query';
 import { httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '../../../server/routers';
+import type { AppRouter } from '../../../api/trpc/index';
 import Constants from 'expo-constants';
+import superjson from 'superjson';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -15,7 +16,14 @@ const getBaseUrl = () => {
   // On iOS simulator: localhost works
   // On Android emulator: use 10.0.2.2
   // On physical device: use your computer's IP address
-  const localhost = Constants.expoConfig?.hostUri?.split(':')[0] || 'localhost';
+  const debuggerHost = Constants.expoConfig?.hostUri;
+  const localhost = debuggerHost?.split(':')[0];
+  
+  if (!localhost) {
+    // Default fallback - use production URL if available
+    return 'https://campovivo.vercel.app';
+  }
+  
   return `http://${localhost}:5000`;
 };
 
@@ -23,8 +31,8 @@ export const createTRPCClient = () => {
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${getBaseUrl()}/trpc`,
-        // You can pass any HTTP headers you wish here
+        url: `${getBaseUrl()}/api/trpc`,
+        transformer: superjson,
         headers() {
           return {
             // Add authentication headers here if needed

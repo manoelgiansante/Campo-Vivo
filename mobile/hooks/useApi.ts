@@ -35,7 +35,7 @@ export function useFields() {
   return useQuery({
     queryKey: ['fields'],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/trpc/fields.list`);
+      const res = await fetch(`${API_URL}/api/trpc/fields.list`);
       const data = await res.json();
       return data.result?.data as Field[];
     },
@@ -46,7 +46,7 @@ export function useField(id: number) {
   return useQuery({
     queryKey: ['field', id],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/trpc/fields.getById?input=${JSON.stringify({ id })}`);
+      const res = await fetch(`${API_URL}/api/trpc/fields.getById?input=${JSON.stringify({ id })}`);
       const data = await res.json();
       return data.result?.data as Field;
     },
@@ -59,7 +59,7 @@ export function useCreateField() {
   
   return useMutation({
     mutationFn: async (field: Omit<Field, 'id'>) => {
-      const res = await fetch(`${API_URL}/trpc/fields.create`, {
+      const res = await fetch(`${API_URL}/api/trpc/fields.create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(field),
@@ -77,7 +77,7 @@ export function useUpdateField() {
   
   return useMutation({
     mutationFn: async (field: Field) => {
-      const res = await fetch(`${API_URL}/trpc/fields.update`, {
+      const res = await fetch(`${API_URL}/api/trpc/fields.update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(field),
@@ -96,7 +96,7 @@ export function useDeleteField() {
   
   return useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${API_URL}/trpc/fields.delete`, {
+      const res = await fetch(`${API_URL}/api/trpc/fields.delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -115,8 +115,8 @@ export function useFieldNotes(fieldId?: number) {
     queryKey: ['notes', fieldId],
     queryFn: async () => {
       const url = fieldId 
-        ? `${API_URL}/trpc/notes.listByField?input=${JSON.stringify({ fieldId })}`
-        : `${API_URL}/trpc/notes.listAll`;
+        ? `${API_URL}/api/trpc/notes.listByField?input=${JSON.stringify({ fieldId })}`
+        : `${API_URL}/api/trpc/notes.listAll`;
       const res = await fetch(url);
       const data = await res.json();
       return data.result?.data as FieldNote[];
@@ -129,7 +129,7 @@ export function useCreateNote() {
   
   return useMutation({
     mutationFn: async (note: Omit<FieldNote, 'id' | 'createdAt'>) => {
-      const res = await fetch(`${API_URL}/trpc/notes.create`, {
+      const res = await fetch(`${API_URL}/api/trpc/notes.create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(note),
@@ -147,7 +147,7 @@ export function useUser() {
   return useQuery({
     queryKey: ['user'],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/trpc/auth.me`);
+      const res = await fetch(`${API_URL}/api/trpc/auth.me`);
       const data = await res.json();
       return data.result?.data;
     },

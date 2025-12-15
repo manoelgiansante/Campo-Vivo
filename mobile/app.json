@@ -19,13 +19,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.campovivo.app",
+      "buildNumber": "1",
       "config": {
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Campo Vivo precisa da sua localização para mostrar seus campos no mapa.",
-        "NSLocationAlwaysUsageDescription": "Campo Vivo precisa da sua localização para rastrear seus campos.",
-        "NSCameraUsageDescription": "Campo Vivo precisa da câmera para tirar fotos dos campos."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Campo Vivo precisa da sua localização para rastrear seus campos em segundo plano.",
+        "NSCameraUsageDescription": "Campo Vivo precisa da câmera para tirar fotos dos campos.",
+        "NSPhotoLibraryUsageDescription": "Campo Vivo precisa de acesso às fotos para anexar imagens aos campos.",
+        "UIBackgroundModes": ["location", "fetch"]
       }
     },
     "android": {
@@ -34,13 +37,20 @@
         "backgroundColor": "#16a34a"
       },
       "package": "com.campovivo.app",
+      "versionCode": 1,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "CAMERA",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
     },
     "web": {
       "bundler": "metro",
