@@ -144,14 +144,16 @@ function FieldThumbnail({
 // Gráfico NDVI anual estilo OneSoil
 function NdviYearChart({ 
   data, 
-  height = 120,
+  height = 180,
   currentNdvi
 }: { 
   data: { date: Date; ndvi: number }[]; 
   height?: number;
   currentNdvi?: number;
 }) {
-  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; ndvi: number; date: Date; index: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   
   const chartData = useMemo(() => {
     if (data.length > 0) return data;
@@ -159,109 +161,344 @@ function NdviYearChart({
     const now = new Date();
     return months.map((_, i) => {
       const date = new Date(now.getFullYear(), i, 15);
-      const baseNdvi = 0.4 + Math.sin((i + 3) * 0.5) * 0.25;
-      return { date, ndvi: Math.max(0.2, Math.min(0.9, baseNdvi + (Math.random() - 0.5) * 0.1)) };
+      const baseNdvi = 0.45 + Math.sin((i + 3) * 0.5) * 0.25;
+      return { date, ndvi: Math.max(0.2, Math.min(0.9, baseNdvi + (Math.random() - 0.5) * 0.08)) };
     });
   }, [data]);
 
-  const width = 400;
-  const padding = { top: 15, right: 15, bottom: 25, left: 35 };
+  const width = 600;
+  const padding = { top: 25, right: 25, bottom: 45, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
-  const yScale = (v: number) => padding.top + chartHeight - (v * chartHeight);
+  const xScale = useCallback((i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth, [chartData.length, chartWidth]);
+  const yScale = useCallback((v: number) => padding.top + chartHeight - (v * chartHeight), [chartHeight]);
 
-  const points = chartData.map((d, i) => ({ 
+  const points = useMemo(() => chartData.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.ndvi),
-    ndvi: d.ndvi 
-  }));
+    ndvi: d.ndvi,
+    date: d.date,
+    index: i
+  })), [chartData, xScale, yScale]);
 
-  // Criar path suave com curvas bezier
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const cpx = (prev.x + curr.x) / 2;
-    pathD += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
-  }
+  // Criar path suave com curvas bezier (Catmull-Rom)
+  const createSmoothPath = useCallback((pts: typeof points) => {
+    if (pts.length < 2) return `M ${pts[0].x} ${pts[0].y}`;
+    
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      
+      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    
+    return path;
+  }, []);
 
-  // Path para área preenchida
-  const areaPath = pathD + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+  const linePath = createSmoothPath(points);
+  const areaPath = linePath + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
+  // Mouse tracking
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * width;
+    
+    let closestPoint = points[0];
+    let minDist = Math.abs(x - points[0].x);
+    
+    for (const point of points) {
+      const dist = Math.abs(x - point.x);
+      if (dist < minDist) {
+        minDist = dist;
+        closestPoint = point;
+      }
+    }
+    
+    if (minDist < 40) {
+      setHoveredPoint(closestPoint);
+    } else {
+      setHoveredPoint(null);
+    }
+  }, [points, width]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredPoint(null);
+  }, []);
+
+  // Y-axis ticks
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+  
+  // Cor baseada no NDVI
+  const getNdviGradientColors = (ndvi: number) => {
+    if (ndvi >= 0.7) return { main: "#16a34a", light: "#4ade80", bg: "rgba(22, 163, 74, 0.15)" };
+    if (ndvi >= 0.5) return { main: "#65a30d", light: "#a3e635", bg: "rgba(101, 163, 13, 0.15)" };
+    if (ndvi >= 0.3) return { main: "#ca8a04", light: "#facc15", bg: "rgba(202, 138, 4, 0.15)" };
+    return { main: "#dc2626", light: "#f87171", bg: "rgba(220, 38, 38, 0.15)" };
+  };
+
+  const avgNdvi = chartData.reduce((sum, d) => sum + d.ndvi, 0) / chartData.length;
+  const colors = getNdviGradientColors(avgNdvi);
 
   const lastPoint = points[points.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-      <defs>
-        <linearGradient id="ndvi-area-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
+    <div className="relative">
+      <svg 
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`} 
+        className="w-full h-auto cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        <defs>
+          {/* Gradiente de área principal */}
+          <linearGradient id="ndvi-area-gradient-pro" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={colors.main} stopOpacity="0.35" />
+            <stop offset="50%" stopColor={colors.main} stopOpacity="0.12" />
+            <stop offset="100%" stopColor={colors.main} stopOpacity="0.02" />
+          </linearGradient>
+          
+          {/* Gradiente da linha */}
+          <linearGradient id="ndvi-line-gradient-pro" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={colors.light} />
+            <stop offset="50%" stopColor={colors.main} />
+            <stop offset="100%" stopColor={colors.main} />
+          </linearGradient>
 
-      {/* Grid lines */}
-      {[0.25, 0.5, 0.75, 1].map(v => (
-        <g key={v}>
+          {/* Glow effect */}
+          <filter id="glow-ndvi" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+
+          {/* Shadow para pontos */}
+          <filter id="point-shadow-ndvi" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={colors.main} floodOpacity="0.4"/>
+          </filter>
+        </defs>
+
+        {/* Background com gradiente sutil */}
+        <rect 
+          x={padding.left} 
+          y={padding.top} 
+          width={chartWidth} 
+          height={chartHeight} 
+          fill="#fafbfc"
+          rx="8"
+        />
+
+        {/* Grid horizontal */}
+        {yTicks.map(v => (
+          <g key={v}>
+            <line
+              x1={padding.left}
+              y1={yScale(v)}
+              x2={width - padding.right}
+              y2={yScale(v)}
+              stroke={v === 0.5 ? "#d1d5db" : "#e5e7eb"}
+              strokeWidth={v === 0.5 ? "1.5" : "1"}
+              strokeDasharray={v === 0.5 ? "" : "4 4"}
+            />
+            <text 
+              x={padding.left - 12} 
+              y={yScale(v)} 
+              fontSize="11" 
+              fill="#6b7280" 
+              textAnchor="end" 
+              dominantBaseline="middle"
+              fontWeight="500"
+            >
+              {v.toFixed(2)}
+            </text>
+          </g>
+        ))}
+
+        {/* Referência "Bom" e "Ruim" */}
+        <text x={width - padding.right + 5} y={yScale(0.75)} fontSize="9" fill="#16a34a" dominantBaseline="middle" fontWeight="600">Bom</text>
+        <text x={width - padding.right + 5} y={yScale(0.25)} fontSize="9" fill="#dc2626" dominantBaseline="middle" fontWeight="600">Baixo</text>
+
+        {/* Linha de hover vertical */}
+        {hoveredPoint && (
           <line
-            x1={padding.left}
-            y1={yScale(v)}
-            x2={width - padding.right}
-            y2={yScale(v)}
-            stroke="#f0f0f0"
-            strokeWidth="1"
+            x1={hoveredPoint.x}
+            y1={padding.top}
+            x2={hoveredPoint.x}
+            y2={padding.top + chartHeight}
+            stroke={colors.main}
+            strokeWidth="1.5"
+            strokeDasharray="6 4"
+            opacity="0.6"
           />
-          <text 
-            x={padding.left - 8} 
-            y={yScale(v)} 
-            fontSize="10" 
-            fill="#9ca3af" 
-            textAnchor="end" 
-            dominantBaseline="middle"
+        )}
+
+        {/* Área preenchida */}
+        <path d={areaPath} fill="url(#ndvi-area-gradient-pro)" />
+
+        {/* Linha principal com glow */}
+        <path 
+          d={linePath} 
+          fill="none" 
+          stroke={colors.main}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.15"
+        />
+        <path 
+          d={linePath} 
+          fill="none" 
+          stroke="url(#ndvi-line-gradient-pro)" 
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Pontos de dados */}
+        {points.map((point, i) => (
+          <g key={i}>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={hoveredPoint?.index === i ? 0 : 4}
+              fill="white"
+              stroke={colors.main}
+              strokeWidth="2"
+              opacity={hoveredPoint?.index === i ? 0 : 0.9}
+              className="transition-all duration-150"
+            />
+          </g>
+        ))}
+
+        {/* Ponto destacado no hover */}
+        {hoveredPoint && (
+          <g filter="url(#point-shadow-ndvi)">
+            <circle
+              cx={hoveredPoint.x}
+              cy={hoveredPoint.y}
+              r="10"
+              fill="white"
+              stroke={colors.main}
+              strokeWidth="3"
+            />
+            <circle
+              cx={hoveredPoint.x}
+              cy={hoveredPoint.y}
+              r="5"
+              fill={colors.main}
+            />
+          </g>
+        )}
+
+        {/* Ponto atual destacado */}
+        {!hoveredPoint && (
+          <g filter="url(#point-shadow-ndvi)">
+            <circle
+              cx={lastPoint.x}
+              cy={lastPoint.y}
+              r="8"
+              fill="white"
+              stroke={colors.main}
+              strokeWidth="3"
+            />
+            <circle
+              cx={lastPoint.x}
+              cy={lastPoint.y}
+              r="4"
+              fill={colors.main}
+            />
+          </g>
+        )}
+
+        {/* Labels do eixo X */}
+        {months.map((m, i) => (
+          <text
+            key={m}
+            x={padding.left + (i / 11) * chartWidth}
+            y={height - 12}
+            fontSize="11"
+            fill="#6b7280"
+            textAnchor="middle"
+            fontWeight="500"
           >
-            {v.toFixed(1)}
+            {m}
           </text>
-        </g>
-      ))}
+        ))}
 
-      {/* Area fill */}
-      <path d={areaPath} fill="url(#ndvi-area-gradient)" />
-
-      {/* Line */}
-      <path 
-        d={pathD} 
-        fill="none" 
-        stroke="#22c55e" 
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* Current point marker */}
-      <circle
-        cx={lastPoint.x}
-        cy={lastPoint.y}
-        r="6"
-        fill="#22c55e"
-        stroke="white"
-        strokeWidth="2"
-      />
-
-      {/* X-axis labels */}
-      {months.map((m, i) => (
+        {/* Título do eixo Y */}
         <text
-          key={m}
-          x={padding.left + (i / 11) * chartWidth}
-          y={height - 5}
+          x={12}
+          y={height / 2}
           fontSize="10"
           fill="#9ca3af"
           textAnchor="middle"
+          transform={`rotate(-90, 12, ${height / 2})`}
         >
-          {m}
+          Índice NDVI
         </text>
-      ))}
-    </svg>
+      </svg>
+
+      {/* Tooltip flutuante */}
+      {hoveredPoint && (
+        <div 
+          className="absolute pointer-events-none z-20 transform -translate-x-1/2"
+          style={{ 
+            left: `${(hoveredPoint.x / width) * 100}%`,
+            top: `${((hoveredPoint.y - 15) / height) * 100}%`,
+            transform: 'translate(-50%, -100%)'
+          }}
+        >
+          <div className="bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-2xl text-sm whitespace-nowrap backdrop-blur-sm border border-gray-700">
+            <div className="flex items-center gap-2 mb-1">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: colors.main }}
+              />
+              <span className="font-bold text-lg">{hoveredPoint.ndvi.toFixed(2)}</span>
+              <span className="text-gray-400 text-xs">NDVI</span>
+            </div>
+            <div className="text-gray-400 text-xs">
+              {format(new Date(hoveredPoint.date), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+            </div>
+          </div>
+          <div className="w-0 h-0 mx-auto border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-gray-900" />
+        </div>
+      )}
+
+      {/* Legenda de status */}
+      <div className="flex items-center justify-center gap-6 mt-3 text-xs">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-green-500" />
+          <span className="text-gray-600">Excelente (≥0.7)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-lime-500" />
+          <span className="text-gray-600">Bom (0.5-0.7)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-yellow-500" />
+          <span className="text-gray-600">Moderado (0.3-0.5)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-red-500" />
+          <span className="text-gray-600">Baixo (&lt;0.3)</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
