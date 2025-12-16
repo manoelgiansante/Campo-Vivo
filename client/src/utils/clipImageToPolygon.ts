@@ -84,64 +84,65 @@ export async function clipImageToPolygon(
 }
 
 /**
- * Converte valor NDVI para cor RGB usando a escala do OneSoil
- * Cores vibrantes: Vermelho -> Laranja -> Amarelo -> Verde lima -> Verde
+ * Converte valor NDVI para cor RGB usando a escala EXATA do OneSoil
+ * Baseado na imagem de referência: verde lima claro vibrante é dominante
  */
 function ndviToColor(ndvi: number): [number, number, number] {
-  // OneSoil usa escala de 0 a 1 para NDVI
-  // Valores típicos de vegetação saudável: 0.6-0.9
   const n = Math.max(0, Math.min(1, ndvi));
   
-  // Escala de cores do OneSoil (baseada na imagem de referência)
-  // Marrom/Vermelho (baixo) -> Amarelo -> Verde lima -> Verde (alto)
+  // Cores do OneSoil (extraídas da imagem de referência):
+  // - Verde lima claro/amarelado (#B8E87C ou similar) é a cor DOMINANTE
+  // - Verde mais escuro apenas nas bordas
+  // - Amarelo para valores médio-baixos
   
-  if (n < 0.2) {
-    // Marrom/Vermelho escuro (solo exposto, sem vegetação)
-    const t = n / 0.2;
+  if (n < 0.25) {
+    // Marrom/Laranja (solo, vegetação morta)
+    const t = n / 0.25;
     return [
-      Math.round(139 + t * 61),   // 139 -> 200 (marrom -> laranja escuro)
-      Math.round(90 + t * 50),    // 90 -> 140
-      Math.round(43),             // marrom
-    ];
-  } else if (n < 0.35) {
-    // Laranja a Amarelo
-    const t = (n - 0.2) / 0.15;
-    return [
-      Math.round(200 + t * 55),   // 200 -> 255
-      Math.round(140 + t * 95),   // 140 -> 235
-      Math.round(43 + t * 17),    // 43 -> 60
-    ];
-  } else if (n < 0.5) {
-    // Amarelo a Verde-amarelado (chartreuse)
-    const t = (n - 0.35) / 0.15;
-    return [
-      Math.round(255 - t * 55),   // 255 -> 200
-      Math.round(235 + t * 20),   // 235 -> 255
-      Math.round(60 + t * 20),    // 60 -> 80
-    ];
-  } else if (n < 0.65) {
-    // Verde-amarelado a Verde lima brilhante
-    const t = (n - 0.5) / 0.15;
-    return [
-      Math.round(200 - t * 80),   // 200 -> 120
-      Math.round(255 - t * 15),   // 255 -> 240
-      Math.round(80 - t * 20),    // 80 -> 60
-    ];
-  } else if (n < 0.8) {
-    // Verde lima a Verde médio
-    const t = (n - 0.65) / 0.15;
-    return [
-      Math.round(120 - t * 50),   // 120 -> 70
-      Math.round(240 - t * 40),   // 240 -> 200
+      Math.round(180 + t * 40),   // 180 -> 220
+      Math.round(120 + t * 60),   // 120 -> 180
       Math.round(60 + t * 10),    // 60 -> 70
     ];
-  } else {
-    // Verde médio a Verde escuro
-    const t = (n - 0.8) / 0.2;
+  } else if (n < 0.40) {
+    // Amarelo
+    const t = (n - 0.25) / 0.15;
     return [
-      Math.round(70 - t * 35),    // 70 -> 35
-      Math.round(200 - t * 60),   // 200 -> 140
-      Math.round(70 - t * 25),    // 70 -> 45
+      Math.round(220 + t * 35),   // 220 -> 255
+      Math.round(180 + t * 55),   // 180 -> 235
+      Math.round(70 + t * 10),    // 70 -> 80
+    ];
+  } else if (n < 0.55) {
+    // Amarelo para Verde-amarelado claro
+    const t = (n - 0.40) / 0.15;
+    return [
+      Math.round(255 - t * 55),   // 255 -> 200
+      Math.round(235 + t * 15),   // 235 -> 250
+      Math.round(80 + t * 40),    // 80 -> 120
+    ];
+  } else if (n < 0.70) {
+    // Verde lima CLARO (cor dominante do OneSoil!) - #B8E87C
+    // Esta é a faixa mais importante - vegetação saudável normal
+    const t = (n - 0.55) / 0.15;
+    return [
+      Math.round(200 - t * 16),   // 200 -> 184 (B8 = 184)
+      Math.round(250 - t * 18),   // 250 -> 232 (E8 = 232)
+      Math.round(120 + t * 4),    // 120 -> 124 (7C = 124)
+    ];
+  } else if (n < 0.82) {
+    // Verde lima médio - um pouco mais verde
+    const t = (n - 0.70) / 0.12;
+    return [
+      Math.round(184 - t * 64),   // 184 -> 120
+      Math.round(232 - t * 12),   // 232 -> 220
+      Math.round(124 - t * 24),   // 124 -> 100
+    ];
+  } else {
+    // Verde mais escuro (bordas, áreas muito saudáveis)
+    const t = (n - 0.82) / 0.18;
+    return [
+      Math.round(120 - t * 50),   // 120 -> 70
+      Math.round(220 - t * 50),   // 220 -> 170
+      Math.round(100 - t * 20),   // 100 -> 80
     ];
   }
 }

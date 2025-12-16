@@ -717,13 +717,13 @@ export default function FieldDetailPro() {
                 style="satellite"
               />
               
-              {/* NDVI Color Scale - Vertical, inside map */}
+              {/* NDVI Color Scale - Vertical, inside map - Cores OneSoil */}
               <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
                 <span className="text-[11px] text-white font-semibold mb-1 drop-shadow-lg">1.0</span>
                 <div 
                   className="w-4 h-36 rounded-sm shadow-lg"
                   style={{
-                    background: 'linear-gradient(to bottom, #22c55e 0%, #84cc16 25%, #eab308 50%, #f97316 75%, #ef4444 100%)'
+                    background: 'linear-gradient(to bottom, #46AA50 0%, #64C864 15%, #8CDC78 30%, #B8E87C 50%, #C8FA78 65%, #FFEB50 80%, #DCB446 90%, #B4783C 100%)'
                   }}
                 />
                 <span className="text-[11px] text-white font-semibold mt-1 drop-shadow-lg">0.0</span>
