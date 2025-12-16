@@ -424,7 +424,16 @@ export default function MapView() {
             variant="secondary"
             size="icon"
             className="bg-gray-800/90 text-white hover:bg-gray-700 rounded-full h-10 w-10"
-            onClick={() => setLocation("/fields/new")}
+            onClick={() => {
+              // Passar posição atual do mapa para a página de criação
+              if (mapInstance) {
+                const center = mapInstance.getCenter();
+                const zoom = mapInstance.getZoom();
+                setLocation(`/fields/new?lat=${center.lat.toFixed(6)}&lng=${center.lng.toFixed(6)}&zoom=${Math.round(zoom)}`);
+              } else {
+                setLocation("/fields/new");
+              }
+            }}
           >
             <Plus className="h-5 w-5" />
           </Button>

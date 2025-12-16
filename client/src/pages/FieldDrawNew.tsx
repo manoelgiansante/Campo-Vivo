@@ -21,8 +21,8 @@ import {
   Locate,
   Crown
 } from "lucide-react";
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useLocation, useParams } from "wouter";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
@@ -33,6 +33,28 @@ export default function FieldDrawNew() {
   const params = useParams<{ id?: string }>();
   const editId = params.id ? parseInt(params.id) : null;
   const isEditMode = editId !== null;
+
+  // Obter parâmetros da URL (posição do mapa)
+  const searchString = useSearch();
+  const urlParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const urlLat = urlParams.get('lat');
+  const urlLng = urlParams.get('lng');
+  const urlZoom = urlParams.get('zoom');
+  
+  // Centro inicial baseado nos parâmetros da URL ou padrão
+  const initialMapCenter = useMemo<[number, number]>(() => {
+    if (urlLng && urlLat) {
+      return [parseFloat(urlLng), parseFloat(urlLat)];
+    }
+    return [-47.9292, -15.7801]; // Brasília como padrão
+  }, [urlLat, urlLng]);
+  
+  const initialMapZoom = useMemo(() => {
+    if (urlZoom) {
+      return parseInt(urlZoom);
+    }
+    return 5;
+  }, [urlZoom]);
 
   const [, setLocation] = useLocation();
   const { user, isGuest } = useAuth();
@@ -51,11 +73,15 @@ export default function FieldDrawNew() {
   const watchIdRef = useRef<number | null>(null);
   const initialCenterRef = useRef<[number, number] | null>(null);
   const hasInitializedLocationRef = useRef(false);
+  const existingFieldsLoadedRef = useRef(false);
 
   // Check field limit
   const { data: fieldLimit } = trpc.auth.checkFieldLimit.useQuery(undefined, {
     enabled: !!user && !isEditMode,
   });
+
+  // Buscar campos existentes para mostrar no mapa
+  const { data: existingFields } = trpc.fields.list.useQuery();
 
   // Fetch existing field data if editing
   const { data: existingField } = trpc.fields.getById.useQuery(
@@ -302,8 +328,11 @@ export default function FieldDrawNew() {
     const currentCenter = map.getCenter();
     initialCenterRef.current = [currentCenter.lng, currentCenter.lat];
 
-    // Se não estiver editando e ainda não buscou localização, tentar obter localização do usuário
-    if (!isEditMode && !hasInitializedLocationRef.current) {
+    // Se veio com parâmetros de posição da URL, não buscar localização automaticamente
+    const hasUrlPosition = urlLat && urlLng;
+    
+    // Se não estiver editando e não veio posição da URL, tentar obter localização do usuário
+    if (!isEditMode && !hasInitializedLocationRef.current && !hasUrlPosition) {
       hasInitializedLocationRef.current = true;
       getUserLocation()
         .then(([lng, lat]) => {
@@ -322,7 +351,88 @@ export default function FieldDrawNew() {
         });
     }
 
-  }, [setMap, getUserLocation, isEditMode, updateUserMarker]);
+  }, [setMap, getUserLocation, isEditMode, updateUserMarker, urlLat, urlLng]);
+
+  // Mostrar campos existentes no mapa
+  useEffect(() => {
+    if (!mapInstance || !existingFields || existingFieldsLoadedRef.current) return;
+    
+    existingFieldsLoadedRef.current = true;
+    
+    existingFields.forEach((field) => {
+      // Não mostrar o campo que está sendo editado
+      if (isEditMode && field.id === editId) return;
+      if (!field.boundaries) return;
+      
+      try {
+        const fieldPoints = typeof field.boundaries === 'string' 
+          ? JSON.parse(field.boundaries) 
+          : field.boundaries;
+        
+        if (!Array.isArray(fieldPoints) || fieldPoints.length < 3) return;
+        
+        const coordinates = fieldPoints.map((p: any) => [p.lng, p.lat] as [number, number]);
+        // Fechar o polígono
+        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || 
+            coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+          coordinates.push(coordinates[0]);
+        }
+        
+        const sourceId = `existing-field-${field.id}`;
+        
+        // Adicionar source
+        mapInstance.addSource(sourceId, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: { name: field.name },
+            geometry: {
+              type: "Polygon",
+              coordinates: [coordinates],
+            },
+          },
+        });
+        
+        // Adicionar fill semi-transparente (azul para diferenciar do desenho verde)
+        mapInstance.addLayer({
+          id: `${sourceId}-fill`,
+          type: "fill",
+          source: sourceId,
+          paint: {
+            "fill-color": "#3B82F6",
+            "fill-opacity": 0.25,
+          },
+        });
+        
+        // Adicionar outline
+        mapInstance.addLayer({
+          id: `${sourceId}-outline`,
+          type: "line",
+          source: sourceId,
+          paint: {
+            "line-color": "#3B82F6",
+            "line-width": 2,
+            "line-dasharray": [2, 2],
+          },
+        });
+        
+        // Adicionar label com nome do campo
+        const centerLng = coordinates.reduce((sum, c) => sum + c[0], 0) / coordinates.length;
+        const centerLat = coordinates.reduce((sum, c) => sum + c[1], 0) / coordinates.length;
+        
+        const labelEl = document.createElement("div");
+        labelEl.className = "bg-blue-500/80 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap pointer-events-none";
+        labelEl.textContent = field.name;
+        
+        new mapboxgl.Marker({ element: labelEl })
+          .setLngLat([centerLng, centerLat])
+          .addTo(mapInstance);
+          
+      } catch (e) {
+        console.error("Erro ao mostrar campo existente:", e);
+      }
+    });
+  }, [mapInstance, existingFields, isEditMode, editId]);
 
   // Separar o listener de clique para reagir às mudanças de modo
   useEffect(() => {
@@ -420,8 +530,8 @@ export default function FieldDrawNew() {
       <MapboxMap
         onMapReady={handleMapReady}
         style="satellite"
-        initialZoom={5}
-        initialCenter={[-47.9292, -15.7801]}
+        initialZoom={initialMapZoom}
+        initialCenter={initialMapCenter}
         className="absolute inset-0"
       />
 
