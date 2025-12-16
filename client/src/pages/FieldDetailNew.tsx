@@ -229,6 +229,7 @@ export default function FieldDetailNew() {
         }
 
         // Base fill para percepção de área - cores estilo OneSoil
+        // PRIMEIRO adicionar o fill layer (camada de fundo)
         const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
         // Cores OneSoil: Vermelho (ruim) → Laranja → Amarelo → Verde (saudável)
         const fillColor = currentNdvi >= 0.7 ? "#2E7D32" : // Verde escuro
@@ -239,15 +240,19 @@ export default function FieldDetailNew() {
                          currentNdvi >= 0.2 ? "#FF9800" : // Laranja
                          "#E53935"; // Vermelho
 
-        mapInstance.addLayer({
-          id: fillLayerId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.1 : 0.5,
-          },
-        });
+        // Adicionar fill layer SOMENTE se não tiver imagem NDVI
+        // Se tiver imagem, não mostra fill (só a borda)
+        if (!ndviLoaded) {
+          mapInstance.addLayer({
+            id: fillLayerId,
+            type: "fill",
+            source: sourceId,
+            paint: {
+              "fill-color": fillColor,
+              "fill-opacity": 0.6,
+            },
+          });
+        }
 
         // Borda do campo (sempre visível)
         mapInstance.addLayer({
