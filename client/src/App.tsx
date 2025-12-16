@@ -5,7 +5,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { MobileNavBar } from "./components/MobileNavBar";
 
-// Pages - Novas páginas mobile-first
+// Pages - Dashboard profissional estilo OneSoil
+import Dashboard from "./pages/Dashboard";
 import Home from "./pages/Home";
 import MapView from "./pages/MapView";
 import Fields from "./pages/Fields";
@@ -19,14 +20,16 @@ import Auth from "./pages/Auth";
 function Router() {
   const [location] = useLocation();
   
-  // Esconder navbar em telas específicas
-  const hideNavbar = location.startsWith('/fields/new') || location.includes('/edit') || location === '/auth';
+  // Dashboard tem sua própria navegação, esconder a navbar mobile
+  const isDashboard = location === "/" || location === "/dashboard";
+  const hideNavbar = isDashboard || location.startsWith('/fields/new') || location.includes('/edit') || location === '/auth';
 
   return (
     <>
       <Switch>
-        {/* Home - Tela principal com mapa e resumo */}
-        <Route path="/" component={Home} />
+        {/* Dashboard principal estilo OneSoil */}
+        <Route path="/" component={Dashboard} />
+        <Route path="/dashboard" component={Dashboard} />
         
         {/* Autenticação */}
         <Route path="/auth" component={Auth} />
@@ -59,7 +62,7 @@ function Router() {
         </Route>
       </Switch>
       
-      {/* Navegação inferior - aparece em todas as páginas exceto algumas */}
+      {/* Navegação inferior - aparece em páginas mobile, não no dashboard */}
       {!hideNavbar && <MobileNavBar />}
     </>
   );
