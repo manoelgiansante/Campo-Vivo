@@ -698,7 +698,7 @@ export default function Dashboard() {
     { enabled: !!selectedFieldId }
   );
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
-    { fieldId: selectedFieldId!, days: 365 },
+    { fieldId: selectedFieldId!, days: 365, maxCloudCoverage: 30 },
     { enabled: !!selectedFieldId }
   );
   const { data: weather } = trpc.weather.getByField.useQuery(

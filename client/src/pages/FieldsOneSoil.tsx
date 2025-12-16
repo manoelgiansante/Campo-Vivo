@@ -106,6 +106,18 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
 }
 
 // Gráfico NDVI simples
+// Função para obter cor NDVI estilo OneSoil
+function getNdviChartColorOneSoil(value: number): string {
+  if (value >= 0.8) return "#22c55e";    // Verde escuro
+  if (value >= 0.7) return "#ADFF2F";    // Verde Lima (OneSoil)
+  if (value >= 0.6) return "#7FFF00";    // Chartreuse
+  if (value >= 0.5) return "#9ACD32";    // Verde Amarelado
+  if (value >= 0.4) return "#FFD700";    // Amarelo Dourado
+  if (value >= 0.3) return "#FFA500";    // Laranja
+  if (value >= 0.2) return "#FF6347";    // Tomate
+  return "#DC143C";                       // Vermelho Carmesim
+}
+
 function NdviChart({ data, height = 100 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
   if (!data.length) return null;
   
@@ -120,14 +132,48 @@ function NdviChart({ data, height = 100 }: { data: { date: Date; ndvi: number }[
   const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - ((v - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
   
-  const points = data.map((d, i) => ({ x: xScale(i), y: yScale(d.ndvi) }));
+  const points = data.map((d, i) => ({ 
+    x: xScale(i), 
+    y: yScale(d.ndvi),
+    color: getNdviChartColorOneSoil(d.ndvi)
+  }));
+  
+  // Criar path com gradiente
   let pathD = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
     pathD += ` L ${points[i].x} ${points[i].y}`;
   }
   
+  // Criar área preenchida
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${height - padding.bottom} L ${points[0].x} ${height - padding.bottom} Z`;
+  
+  // Criar gradiente baseado nos valores
+  const gradientId = `ndvi-gradient-${Math.random().toString(36).substr(2, 9)}`;
+  
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+          {points.map((p, i) => (
+            <stop 
+              key={i} 
+              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
+              stopColor={p.color} 
+            />
+          ))}
+        </linearGradient>
+        <linearGradient id={`${gradientId}-fill`} x1="0%" y1="0%" x2="100%" y2="0%">
+          {points.map((p, i) => (
+            <stop 
+              key={i} 
+              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
+              stopColor={p.color}
+              stopOpacity="0.3"
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      
       {/* Grid */}
       {[0.8, 0.4].map(v => (
         <g key={v}>
@@ -145,18 +191,24 @@ function NdviChart({ data, height = 100 }: { data: { date: Date; ndvi: number }[
         </g>
       ))}
       
-      {/* Line */}
-      <path d={pathD} fill="none" stroke="#22c55e" strokeWidth="2" />
+      {/* Area fill */}
+      <path d={areaD} fill={`url(#${gradientId}-fill)`} />
       
-      {/* Current point */}
-      {points.length > 0 && (
+      {/* Line with gradient */}
+      <path d={pathD} fill="none" stroke={`url(#${gradientId})`} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      
+      {/* Points */}
+      {points.map((p, i) => (
         <circle
-          cx={points[points.length - 1].x}
-          cy={points[points.length - 1].y}
-          r="4"
-          fill="#22c55e"
+          key={i}
+          cx={p.x}
+          cy={p.y}
+          r={i === points.length - 1 ? 5 : 3}
+          fill={p.color}
+          stroke="white"
+          strokeWidth={i === points.length - 1 ? 2 : 1}
         />
-      )}
+      ))}
     </svg>
   );
 }
@@ -179,7 +231,7 @@ export default function FieldsOneSoil() {
     { enabled: !!selectedFieldId }
   );
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
-    { fieldId: selectedFieldId!, days: 365 },
+    { fieldId: selectedFieldId!, days: 365, maxCloudCoverage: 30 },
     { enabled: !!selectedFieldId }
   );
   const { data: fieldCrops } = trpc.crops.listByField.useQuery(

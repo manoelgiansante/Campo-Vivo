@@ -37,6 +37,18 @@ import { format, subDays, subMonths, startOfYear, differenceInDays } from "date-
 import { ptBR } from "date-fns/locale";
 import mapboxgl from "mapbox-gl";
 
+// Função para obter cor NDVI estilo OneSoil
+function getNdviColorPro(value: number): string {
+  if (value >= 0.8) return "#22c55e";    // Verde escuro
+  if (value >= 0.7) return "#ADFF2F";    // Verde Lima (OneSoil)
+  if (value >= 0.6) return "#7FFF00";    // Chartreuse
+  if (value >= 0.5) return "#9ACD32";    // Verde Amarelado
+  if (value >= 0.4) return "#FFD700";    // Amarelo Dourado
+  if (value >= 0.3) return "#FFA500";    // Laranja
+  if (value >= 0.2) return "#FF6347";    // Tomate
+  return "#DC143C";                       // Vermelho Carmesim
+}
+
 // Gráfico NDVI estilo OneSoil
 function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
   if (!data.length) return null;
@@ -52,8 +64,14 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
   const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - ((v - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
   
+  // Criar pontos com cores
+  const points = data.map((d, i) => ({ 
+    x: xScale(i), 
+    y: yScale(d.ndvi),
+    color: getNdviColorPro(d.ndvi)
+  }));
+  
   // Criar path suave usando curvas
-  const points = data.map((d, i) => ({ x: xScale(i), y: yScale(d.ndvi) }));
   let pathD = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
     const prev = points[i - 1];
@@ -69,8 +87,34 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
   const months = ['Jan', 'Mar', 'May', 'Jul', 'Aug', 'Oct', 'Dec'];
   const yTicks = [1.05, 0.35, -0.35];
   
+  // Criar ID único para gradiente
+  const gradientId = `ndvi-pro-${Math.random().toString(36).substr(2, 9)}`;
+  
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+      {/* Gradient definitions */}
+      <defs>
+        <linearGradient id={`${gradientId}-line`} x1="0%" y1="0%" x2="100%" y2="0%">
+          {points.map((p, i) => (
+            <stop 
+              key={i} 
+              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
+              stopColor={p.color} 
+            />
+          ))}
+        </linearGradient>
+        <linearGradient id={`${gradientId}-area`} x1="0%" y1="0%" x2="100%" y2="0%">
+          {points.map((p, i) => (
+            <stop 
+              key={i} 
+              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
+              stopColor={p.color}
+              stopOpacity="0.25"
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      
       {/* Grid lines */}
       {yTicks.map(v => (
         <g key={v}>
@@ -109,39 +153,31 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
         </text>
       ))}
       
-      {/* Gradient definition */}
-      <defs>
-        <linearGradient id="ndviAreaGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.4" />
-          <stop offset="50%" stopColor="#22c55e" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      
       {/* Area fill */}
-      <path d={areaD} fill="url(#ndviAreaGradient)" />
+      <path d={areaD} fill={`url(#${gradientId}-area)`} />
       
-      {/* Main line */}
+      {/* Main line with gradient */}
       <path 
         d={pathD} 
         fill="none" 
-        stroke="#22c55e" 
-        strokeWidth="2"
+        stroke={`url(#${gradientId}-line)`}
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       
-      {/* Current point marker */}
-      {points.length > 0 && (
+      {/* Points with colors */}
+      {points.map((p, i) => (
         <circle
-          cx={points[points.length - 1].x}
-          cy={points[points.length - 1].y}
-          r="4"
-          fill="#22c55e"
+          key={i}
+          cx={p.x}
+          cy={p.y}
+          r={i === points.length - 1 ? 5 : 3}
+          fill={p.color}
           stroke="white"
-          strokeWidth="2"
+          strokeWidth={i === points.length - 1 ? 2 : 1}
         />
-      )}
+      ))}
     </svg>
   );
 }
@@ -240,7 +276,7 @@ export default function FieldDetailPro() {
 
   const { data: field, isLoading } = trpc.fields.getById.useQuery({ id: fieldId });
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
-    { fieldId, days: 365 },
+    { fieldId, days: 365, maxCloudCoverage: 30 },
     { enabled: !!fieldId }
   );
   const { data: ndviImage } = trpc.ndvi.getLatestNdviImage.useQuery(

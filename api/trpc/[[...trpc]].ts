@@ -777,7 +777,11 @@ const appRouter = t.router({
       
     // Histórico de NDVI
     history: protectedProcedure
-      .input(z.object({ fieldId: z.number(), days: z.number().default(30) }))
+      .input(z.object({ 
+        fieldId: z.number(), 
+        days: z.number().default(90),
+        maxCloudCoverage: z.number().default(30), // Máximo de cobertura de nuvens permitido (%)
+      }))
       .query(async ({ ctx, input }) => {
         const database = await getDb();
         const [field] = await database
@@ -788,14 +792,15 @@ const appRouter = t.router({
           
         if (!field) throw new Error("Campo não encontrado");
         
-        // Se não tem API key, retornar histórico simulado
+        // Se não tem API key, retornar histórico simulado (apenas dias claros)
         if (!process.env.AGROMONITORING_API_KEY || !field.agroPolygonId) {
           const history = [];
-          for (let i = 0; i < input.days; i += 5) {
+          for (let i = 0; i < input.days; i += 7) {
+            // Simular dados apenas para dias claros
             history.push({
               date: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
               ndvi: 0.5 + Math.random() * 0.4,
-              cloudCoverage: Math.random() * 30,
+              cloudCoverage: Math.floor(Math.random() * 20), // Sempre baixa cobertura
             });
           }
           return history;
@@ -807,7 +812,13 @@ const appRouter = t.router({
           const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
           const historyData = await getAgroNdviHistory(field.agroPolygonId, startDate, endDate);
           
-          return historyData.map(h => ({
+          // Filtrar dias nublados e ordenar por data
+          const filteredData = historyData
+            .filter(h => h.cl <= input.maxCloudCoverage) // Apenas dias com baixa cobertura de nuvens
+            .filter(h => h.data?.mean != null && h.data.mean > 0) // Apenas dados NDVI válidos
+            .sort((a, b) => a.dt - b.dt); // Ordenar por data (mais antigo primeiro)
+          
+          return filteredData.map(h => ({
             date: new Date(h.dt * 1000).toISOString(),
             ndvi: h.data.mean,
             cloudCoverage: h.cl,

@@ -45,7 +45,7 @@ export default function FieldDetailNew() {
 
   const { data: field, isLoading } = trpc.fields.getById.useQuery({ id: fieldId });
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
-    { fieldId, days: 30 },
+    { fieldId, days: 90, maxCloudCoverage: 30 }, // 90 dias, filtrar nuvens > 30%
     { enabled: !!fieldId }
   );
 
@@ -663,71 +663,153 @@ function FieldDetailSkeleton() {
   );
 }
 
-// Helper function to get NDVI color - Estilo OneSoil
+// Helper function to get NDVI color - Estilo OneSoil (cores vibrantes)
 function getNdviColor(ndvi: number): string {
-  if (ndvi < 0.2) return "#E53935"; // Vermelho (estresse)
-  if (ndvi < 0.3) return "#FF5722"; // Laranja-vermelho
-  if (ndvi < 0.4) return "#FF9800"; // Laranja
-  if (ndvi < 0.5) return "#FFC107"; // Amarelo
-  if (ndvi < 0.6) return "#CDDC39"; // Amarelo-verde
-  if (ndvi < 0.7) return "#8BC34A"; // Verde claro
-  if (ndvi < 0.8) return "#4CAF50"; // Verde
-  return "#2E7D32"; // Verde escuro
+  if (ndvi < 0.2) return "#DC143C"; // Vermelho carmesim
+  if (ndvi < 0.3) return "#FF6347"; // Tomate
+  if (ndvi < 0.4) return "#FFA500"; // Laranja
+  if (ndvi < 0.5) return "#FFD700"; // Amarelo dourado
+  if (ndvi < 0.6) return "#9ACD32"; // Verde amarelado
+  if (ndvi < 0.7) return "#7FFF00"; // Chartreuse (verde lima brilhante)
+  if (ndvi < 0.8) return "#ADFF2F"; // Verde lima (OneSoil signature color)
+  return "#22c55e"; // Verde vibrante
 }
 
 // Simple NDVI Chart Component
-function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number }> }) {
-  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+// Função para obter cor NDVI estilo OneSoil
+function getNdviChartColor(value: number): string {
+  if (value >= 0.8) return "#22c55e";    // Verde escuro
+  if (value >= 0.7) return "#ADFF2F";    // Verde Lima (OneSoil)
+  if (value >= 0.6) return "#7FFF00";    // Chartreuse
+  if (value >= 0.5) return "#9ACD32";    // Verde Amarelado
+  if (value >= 0.4) return "#FFD700";    // Amarelo Dourado
+  if (value >= 0.3) return "#FFA500";    // Laranja
+  if (value >= 0.2) return "#FF6347";    // Tomate
+  return "#DC143C";                       // Vermelho Carmesim
+}
+
+function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number; cloudCoverage?: number }> }) {
+  // Filtrar dados válidos (sem nuvens e com NDVI válido)
+  const validData = data
+    .filter(d => {
+      const ndvi = d.value || d.ndvi;
+      const clouds = d.cloudCoverage ?? 0;
+      return ndvi != null && ndvi > 0 && clouds < 30;
+    })
+    .sort((a, b) => new Date(a.date || '').getTime() - new Date(b.date || '').getTime());
   
   // Gerar dados simulados se não houver dados reais
-  const chartData = data.length > 0 ? data : Array.from({ length: 12 }, (_, i) => ({
-    month: months[i],
-    value: 0.4 + Math.random() * 0.4,
+  const chartData = validData.length > 0 ? validData.map(d => ({
+    date: d.date,
+    value: d.value || d.ndvi || 0.5,
+  })) : Array.from({ length: 12 }, (_, i) => ({
+    date: new Date(Date.now() - (11 - i) * 7 * 24 * 60 * 60 * 1000).toISOString(),
+    value: 0.5 + Math.random() * 0.35,
   }));
 
+  // Criar gradiente baseado nos valores reais
+  const gradientStops = chartData.map((d, i) => ({
+    offset: chartData.length > 1 ? (i / (chartData.length - 1)) * 100 : 50,
+    color: getNdviChartColor(d.value),
+  }));
+
+  // Formatar labels do eixo X
+  const xLabels = chartData.length > 0 ? (() => {
+    if (chartData.length <= 6) {
+      return chartData.map(d => {
+        const date = new Date(d.date || '');
+        return `${date.getDate()}/${date.getMonth() + 1}`;
+      });
+    }
+    // Mostrar apenas alguns labels para não ficar muito cheio
+    const step = Math.ceil(chartData.length / 6);
+    return chartData.map((d, i) => {
+      if (i % step === 0 || i === chartData.length - 1) {
+        const date = new Date(d.date || '');
+        return `${date.getDate()}/${date.getMonth() + 1}`;
+      }
+      return '';
+    });
+  })() : [];
+
   return (
-    <div className="relative h-24">
-      <svg viewBox="0 0 400 100" className="w-full h-full" preserveAspectRatio="none">
+    <div className="relative h-32">
+      <svg viewBox="0 0 400 120" className="w-full h-full" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="ndviGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#4CAF50" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#4CAF50" stopOpacity="0.05" />
+          {/* Gradiente horizontal baseado nos valores NDVI */}
+          <linearGradient id="ndviLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            {gradientStops.map((stop, i) => (
+              <stop key={i} offset={`${stop.offset}%`} stopColor={stop.color} />
+            ))}
+          </linearGradient>
+          <linearGradient id="ndviFillGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            {gradientStops.map((stop, i) => (
+              <stop key={i} offset={`${stop.offset}%`} stopColor={stop.color} stopOpacity="0.3" />
+            ))}
           </linearGradient>
         </defs>
         
-        {/* Area fill */}
+        {/* Grid lines */}
+        <line x1="0" y1="30" x2="400" y2="30" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
+        <line x1="0" y1="60" x2="400" y2="60" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
+        <line x1="0" y1="90" x2="400" y2="90" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
+        
+        {/* Area fill com gradiente */}
         <path
           d={`M 0 100 ${chartData.map((d, i) => {
-            const x = (i / (chartData.length - 1)) * 400;
-            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
+            const y = 100 - (d.value * 100);
             return `L ${x} ${y}`;
           }).join(' ')} L 400 100 Z`}
-          fill="url(#ndviGradient)"
+          fill="url(#ndviFillGradient)"
         />
         
-        {/* Line */}
+        {/* Line com gradiente */}
         <path
           d={`M ${chartData.map((d, i) => {
-            const x = (i / (chartData.length - 1)) * 400;
-            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
+            const y = 100 - (d.value * 100);
             return `${i === 0 ? '' : 'L '}${x} ${y}`;
           }).join(' ')}`}
           fill="none"
-          stroke="#4CAF50"
-          strokeWidth="2"
+          stroke="url(#ndviLineGradient)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
+        
+        {/* Pontos nos valores */}
+        {chartData.map((d, i) => {
+          const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
+          const y = 100 - (d.value * 100);
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r="4"
+              fill={getNdviChartColor(d.value)}
+              stroke="white"
+              strokeWidth="2"
+            />
+          );
+        })}
       </svg>
       
       {/* X-axis labels */}
-      <div className="flex justify-between text-xs text-gray-400 mt-1">
-        {months.map((m) => (
-          <span key={m}>{m}</span>
+      <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
+        {xLabels.map((label, i) => (
+          <span key={i} className="text-center" style={{ minWidth: '30px' }}>
+            {label}
+          </span>
         ))}
       </div>
       
-      {/* Y-axis reference */}
-      <div className="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-        0.5
+      {/* Y-axis labels */}
+      <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-xs text-gray-400 py-1">
+        <span>1.0</span>
+        <span>0.5</span>
+        <span>0.0</span>
       </div>
     </div>
   );
