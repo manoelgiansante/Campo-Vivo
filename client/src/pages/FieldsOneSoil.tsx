@@ -235,8 +235,8 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
             cx={p.x}
             cy={p.y}
             r={i === points.length - 1 ? 8 : 5}
-            fill={p.color}
-            stroke="white"
+            fill="white"
+            stroke={p.color}
             strokeWidth={i === points.length - 1 ? 3 : 2}
           />
         </g>
@@ -295,14 +295,19 @@ export default function FieldsOneSoil() {
   }, [fields]);
 
   const ndviChartData = useMemo(() => {
-    const mockData = [];
-    for (let i = 0; i < 12; i++) {
-      const date = subDays(new Date(), (11 - i) * 30);
-      const baseNdvi = 0.5 + Math.sin(i * 0.4) * 0.15;
-      mockData.push({ date, ndvi: Math.max(0.3, Math.min(0.9, baseNdvi)) });
+    // Usar dados reais do Copernicus se disponíveis
+    if (ndviHistory && ndviHistory.length > 0) {
+      return ndviHistory
+        .filter((d: any) => d.ndvi != null && d.ndvi > 0)
+        .map((d: any) => ({
+          date: new Date(d.date),
+          ndvi: d.ndvi || d.value || 0
+        }))
+        .sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
     }
-    return mockData;
-  }, []);
+    // Retornar array vazio se não houver dados
+    return [];
+  }, [ndviHistory]);
 
   const toggleFieldSelection = (fieldId: number) => {
     const newSelected = new Set(selectedFields);
