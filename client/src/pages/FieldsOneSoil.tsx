@@ -182,7 +182,7 @@ export default function FieldsOneSoil() {
   );
 
   const proxyImageUrl = useMemo(() => 
-    selectedFieldId ? `/api/ndvi-image/${selectedFieldId}` : null
+    selectedFieldId ? `/api/copernicus-ndvi/${selectedFieldId}?palette=contrast` : null
   , [selectedFieldId]);
 
   const filteredFields = useMemo(() => {

@@ -60,9 +60,10 @@ export default function FieldDetailNew() {
     { enabled: !!fieldId }
   );
 
-  // URLs do proxy local para evitar CORS
-  const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
-  const proxyTileUrl = useMemo(() => `/api/ndvi-tiles/${fieldId}/{z}/{x}/{y}.png`, [fieldId]);
+  // URLs do proxy local para evitar CORS (usando Copernicus Sentinel-2)
+  const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
+  // Copernicus não usa tiles, apenas imagem única
+  const proxyTileUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
 
   // Draw field on map with NDVI overlay
   useEffect(() => {

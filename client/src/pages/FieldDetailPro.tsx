@@ -272,7 +272,7 @@ export default function FieldDetailPro() {
     { enabled: !!fieldId }
   );
 
-  const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
+  const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
 
   // Dados para gráficos
   const ndviChartData = useMemo(() => {
