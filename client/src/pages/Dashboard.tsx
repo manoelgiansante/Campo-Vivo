@@ -773,6 +773,15 @@ export default function Dashboard() {
           >
             <FileText className="h-5 w-5" />
           </button>
+          
+          {/* PRO Button */}
+          <button 
+            className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white hover:from-amber-400 hover:to-orange-400 transition-all mt-2 shadow-lg shadow-orange-500/20"
+            title="CampoVivo PRO"
+            onClick={() => setLocation("/pro")}
+          >
+            <span className="text-[10px] font-bold">PRO</span>
+          </button>
         </div>
 
         {/* Bottom Navigation */}

@@ -7,6 +7,7 @@ import { MobileNavBar } from "./components/MobileNavBar";
 
 // Pages - Dashboard profissional estilo OneSoil
 import Dashboard from "./pages/Dashboard";
+import Pro from "./pages/Pro";
 import Home from "./pages/Home";
 import MapView from "./pages/MapView";
 import Fields from "./pages/Fields";
@@ -20,9 +21,10 @@ import Auth from "./pages/Auth";
 function Router() {
   const [location] = useLocation();
   
-  // Dashboard tem sua própria navegação, esconder a navbar mobile
+  // Dashboard e Pro tem sua própria navegação, esconder a navbar mobile
   const isDashboard = location === "/" || location === "/dashboard";
-  const hideNavbar = isDashboard || location.startsWith('/fields/new') || location.includes('/edit') || location === '/auth';
+  const isPro = location === "/pro";
+  const hideNavbar = isDashboard || isPro || location.startsWith('/fields/new') || location.includes('/edit') || location === '/auth';
 
   return (
     <>
@@ -30,6 +32,9 @@ function Router() {
         {/* Dashboard principal estilo OneSoil */}
         <Route path="/" component={Dashboard} />
         <Route path="/dashboard" component={Dashboard} />
+        
+        {/* Página PRO - Landing page */}
+        <Route path="/pro" component={Pro} />
         
         {/* Autenticação */}
         <Route path="/auth" component={Auth} />
