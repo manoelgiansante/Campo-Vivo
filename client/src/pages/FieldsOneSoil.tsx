@@ -105,26 +105,42 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
   );
 }
 
-// Gráfico NDVI estilo OneSoil - linha verde com pontos e área preenchida
-function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
-  if (!data.length) return null;
+// Função para obter cor do ponto baseado no valor NDVI (como OneSoil)
+function getNdviPointColor(ndvi: number): string {
+  if (ndvi >= 0.7) return "#22c55e";    // Verde escuro - Excelente
+  if (ndvi >= 0.5) return "#84cc16";    // Verde lima - Bom
+  if (ndvi >= 0.3) return "#eab308";    // Amarelo - Moderado  
+  return "#ef4444";                      // Vermelho - Baixo
+}
+
+// Gráfico NDVI estilo OneSoil - com cores por valor
+function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
+  if (!data.length) {
+    return (
+      <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+        Sem dados de NDVI disponíveis
+      </div>
+    );
+  }
   
-  const width = 600;
-  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+  const width = 800;
+  const padding = { top: 20, right: 60, bottom: 40, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
-  // Escala Y de 0.25 a 1.00 (como OneSoil)
-  const minNdvi = 0.25;
-  const maxNdvi = 1.00;
+  // Escala Y de 0 a 1 (como OneSoil)
+  const minNdvi = 0;
+  const maxNdvi = 1;
   
   const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
-  const yScale = (v: number) => padding.top + chartHeight - ((Math.max(v, minNdvi) - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
+  const yScale = (v: number) => padding.top + chartHeight - ((Math.max(0, Math.min(1, v)) - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
   
   const points = data.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.ndvi),
-    ndvi: d.ndvi
+    ndvi: d.ndvi,
+    color: getNdviPointColor(d.ndvi),
+    date: d.date,
   }));
   
   // Criar path da linha
@@ -133,19 +149,22 @@ function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[
     pathD += ` L ${points[i].x} ${points[i].y}`;
   }
   
-  // Criar área preenchida
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
+  // Criar área preenchida cinza claro (como OneSoil)
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(0)} L ${points[0].x} ${yScale(0)} Z`;
   
   // Linhas de grade Y
-  const yGridLines = [1.00, 0.75, 0.50];
+  const yGridLines = [1, 0.8, 0.5, 0.4];
+  
+  // Meses para eixo X
+  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
       <defs>
-        {/* Gradiente para área preenchida - verde claro transparente */}
-        <linearGradient id="ndviAreaFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#4ade80" stopOpacity="0.05" />
+        {/* Gradiente para área preenchida - cinza claro como OneSoil */}
+        <linearGradient id="ndviAreaFillGray" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#d1d5db" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#d1d5db" stopOpacity="0.1" />
         </linearGradient>
       </defs>
       
@@ -169,49 +188,65 @@ function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[
             textAnchor="end" 
             dominantBaseline="middle"
           >
-            {v.toFixed(2)}
+            {v.toFixed(1)}
           </text>
         </g>
       ))}
       
-      {/* Área preenchida verde claro */}
-      <path d={areaD} fill="url(#ndviAreaFill)" />
+      {/* Labels do eixo X (meses) */}
+      {months.map((month, i) => (
+        <text
+          key={month}
+          x={padding.left + (i / 11) * chartWidth}
+          y={height - 10}
+          fontSize="10"
+          fill="#9ca3af"
+          textAnchor="middle"
+        >
+          {month}
+        </text>
+      ))}
       
-      {/* Linha principal verde */}
-      <path 
-        d={pathD} 
-        fill="none" 
-        stroke="#4ade80" 
-        strokeWidth="2" 
-        strokeLinecap="round" 
-        strokeLinejoin="round" 
-      />
+      {/* Área preenchida cinza claro */}
+      <path d={areaD} fill="url(#ndviAreaFillGray)" />
       
-      {/* Pontos circulares em cada medição */}
+      {/* Linha conectando os pontos - gradiente baseado nos valores */}
+      {points.map((p, i) => {
+        if (i === 0) return null;
+        const prev = points[i - 1];
+        return (
+          <line
+            key={`line-${i}`}
+            x1={prev.x}
+            y1={prev.y}
+            x2={p.x}
+            y2={p.y}
+            stroke={p.color}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        );
+      })}
+      
+      {/* Pontos circulares coloridos por valor NDVI */}
       {points.map((p, i) => (
         <g key={i}>
-          {/* Círculo externo branco */}
           <circle
             cx={p.x}
             cy={p.y}
-            r="5"
-            fill="white"
-            stroke="#4ade80"
-            strokeWidth="2"
+            r={i === points.length - 1 ? 8 : 5}
+            fill={p.color}
+            stroke="white"
+            strokeWidth={i === points.length - 1 ? 3 : 2}
           />
-          {/* Círculo interno verde (último ponto maior) */}
-          {i === points.length - 1 && (
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r="8"
-              fill="#4ade80"
-              stroke="white"
-              strokeWidth="3"
-            />
-          )}
         </g>
       ))}
+      
+      {/* Legenda de cores (lado direito) */}
+      <g transform={`translate(${width - 50}, ${padding.top})`}>
+        <text x="0" y="0" fontSize="10" fill="#22c55e" fontWeight="bold">Bom</text>
+        <text x="0" y="70" fontSize="10" fill="#ef4444" fontWeight="bold">Baixo</text>
+      </g>
     </svg>
   );
 }

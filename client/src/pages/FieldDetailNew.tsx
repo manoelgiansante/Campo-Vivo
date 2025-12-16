@@ -677,7 +677,16 @@ function getNdviColor(ndvi: number): string {
 
 // Simple NDVI Chart Component
 // Função para obter cor NDVI estilo OneSoil
-// Gráfico NDVI estilo OneSoil - linha verde com pontos e área preenchida
+// Cor do ponto baseada no valor NDVI (como OneSoil)
+function getNdviPointColor(ndvi: number): string {
+  if (ndvi >= 0.7) return "#22c55e"; // verde - vegetação saudável
+  if (ndvi >= 0.5) return "#84cc16"; // lima - vegetação moderada
+  if (ndvi >= 0.35) return "#eab308"; // amarelo - vegetação baixa
+  if (ndvi >= 0.2) return "#f97316"; // laranja - vegetação muito baixa
+  return "#ef4444"; // vermelho - solo exposto/sem vegetação
+}
+
+// Gráfico NDVI estilo OneSoil - com cor por valor de NDVI
 function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number; cloudCoverage?: number }> }) {
   // Filtrar dados válidos (sem nuvens e com NDVI válido)
   const validData = data
@@ -688,14 +697,19 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
     })
     .sort((a, b) => new Date(a.date || '').getTime() - new Date(b.date || '').getTime());
   
-  // Gerar dados simulados se não houver dados reais
-  const chartData = validData.length > 0 ? validData.map(d => ({
+  // Usar apenas dados reais - não simular
+  const chartData = validData.map(d => ({
     date: d.date,
-    value: d.value || d.ndvi || 0.5,
-  })) : Array.from({ length: 20 }, (_, i) => ({
-    date: new Date(Date.now() - (19 - i) * 7 * 24 * 60 * 60 * 1000).toISOString(),
-    value: 0.5 + Math.random() * 0.35,
+    value: d.value || d.ndvi || 0,
   }));
+
+  if (chartData.length === 0) {
+    return (
+      <div className="h-24 flex items-center justify-center text-gray-400 text-sm">
+        Sem dados NDVI disponíveis
+      </div>
+    );
+  }
 
   const width = 400;
   const height = 100;
@@ -703,8 +717,8 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
-  // Escala Y de 0.25 a 1.00 (como OneSoil)
-  const minNdvi = 0.25;
+  // Escala Y de 0 a 1.00
+  const minNdvi = 0;
   const maxNdvi = 1.00;
   
   const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
@@ -713,32 +727,16 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
   const points = chartData.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.value),
-    value: d.value
+    value: d.value,
+    color: getNdviPointColor(d.value)
   }));
   
-  // Criar path da linha
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    pathD += ` L ${points[i].x} ${points[i].y}`;
-  }
-  
-  // Criar área preenchida
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
-  
   // Linhas de grade Y
-  const yGridLines = [1.00, 0.75, 0.50];
+  const yGridLines = [1.00, 0.75, 0.50, 0.25];
 
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          {/* Gradiente para área preenchida - verde claro transparente */}
-          <linearGradient id="ndviAreaFillDetail" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#4ade80" stopOpacity="0.05" />
-          </linearGradient>
-        </defs>
-        
         {/* Linhas de grade horizontais pontilhadas */}
         {yGridLines.map(v => (
           <g key={v}>
@@ -764,20 +762,27 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
           </g>
         ))}
         
-        {/* Área preenchida verde claro */}
-        <path d={areaD} fill="url(#ndviAreaFillDetail)" />
+        {/* Segmentos de linha coloridos por valor */}
+        {points.slice(0, -1).map((p, i) => {
+          const next = points[i + 1];
+          // Usar cor média entre os dois pontos
+          const avgValue = (p.value + next.value) / 2;
+          const segmentColor = getNdviPointColor(avgValue);
+          return (
+            <line
+              key={`seg-${i}`}
+              x1={p.x}
+              y1={p.y}
+              x2={next.x}
+              y2={next.y}
+              stroke={segmentColor}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+          );
+        })}
         
-        {/* Linha principal verde */}
-        <path 
-          d={pathD} 
-          fill="none" 
-          stroke="#4ade80" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
-          strokeLinejoin="round" 
-        />
-        
-        {/* Pontos circulares em cada medição */}
+        {/* Pontos circulares em cada medição - cor baseada no valor NDVI */}
         {points.map((p, i) => (
           <circle
             key={i}
@@ -785,7 +790,7 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
             cy={p.y}
             r={i === points.length - 1 ? 6 : 4}
             fill="white"
-            stroke="#4ade80"
+            stroke={p.color}
             strokeWidth="2"
           />
         ))}
@@ -796,7 +801,7 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
             cx={points[points.length - 1].x}
             cy={points[points.length - 1].y}
             r="8"
-            fill="#4ade80"
+            fill={points[points.length - 1].color}
             stroke="white"
             strokeWidth="3"
           />

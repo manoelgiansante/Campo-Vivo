@@ -37,7 +37,16 @@ import { format, subDays, subMonths, startOfYear, differenceInDays } from "date-
 import { ptBR } from "date-fns/locale";
 import mapboxgl from "mapbox-gl";
 
-// Gráfico NDVI estilo OneSoil - linha verde com pontos e área preenchida
+// Cor do ponto baseada no valor NDVI (como OneSoil)
+function getNdviPointColor(ndvi: number): string {
+  if (ndvi >= 0.7) return "#22c55e"; // verde - vegetação saudável
+  if (ndvi >= 0.5) return "#84cc16"; // lima - vegetação moderada
+  if (ndvi >= 0.35) return "#eab308"; // amarelo - vegetação baixa
+  if (ndvi >= 0.2) return "#f97316"; // laranja - vegetação muito baixa
+  return "#ef4444"; // vermelho - solo exposto/sem vegetação
+}
+
+// Gráfico NDVI estilo OneSoil - com cor por valor de NDVI
 function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
   if (!data.length) return null;
   
@@ -46,8 +55,8 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
-  // Escala Y de 0.25 a 1.00 (como OneSoil)
-  const minNdvi = 0.25;
+  // Escala Y de 0 a 1.00
+  const minNdvi = 0;
   const maxNdvi = 1.00;
   
   const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
@@ -56,31 +65,15 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
   const points = data.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.ndvi),
-    ndvi: d.ndvi
+    ndvi: d.ndvi,
+    color: getNdviPointColor(d.ndvi)
   }));
   
-  // Criar path da linha
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    pathD += ` L ${points[i].x} ${points[i].y}`;
-  }
-  
-  // Criar área preenchida
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
-  
   // Linhas de grade Y
-  const yGridLines = [1.00, 0.75, 0.50];
+  const yGridLines = [1.00, 0.75, 0.50, 0.25];
   
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        {/* Gradiente para área preenchida - verde claro transparente */}
-        <linearGradient id="ndviAreaFillPro" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#4ade80" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      
       {/* Linhas de grade horizontais pontilhadas */}
       {yGridLines.map(v => (
         <g key={v}>
@@ -106,29 +99,34 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
         </g>
       ))}
       
-      {/* Área preenchida verde claro */}
-      <path d={areaD} fill="url(#ndviAreaFillPro)" />
+      {/* Segmentos de linha coloridos por valor */}
+      {points.slice(0, -1).map((p, i) => {
+        const next = points[i + 1];
+        const avgValue = (p.ndvi + next.ndvi) / 2;
+        const segmentColor = getNdviPointColor(avgValue);
+        return (
+          <line
+            key={`seg-${i}`}
+            x1={p.x}
+            y1={p.y}
+            x2={next.x}
+            y2={next.y}
+            stroke={segmentColor}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+        );
+      })}
       
-      {/* Linha principal verde */}
-      <path 
-        d={pathD} 
-        fill="none" 
-        stroke="#4ade80" 
-        strokeWidth="2" 
-        strokeLinecap="round" 
-        strokeLinejoin="round" 
-      />
-      
-      {/* Pontos circulares em cada medição */}
+      {/* Pontos circulares em cada medição - cor baseada no valor NDVI */}
       {points.map((p, i) => (
         <g key={i}>
-          {/* Círculo branco com borda verde */}
           <circle
             cx={p.x}
             cy={p.y}
             r="5"
             fill="white"
-            stroke="#4ade80"
+            stroke={p.color}
             strokeWidth="2"
           />
           {/* Último ponto destacado maior */}
@@ -137,7 +135,7 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
               cx={p.x}
               cy={p.y}
               r="8"
-              fill="#4ade80"
+              fill={p.color}
               stroke="white"
               strokeWidth="3"
             />

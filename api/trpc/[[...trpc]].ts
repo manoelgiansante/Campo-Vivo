@@ -775,12 +775,12 @@ const appRouter = t.router({
         };
       }),
       
-    // Histórico de NDVI
+    // Histórico de NDVI - usando Copernicus Statistical API
     history: protectedProcedure
       .input(z.object({ 
         fieldId: z.number(), 
-        days: z.number().default(90),
-        maxCloudCoverage: z.number().default(30), // Máximo de cobertura de nuvens permitido (%)
+        days: z.number().default(365), // Default para 1 ano
+        maxCloudCoverage: z.number().default(50),
       }))
       .query(async ({ ctx, input }) => {
         const database = await getDb();
@@ -792,41 +792,68 @@ const appRouter = t.router({
           
         if (!field) throw new Error("Campo não encontrado");
         
-        // Se não tem API key, retornar histórico simulado (apenas dias claros)
-        if (!process.env.AGROMONITORING_API_KEY || !field.agroPolygonId) {
-          const history = [];
-          for (let i = 0; i < input.days; i += 7) {
-            // Simular dados apenas para dias claros
-            history.push({
-              date: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
-              ndvi: 0.5 + Math.random() * 0.4,
-              cloudCoverage: Math.floor(Math.random() * 20), // Sempre baixa cobertura
-            });
+        // Tentar buscar dados reais do Copernicus
+        try {
+          // Buscar da nossa API Copernicus Statistics
+          const baseUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}` 
+            : 'http://localhost:3000';
+          
+          const response = await fetch(
+            `${baseUrl}/api/copernicus-ndvi-history/${input.fieldId}?days=${input.days}`,
+            { headers: { 'Content-Type': 'application/json' } }
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.history && data.history.length > 0) {
+              console.log(`[NDVI History] Got ${data.history.length} points from Copernicus for field ${input.fieldId}`);
+              
+              // Filtrar por cobertura de nuvens e retornar
+              return data.history
+                .filter((h: any) => h.cloudCoverage <= input.maxCloudCoverage)
+                .map((h: any) => ({
+                  date: h.date,
+                  ndvi: h.ndvi,
+                  cloudCoverage: h.cloudCoverage,
+                  ndviMin: h.ndviMin,
+                  ndviMax: h.ndviMax,
+                }));
+            }
           }
-          return history;
+        } catch (e) {
+          console.error("Erro ao buscar histórico do Copernicus:", e);
         }
         
-        // Buscar histórico real
-        try {
-          const endDate = new Date();
-          const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
-          const historyData = await getAgroNdviHistory(field.agroPolygonId, startDate, endDate);
-          
-          // Filtrar dias nublados e ordenar por data
-          const filteredData = historyData
-            .filter(h => h.cl <= input.maxCloudCoverage) // Apenas dias com baixa cobertura de nuvens
-            .filter(h => h.data?.mean != null && h.data.mean > 0) // Apenas dados NDVI válidos
-            .sort((a, b) => a.dt - b.dt); // Ordenar por data (mais antigo primeiro)
-          
-          return filteredData.map(h => ({
-            date: new Date(h.dt * 1000).toISOString(),
-            ndvi: h.data.mean,
-            cloudCoverage: h.cl,
-          }));
-        } catch (e) {
-          console.error("Erro ao buscar histórico NDVI:", e);
-          return [];
+        // Fallback: tentar AgroMonitoring se configurado
+        if (process.env.AGROMONITORING_API_KEY && field.agroPolygonId) {
+          try {
+            const endDate = new Date();
+            const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+            const historyData = await getAgroNdviHistory(field.agroPolygonId, startDate, endDate);
+            
+            const filteredData = historyData
+              .filter(h => h.cl <= input.maxCloudCoverage)
+              .filter(h => h.data?.mean != null && h.data.mean > 0)
+              .sort((a, b) => a.dt - b.dt);
+            
+            if (filteredData.length > 0) {
+              console.log(`[NDVI History] Got ${filteredData.length} points from AgroMonitoring for field ${input.fieldId}`);
+              return filteredData.map(h => ({
+                date: new Date(h.dt * 1000).toISOString(),
+                ndvi: h.data.mean,
+                cloudCoverage: h.cl,
+              }));
+            }
+          } catch (e) {
+            console.error("Erro ao buscar histórico do AgroMonitoring:", e);
+          }
         }
+        
+        // Último fallback: retornar array vazio (frontend mostrará mensagem)
+        console.log(`[NDVI History] No data available for field ${input.fieldId}`);
+        return [];
       }),
       
     // Buscar imagens de satélite
