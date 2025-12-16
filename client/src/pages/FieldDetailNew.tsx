@@ -677,17 +677,7 @@ function getNdviColor(ndvi: number): string {
 
 // Simple NDVI Chart Component
 // Função para obter cor NDVI estilo OneSoil
-function getNdviChartColor(value: number): string {
-  if (value >= 0.8) return "#22c55e";    // Verde escuro
-  if (value >= 0.7) return "#ADFF2F";    // Verde Lima (OneSoil)
-  if (value >= 0.6) return "#7FFF00";    // Chartreuse
-  if (value >= 0.5) return "#9ACD32";    // Verde Amarelado
-  if (value >= 0.4) return "#FFD700";    // Amarelo Dourado
-  if (value >= 0.3) return "#FFA500";    // Laranja
-  if (value >= 0.2) return "#FF6347";    // Tomate
-  return "#DC143C";                       // Vermelho Carmesim
-}
-
+// Gráfico NDVI estilo OneSoil - linha verde com pontos e área preenchida
 function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number; cloudCoverage?: number }> }) {
   // Filtrar dados válidos (sem nuvens e com NDVI válido)
   const validData = data
@@ -702,115 +692,116 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
   const chartData = validData.length > 0 ? validData.map(d => ({
     date: d.date,
     value: d.value || d.ndvi || 0.5,
-  })) : Array.from({ length: 12 }, (_, i) => ({
-    date: new Date(Date.now() - (11 - i) * 7 * 24 * 60 * 60 * 1000).toISOString(),
+  })) : Array.from({ length: 20 }, (_, i) => ({
+    date: new Date(Date.now() - (19 - i) * 7 * 24 * 60 * 60 * 1000).toISOString(),
     value: 0.5 + Math.random() * 0.35,
   }));
 
-  // Criar gradiente baseado nos valores reais
-  const gradientStops = chartData.map((d, i) => ({
-    offset: chartData.length > 1 ? (i / (chartData.length - 1)) * 100 : 50,
-    color: getNdviChartColor(d.value),
+  const width = 400;
+  const height = 100;
+  const padding = { top: 10, right: 10, bottom: 5, left: 40 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  
+  // Escala Y de 0.25 a 1.00 (como OneSoil)
+  const minNdvi = 0.25;
+  const maxNdvi = 1.00;
+  
+  const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
+  const yScale = (v: number) => padding.top + chartHeight - ((Math.max(v, minNdvi) - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
+  
+  const points = chartData.map((d, i) => ({ 
+    x: xScale(i), 
+    y: yScale(d.value),
+    value: d.value
   }));
-
-  // Formatar labels do eixo X
-  const xLabels = chartData.length > 0 ? (() => {
-    if (chartData.length <= 6) {
-      return chartData.map(d => {
-        const date = new Date(d.date || '');
-        return `${date.getDate()}/${date.getMonth() + 1}`;
-      });
-    }
-    // Mostrar apenas alguns labels para não ficar muito cheio
-    const step = Math.ceil(chartData.length / 6);
-    return chartData.map((d, i) => {
-      if (i % step === 0 || i === chartData.length - 1) {
-        const date = new Date(d.date || '');
-        return `${date.getDate()}/${date.getMonth() + 1}`;
-      }
-      return '';
-    });
-  })() : [];
+  
+  // Criar path da linha
+  let pathD = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    pathD += ` L ${points[i].x} ${points[i].y}`;
+  }
+  
+  // Criar área preenchida
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
+  
+  // Linhas de grade Y
+  const yGridLines = [1.00, 0.75, 0.50];
 
   return (
-    <div className="relative h-32">
-      <svg viewBox="0 0 400 120" className="w-full h-full" preserveAspectRatio="none">
+    <div className="relative">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24" preserveAspectRatio="xMidYMid meet">
         <defs>
-          {/* Gradiente horizontal baseado nos valores NDVI */}
-          <linearGradient id="ndviLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            {gradientStops.map((stop, i) => (
-              <stop key={i} offset={`${stop.offset}%`} stopColor={stop.color} />
-            ))}
-          </linearGradient>
-          <linearGradient id="ndviFillGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            {gradientStops.map((stop, i) => (
-              <stop key={i} offset={`${stop.offset}%`} stopColor={stop.color} stopOpacity="0.3" />
-            ))}
+          {/* Gradiente para área preenchida - verde claro transparente */}
+          <linearGradient id="ndviAreaFillDetail" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#4ade80" stopOpacity="0.05" />
           </linearGradient>
         </defs>
         
-        {/* Grid lines */}
-        <line x1="0" y1="30" x2="400" y2="30" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
-        <line x1="0" y1="60" x2="400" y2="60" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
-        <line x1="0" y1="90" x2="400" y2="90" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4" />
-        
-        {/* Area fill com gradiente */}
-        <path
-          d={`M 0 100 ${chartData.map((d, i) => {
-            const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
-            const y = 100 - (d.value * 100);
-            return `L ${x} ${y}`;
-          }).join(' ')} L 400 100 Z`}
-          fill="url(#ndviFillGradient)"
-        />
-        
-        {/* Line com gradiente */}
-        <path
-          d={`M ${chartData.map((d, i) => {
-            const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
-            const y = 100 - (d.value * 100);
-            return `${i === 0 ? '' : 'L '}${x} ${y}`;
-          }).join(' ')}`}
-          fill="none"
-          stroke="url(#ndviLineGradient)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        
-        {/* Pontos nos valores */}
-        {chartData.map((d, i) => {
-          const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 400 : 200;
-          const y = 100 - (d.value * 100);
-          return (
-            <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r="4"
-              fill={getNdviChartColor(d.value)}
-              stroke="white"
-              strokeWidth="2"
+        {/* Linhas de grade horizontais pontilhadas */}
+        {yGridLines.map(v => (
+          <g key={v}>
+            <line
+              x1={padding.left}
+              y1={yScale(v)}
+              x2={width - padding.right}
+              y2={yScale(v)}
+              stroke="#e5e7eb"
+              strokeWidth="1"
+              strokeDasharray="4 4"
             />
-          );
-        })}
-      </svg>
-      
-      {/* X-axis labels */}
-      <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
-        {xLabels.map((label, i) => (
-          <span key={i} className="text-center" style={{ minWidth: '30px' }}>
-            {label}
-          </span>
+            <text 
+              x={padding.left - 5} 
+              y={yScale(v)} 
+              fontSize="10" 
+              fill="#9ca3af" 
+              textAnchor="end" 
+              dominantBaseline="middle"
+            >
+              {v.toFixed(2)}
+            </text>
+          </g>
         ))}
-      </div>
-      
-      {/* Y-axis labels */}
-      <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-xs text-gray-400 py-1">
-        <span>1.0</span>
-        <span>0.5</span>
-        <span>0.0</span>
-      </div>
+        
+        {/* Área preenchida verde claro */}
+        <path d={areaD} fill="url(#ndviAreaFillDetail)" />
+        
+        {/* Linha principal verde */}
+        <path 
+          d={pathD} 
+          fill="none" 
+          stroke="#4ade80" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+        />
+        
+        {/* Pontos circulares em cada medição */}
+        {points.map((p, i) => (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={i === points.length - 1 ? 6 : 4}
+            fill="white"
+            stroke="#4ade80"
+            strokeWidth="2"
+          />
+        ))}
+        
+        {/* Último ponto destacado */}
+        {points.length > 0 && (
+          <circle
+            cx={points[points.length - 1].x}
+            cy={points[points.length - 1].y}
+            r="8"
+            fill="#4ade80"
+            stroke="white"
+            strokeWidth="3"
+          />
+        )}
+      </svg>
     </div>
   );
 }

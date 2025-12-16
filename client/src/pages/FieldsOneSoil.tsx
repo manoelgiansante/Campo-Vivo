@@ -105,109 +105,112 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
   );
 }
 
-// Gráfico NDVI simples
-// Função para obter cor NDVI estilo OneSoil
-function getNdviChartColorOneSoil(value: number): string {
-  if (value >= 0.8) return "#22c55e";    // Verde escuro
-  if (value >= 0.7) return "#ADFF2F";    // Verde Lima (OneSoil)
-  if (value >= 0.6) return "#7FFF00";    // Chartreuse
-  if (value >= 0.5) return "#9ACD32";    // Verde Amarelado
-  if (value >= 0.4) return "#FFD700";    // Amarelo Dourado
-  if (value >= 0.3) return "#FFA500";    // Laranja
-  if (value >= 0.2) return "#FF6347";    // Tomate
-  return "#DC143C";                       // Vermelho Carmesim
-}
-
-function NdviChart({ data, height = 100 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
+// Gráfico NDVI estilo OneSoil - linha verde com pontos e área preenchida
+function NdviChart({ data, height = 120 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
   if (!data.length) return null;
   
-  const width = 280;
-  const padding = { top: 10, right: 10, bottom: 20, left: 30 };
+  const width = 600;
+  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
-  const minNdvi = 0.2;
-  const maxNdvi = 1.0;
+  // Escala Y de 0.25 a 1.00 (como OneSoil)
+  const minNdvi = 0.25;
+  const maxNdvi = 1.00;
   
   const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
-  const yScale = (v: number) => padding.top + chartHeight - ((v - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
+  const yScale = (v: number) => padding.top + chartHeight - ((Math.max(v, minNdvi) - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
   
   const points = data.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.ndvi),
-    color: getNdviChartColorOneSoil(d.ndvi)
+    ndvi: d.ndvi
   }));
   
-  // Criar path com gradiente
+  // Criar path da linha
   let pathD = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
     pathD += ` L ${points[i].x} ${points[i].y}`;
   }
   
   // Criar área preenchida
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${height - padding.bottom} L ${points[0].x} ${height - padding.bottom} Z`;
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(minNdvi)} L ${points[0].x} ${yScale(minNdvi)} Z`;
   
-  // Criar gradiente baseado nos valores
-  const gradientId = `ndvi-gradient-${Math.random().toString(36).substr(2, 9)}`;
+  // Linhas de grade Y
+  const yGridLines = [1.00, 0.75, 0.50];
   
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          {points.map((p, i) => (
-            <stop 
-              key={i} 
-              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
-              stopColor={p.color} 
-            />
-          ))}
-        </linearGradient>
-        <linearGradient id={`${gradientId}-fill`} x1="0%" y1="0%" x2="100%" y2="0%">
-          {points.map((p, i) => (
-            <stop 
-              key={i} 
-              offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} 
-              stopColor={p.color}
-              stopOpacity="0.3"
-            />
-          ))}
+        {/* Gradiente para área preenchida - verde claro transparente */}
+        <linearGradient id="ndviAreaFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#4ade80" stopOpacity="0.05" />
         </linearGradient>
       </defs>
       
-      {/* Grid */}
-      {[0.8, 0.4].map(v => (
+      {/* Linhas de grade horizontais pontilhadas */}
+      {yGridLines.map(v => (
         <g key={v}>
           <line
             x1={padding.left}
             y1={yScale(v)}
             x2={width - padding.right}
             y2={yScale(v)}
-            stroke="#f0f0f0"
+            stroke="#e5e7eb"
             strokeWidth="1"
+            strokeDasharray="4 4"
           />
-          <text x={padding.left - 5} y={yScale(v)} fontSize="10" fill="#9ca3af" textAnchor="end" dominantBaseline="middle">
-            {v.toFixed(1)}
+          <text 
+            x={padding.left - 10} 
+            y={yScale(v)} 
+            fontSize="11" 
+            fill="#9ca3af" 
+            textAnchor="end" 
+            dominantBaseline="middle"
+          >
+            {v.toFixed(2)}
           </text>
         </g>
       ))}
       
-      {/* Area fill */}
-      <path d={areaD} fill={`url(#${gradientId}-fill)`} />
+      {/* Área preenchida verde claro */}
+      <path d={areaD} fill="url(#ndviAreaFill)" />
       
-      {/* Line with gradient */}
-      <path d={pathD} fill="none" stroke={`url(#${gradientId})`} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Linha principal verde */}
+      <path 
+        d={pathD} 
+        fill="none" 
+        stroke="#4ade80" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
       
-      {/* Points */}
+      {/* Pontos circulares em cada medição */}
       {points.map((p, i) => (
-        <circle
-          key={i}
-          cx={p.x}
-          cy={p.y}
-          r={i === points.length - 1 ? 5 : 3}
-          fill={p.color}
-          stroke="white"
-          strokeWidth={i === points.length - 1 ? 2 : 1}
-        />
+        <g key={i}>
+          {/* Círculo externo branco */}
+          <circle
+            cx={p.x}
+            cy={p.y}
+            r="5"
+            fill="white"
+            stroke="#4ade80"
+            strokeWidth="2"
+          />
+          {/* Círculo interno verde (último ponto maior) */}
+          {i === points.length - 1 && (
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r="8"
+              fill="#4ade80"
+              stroke="white"
+              strokeWidth="3"
+            />
+          )}
+        </g>
       ))}
     </svg>
   );
