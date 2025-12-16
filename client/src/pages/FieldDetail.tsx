@@ -242,7 +242,7 @@ export default function FieldDetail() {
             <div className="flex-1">
               <h1 className="text-xl font-bold text-gray-900">{field.name}</h1>
               <p className="text-gray-500 text-sm mt-1">
-                {field.areaHectares ? `${field.areaHectares} hectares` : 'Área não definida'}
+                {field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} hectares` : 'Área não definida'}
                 {field.crop && ` • ${field.crop}`}
               </p>
             </div>
@@ -440,19 +440,27 @@ export default function FieldDetail() {
                 <h3 className="font-semibold text-gray-900 mb-3">Histórico</h3>
                 {ndviHistory && ndviHistory.length > 0 ? (
                   <div className="space-y-2">
-                    {ndviHistory.slice(0, 5).map((entry: any, i: number) => (
-                      <div 
-                        key={i}
-                        className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
-                      >
-                        <span className="text-sm text-gray-500">
-                          {new Date(entry.date).toLocaleDateString('pt-BR')}
-                        </span>
-                        <span className="font-semibold text-gray-900">
-                          {(entry.value / 100).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                    {ndviHistory.slice(0, 5).map((entry: any, i: number) => {
+                      // Normalizar o valor NDVI - pode vir como ndvi (0-1) ou value (0-100)
+                      const ndviValue = entry.ndvi ?? entry.value;
+                      const normalizedNdvi = ndviValue > 1 ? ndviValue / 100 : ndviValue;
+                      
+                      return (
+                        <div 
+                          key={i}
+                          className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                        >
+                          <span className="text-sm text-gray-500">
+                            {new Date(entry.date).toLocaleDateString('pt-BR')}
+                          </span>
+                          <span className="font-semibold text-gray-900">
+                            {normalizedNdvi != null && !isNaN(normalizedNdvi) 
+                              ? normalizedNdvi.toFixed(2) 
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-gray-500 text-sm">Nenhum histórico disponível</p>
