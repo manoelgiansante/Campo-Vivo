@@ -40,23 +40,25 @@ async function getAccessToken(): Promise<string> {
   return cachedToken.token;
 }
 
-// NDVI Color Palettes
+// NDVI Color Palettes - Cores baseadas no OneSoil
 const PALETTES: Record<string, { value: number; color: number[] }[]> = {
   classic: [
-    { value: 0.0, color: [139, 69, 19] },
-    { value: 0.2, color: [255, 255, 0] },
-    { value: 0.4, color: [144, 238, 144] },
-    { value: 0.6, color: [34, 139, 34] },
-    { value: 0.8, color: [0, 100, 0] },
-    { value: 1.0, color: [0, 77, 0] },
+    { value: 0.0, color: [139, 90, 43] },    // Marrom (solo)
+    { value: 0.2, color: [200, 140, 43] },   // Marrom claro
+    { value: 0.35, color: [255, 235, 60] },  // Amarelo
+    { value: 0.5, color: [200, 255, 80] },   // Verde-amarelo
+    { value: 0.65, color: [120, 240, 60] },  // Verde lima brilhante
+    { value: 0.8, color: [70, 200, 70] },    // Verde médio
+    { value: 1.0, color: [35, 140, 45] },    // Verde escuro
   ],
   contrast: [
-    { value: 0.0, color: [255, 0, 0] },
-    { value: 0.2, color: [255, 165, 0] },
-    { value: 0.4, color: [255, 255, 0] },
-    { value: 0.6, color: [144, 238, 144] },
-    { value: 0.8, color: [50, 205, 50] },
-    { value: 1.0, color: [0, 100, 0] },
+    { value: 0.0, color: [139, 90, 43] },    // Marrom (solo)
+    { value: 0.2, color: [200, 140, 43] },   // Marrom claro
+    { value: 0.35, color: [255, 235, 60] },  // Amarelo
+    { value: 0.5, color: [200, 255, 80] },   // Verde-amarelo
+    { value: 0.65, color: [120, 240, 60] },  // Verde lima brilhante
+    { value: 0.8, color: [70, 200, 70] },    // Verde médio
+    { value: 1.0, color: [35, 140, 45] },    // Verde escuro
   ],
   viridis: [
     { value: 0.0, color: [68, 1, 84] },
@@ -65,12 +67,14 @@ const PALETTES: Record<string, { value: number; color: number[] }[]> = {
     { value: 0.75, color: [94, 201, 98] },
     { value: 1.0, color: [253, 231, 37] },
   ],
-  rdylgn: [
-    { value: 0.0, color: [165, 0, 38] },
-    { value: 0.25, color: [244, 109, 67] },
-    { value: 0.5, color: [255, 255, 191] },
-    { value: 0.75, color: [166, 217, 106] },
-    { value: 1.0, color: [0, 104, 55] },
+  onesoil: [
+    { value: 0.0, color: [139, 90, 43] },    // Marrom (solo exposto)
+    { value: 0.25, color: [220, 160, 50] },  // Laranja/amarelo escuro
+    { value: 0.4, color: [255, 240, 70] },   // Amarelo brilhante
+    { value: 0.55, color: [180, 255, 70] },  // Verde-amarelo
+    { value: 0.7, color: [100, 230, 50] },   // Verde lima
+    { value: 0.85, color: [60, 180, 60] },   // Verde médio
+    { value: 1.0, color: [30, 120, 40] },    // Verde escuro
   ],
   pasture: [
     { value: 0.0, color: [139, 90, 43] },

@@ -84,54 +84,64 @@ export async function clipImageToPolygon(
 }
 
 /**
- * Converte valor NDVI para cor RGB usando a escala padrão
- * NDVI: -1 a 1, normalizado para 0-1
+ * Converte valor NDVI para cor RGB usando a escala do OneSoil
+ * Cores vibrantes: Vermelho -> Laranja -> Amarelo -> Verde lima -> Verde
  */
 function ndviToColor(ndvi: number): [number, number, number] {
-  // Normalizar NDVI de [-0.2, 1.0] para [0, 1]
-  const normalized = Math.max(0, Math.min(1, (ndvi + 0.2) / 1.2));
+  // OneSoil usa escala de 0 a 1 para NDVI
+  // Valores típicos de vegetação saudável: 0.6-0.9
+  const n = Math.max(0, Math.min(1, ndvi));
   
-  // Escala de cores similar ao OneSoil/Sentinel
-  // Vermelho -> Laranja -> Amarelo -> Verde claro -> Verde escuro
-  if (normalized < 0.2) {
-    // Vermelho a Laranja
-    const t = normalized / 0.2;
+  // Escala de cores do OneSoil (baseada na imagem de referência)
+  // Marrom/Vermelho (baixo) -> Amarelo -> Verde lima -> Verde (alto)
+  
+  if (n < 0.2) {
+    // Marrom/Vermelho escuro (solo exposto, sem vegetação)
+    const t = n / 0.2;
     return [
-      Math.round(180 + t * 75),  // 180 -> 255
-      Math.round(t * 140),       // 0 -> 140
-      Math.round(30),            // 30
+      Math.round(139 + t * 61),   // 139 -> 200 (marrom -> laranja escuro)
+      Math.round(90 + t * 50),    // 90 -> 140
+      Math.round(43),             // marrom
     ];
-  } else if (normalized < 0.4) {
+  } else if (n < 0.35) {
     // Laranja a Amarelo
-    const t = (normalized - 0.2) / 0.2;
+    const t = (n - 0.2) / 0.15;
     return [
-      Math.round(255 - t * 25),  // 255 -> 230
-      Math.round(140 + t * 110), // 140 -> 250
-      Math.round(30 + t * 20),   // 30 -> 50
+      Math.round(200 + t * 55),   // 200 -> 255
+      Math.round(140 + t * 95),   // 140 -> 235
+      Math.round(43 + t * 17),    // 43 -> 60
     ];
-  } else if (normalized < 0.6) {
-    // Amarelo a Verde claro
-    const t = (normalized - 0.4) / 0.2;
+  } else if (n < 0.5) {
+    // Amarelo a Verde-amarelado (chartreuse)
+    const t = (n - 0.35) / 0.15;
     return [
-      Math.round(230 - t * 80),  // 230 -> 150
-      Math.round(250 - t * 30),  // 250 -> 220
-      Math.round(50 + t * 30),   // 50 -> 80
+      Math.round(255 - t * 55),   // 255 -> 200
+      Math.round(235 + t * 20),   // 235 -> 255
+      Math.round(60 + t * 20),    // 60 -> 80
     ];
-  } else if (normalized < 0.8) {
-    // Verde claro a Verde médio
-    const t = (normalized - 0.6) / 0.2;
+  } else if (n < 0.65) {
+    // Verde-amarelado a Verde lima brilhante
+    const t = (n - 0.5) / 0.15;
     return [
-      Math.round(150 - t * 80),  // 150 -> 70
-      Math.round(220 - t * 30),  // 220 -> 190
-      Math.round(80 - t * 20),   // 80 -> 60
+      Math.round(200 - t * 80),   // 200 -> 120
+      Math.round(255 - t * 15),   // 255 -> 240
+      Math.round(80 - t * 20),    // 80 -> 60
+    ];
+  } else if (n < 0.8) {
+    // Verde lima a Verde médio
+    const t = (n - 0.65) / 0.15;
+    return [
+      Math.round(120 - t * 50),   // 120 -> 70
+      Math.round(240 - t * 40),   // 240 -> 200
+      Math.round(60 + t * 10),    // 60 -> 70
     ];
   } else {
     // Verde médio a Verde escuro
-    const t = (normalized - 0.8) / 0.2;
+    const t = (n - 0.8) / 0.2;
     return [
-      Math.round(70 - t * 40),   // 70 -> 30
-      Math.round(190 - t * 50),  // 190 -> 140
-      Math.round(60 - t * 20),   // 60 -> 40
+      Math.round(70 - t * 35),    // 70 -> 35
+      Math.round(200 - t * 60),   // 200 -> 140
+      Math.round(70 - t * 25),    // 70 -> 45
     ];
   }
 }
@@ -202,26 +212,29 @@ export function generateClippedNdviGradient(
       
       // Gerar variação espacial do NDVI
       // Usar múltiplas frequências de ruído para parecer mais natural
-      const noiseVal1 = noise(x / 50, y / 50, seed) * 0.3;
-      const noiseVal2 = noise(x / 25, y / 25, seed + 100) * 0.15;
-      const noiseVal3 = noise(x / 100, y / 100, seed + 200) * 0.1;
+      const noiseVal1 = noise(x / 50, y / 50, seed) * 0.15;
+      const noiseVal2 = noise(x / 25, y / 25, seed + 100) * 0.08;
+      const noiseVal3 = noise(x / 100, y / 100, seed + 200) * 0.05;
       
-      // Adicionar padrão de "linhas de plantio" (comum em campos agrícolas)
-      const rowPattern = Math.sin(y / 8 + x / 40) * 0.05;
+      // Adicionar padrão de "linhas de plantio" sutil (pivô/sulcos)
+      const rowPattern = Math.sin(y / 12 + x / 60) * 0.03;
       
-      // Calcular NDVI do pixel com variação
-      let pixelNdvi = baseNdviValue + noiseVal1 + noiseVal2 + noiseVal3 + rowPattern - 0.2;
+      // Calcular NDVI do pixel com variação centrada no valor base
+      // Base alto (0.65-0.75) = vegetação saudável = verde lima
+      let pixelNdvi = baseNdviValue + (noiseVal1 - 0.075) + (noiseVal2 - 0.04) + noiseVal3 + rowPattern;
       
-      // Adicionar manchas (áreas com problemas ou variação natural)
-      const spotNoise = noise(x / 30, y / 30, seed + 500);
-      if (spotNoise > 0.85) {
-        pixelNdvi -= 0.15; // Mancha amarela/estresse
-      } else if (spotNoise < 0.1) {
-        pixelNdvi += 0.08; // Área mais verde
+      // Adicionar manchas amarelas (áreas com estresse ou variação natural)
+      const spotNoise = noise(x / 40, y / 40, seed + 500);
+      if (spotNoise > 0.88) {
+        pixelNdvi -= 0.18; // Mancha amarela (estresse)
+      } else if (spotNoise > 0.75) {
+        pixelNdvi -= 0.08; // Área levemente menos verde
+      } else if (spotNoise < 0.08) {
+        pixelNdvi += 0.05; // Área mais verde
       }
       
-      // Garantir que está no range válido
-      pixelNdvi = Math.max(0.1, Math.min(0.95, pixelNdvi));
+      // Garantir que está no range válido (0.35 - 0.85 para vegetação típica)
+      pixelNdvi = Math.max(0.3, Math.min(0.85, pixelNdvi));
       
       // Converter NDVI para cor
       const [r, g, b] = ndviToColor(pixelNdvi);

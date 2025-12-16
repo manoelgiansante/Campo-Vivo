@@ -174,7 +174,7 @@ export default function MapView() {
       // Se o campo tem agroPolygonId, tentar carregar imagem NDVI real
       if (field.agroPolygonId && mapLayer === "vegetation") {
         try {
-          const proxyUrl = `/api/copernicus-ndvi/${field.id}?palette=contrast`;
+          const proxyUrl = `/api/copernicus-ndvi/${field.id}?palette=onesoil`;
           
           // Carregar e recortar a imagem NDVI para seguir o contorno do polígono (estilo OneSoil)
           const clippedImageUrl = await clipImageToPolygon(

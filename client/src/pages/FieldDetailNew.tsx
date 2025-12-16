@@ -73,9 +73,9 @@ export default function FieldDetailNew() {
   );
 
   // URLs do proxy local para evitar CORS (usando Copernicus Sentinel-2)
-  const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
+  const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=onesoil`, [fieldId]);
   // Copernicus não usa tiles, apenas imagem única
-  const proxyTileUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
+  const proxyTileUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=onesoil`, [fieldId]);
 
   // Draw field on map with NDVI overlay
   useEffect(() => {
