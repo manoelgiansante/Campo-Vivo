@@ -312,23 +312,19 @@ export default function FieldsOneSoil() {
         const minLat = Math.min(...lats);
         const maxLat = Math.max(...lats);
 
-        // Try to load NDVI image and clip to polygon
-        const bounds = { minLng, maxLng, minLat, maxLat };
+        // Bounds for image positioning
         const boundsArray = calculateBoundsFromPolygon(coordinates);
         let ndviLoaded = false;
 
         if (proxyImageUrl) {
           try {
-            // Carregar e recortar a imagem NDVI pelo polígono
-            const clippedImageUrl = await clipImageToPolygon(
-              proxyImageUrl + "?t=" + Date.now(),
-              coordinates,
-              bounds
-            );
+            // Usar a imagem NDVI diretamente do Copernicus (já vem recortada)
+            // Adicionar timestamp para evitar cache
+            const imageUrl = proxyImageUrl + "&t=" + Date.now();
             
             ndviMapInstance.addSource("ndvi-image", {
               type: "image",
-              url: clippedImageUrl,
+              url: imageUrl,
               coordinates: boundsArray,
             });
 
@@ -336,9 +332,10 @@ export default function FieldsOneSoil() {
               id: "ndvi-image",
               type: "raster",
               source: "ndvi-image",
-              paint: { "raster-opacity": 1.0 },
+              paint: { "raster-opacity": 0.95 },
             });
             ndviLoaded = true;
+            console.log("[NDVI] Imagem Copernicus carregada com sucesso");
           } catch (e) {
             console.warn("Falha ao carregar imagem NDVI:", e);
           }
@@ -346,6 +343,7 @@ export default function FieldsOneSoil() {
 
         // Fallback: usar gradiente sintético recortado pelo polígono
         if (!ndviLoaded) {
+          const bounds = { minLng, maxLng, minLat, maxLat };
           const ndviValue = selectedField.currentNdvi ? selectedField.currentNdvi / 100 : 0.65;
           const gradientUrl = generateClippedNdviGradient(ndviValue, coordinates, bounds);
           
@@ -756,7 +754,7 @@ export default function FieldsOneSoil() {
                     <div 
                       className="w-3 h-28 rounded-sm"
                       style={{
-                        background: 'linear-gradient(to bottom, #46AA50 0%, #64C864 15%, #8CDC78 30%, #B8E87C 50%, #C8FA78 65%, #FFEB50 80%, #DCB446 90%, #B4783C 100%)'
+                        background: 'linear-gradient(to bottom, #378C37 0%, #5FB944 20%, #78CD4E 35%, #91DA58 50%, #A5E15F 65%, #C3DC5F 80%, #E6DC5A 90%, #A56437 100%)'
                       }}
                     />
                     <span className="text-[10px] text-white font-medium mt-1">0.0</span>

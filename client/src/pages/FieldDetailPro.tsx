@@ -723,7 +723,7 @@ export default function FieldDetailPro() {
                 <div 
                   className="w-4 h-36 rounded-sm shadow-lg"
                   style={{
-                    background: 'linear-gradient(to bottom, #46AA50 0%, #64C864 15%, #8CDC78 30%, #B8E87C 50%, #C8FA78 65%, #FFEB50 80%, #DCB446 90%, #B4783C 100%)'
+                    background: 'linear-gradient(to bottom, #378C37 0%, #5FB944 20%, #78CD4E 35%, #91DA58 50%, #A5E15F 65%, #C3DC5F 80%, #E6DC5A 90%, #A56437 100%)'
                   }}
                 />
                 <span className="text-[11px] text-white font-semibold mt-1 drop-shadow-lg">0.0</span>

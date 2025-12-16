@@ -40,27 +40,30 @@ async function getAccessToken(): Promise<string> {
   return cachedToken.token;
 }
 
-// NDVI Color Palettes - Cores baseadas EXATAMENTE no OneSoil
+// NDVI Color Palettes - Cores EXATAS do OneSoil (extraídas da imagem)
+// A cor dominante é verde-amarelado vibrante (#9FDF5F a #A8E063)
 const PALETTES: Record<string, { value: number; color: number[] }[]> = {
   classic: [
-    { value: 0.0, color: [180, 120, 60] },    // Marrom
-    { value: 0.25, color: [220, 180, 70] },   // Laranja/amarelo
-    { value: 0.40, color: [255, 235, 80] },   // Amarelo
-    { value: 0.55, color: [200, 250, 120] },  // Verde-amarelado claro
-    { value: 0.65, color: [184, 232, 124] },  // Verde lima claro (#B8E87C) - COR DOMINANTE
-    { value: 0.75, color: [140, 220, 100] },  // Verde lima médio
-    { value: 0.90, color: [90, 180, 85] },    // Verde médio
-    { value: 1.0, color: [70, 170, 80] },     // Verde
+    { value: 0.0, color: [165, 100, 55] },    // Marrom (solo)
+    { value: 0.20, color: [190, 150, 70] },   // Marrom claro/bege
+    { value: 0.35, color: [230, 210, 90] },   // Amarelo suave
+    { value: 0.45, color: [200, 230, 100] },  // Amarelo-verde claro
+    { value: 0.55, color: [160, 225, 95] },   // Verde amarelado (#A0E15F)
+    { value: 0.65, color: [140, 215, 85] },   // Verde lima vibrante (#8CD755)
+    { value: 0.75, color: [115, 200, 75] },   // Verde médio (#73C84B)
+    { value: 0.85, color: [85, 175, 65] },    // Verde (#55AF41)
+    { value: 1.0, color: [60, 150, 55] },     // Verde escuro
   ],
   contrast: [
-    { value: 0.0, color: [180, 120, 60] },    // Marrom
-    { value: 0.25, color: [220, 180, 70] },   // Laranja/amarelo
-    { value: 0.40, color: [255, 235, 80] },   // Amarelo
-    { value: 0.55, color: [200, 250, 120] },  // Verde-amarelado claro
-    { value: 0.65, color: [184, 232, 124] },  // Verde lima claro (#B8E87C) - COR DOMINANTE
-    { value: 0.75, color: [140, 220, 100] },  // Verde lima médio
-    { value: 0.90, color: [90, 180, 85] },    // Verde médio
-    { value: 1.0, color: [70, 170, 80] },     // Verde
+    { value: 0.0, color: [165, 100, 55] },
+    { value: 0.20, color: [190, 150, 70] },
+    { value: 0.35, color: [230, 210, 90] },
+    { value: 0.45, color: [200, 230, 100] },
+    { value: 0.55, color: [160, 225, 95] },   // Verde amarelado dominante
+    { value: 0.65, color: [140, 215, 85] },
+    { value: 0.75, color: [115, 200, 75] },
+    { value: 0.85, color: [85, 175, 65] },
+    { value: 1.0, color: [60, 150, 55] },
   ],
   viridis: [
     { value: 0.0, color: [68, 1, 84] },
@@ -70,21 +73,25 @@ const PALETTES: Record<string, { value: number; color: number[] }[]> = {
     { value: 1.0, color: [253, 231, 37] },
   ],
   onesoil: [
-    { value: 0.0, color: [180, 120, 60] },    // Marrom (solo)
-    { value: 0.25, color: [220, 180, 70] },   // Laranja/amarelo escuro
-    { value: 0.40, color: [255, 235, 80] },   // Amarelo brilhante
-    { value: 0.55, color: [200, 250, 120] },  // Verde-amarelado claro
-    { value: 0.65, color: [184, 232, 124] },  // Verde lima claro (#B8E87C) - DOMINANTE
-    { value: 0.75, color: [140, 220, 100] },  // Verde lima médio
-    { value: 0.85, color: [100, 195, 90] },   // Verde
-    { value: 1.0, color: [70, 170, 80] },     // Verde escuro
+    // Paleta baseada EXATAMENTE nas cores visíveis no OneSoil
+    { value: 0.0, color: [165, 100, 55] },    // Marrom (solo exposto)
+    { value: 0.20, color: [185, 145, 65] },   // Marrom claro
+    { value: 0.30, color: [210, 185, 80] },   // Bege/amarelo escuro
+    { value: 0.40, color: [235, 220, 95] },   // Amarelo
+    { value: 0.50, color: [195, 235, 100] },  // Amarelo-verde
+    { value: 0.58, color: [165, 225, 95] },   // Verde amarelado claro (#A5E15F) 
+    { value: 0.66, color: [145, 218, 88] },   // Verde lima (#91DA58) - COR DOMINANTE OneSoil
+    { value: 0.74, color: [120, 205, 78] },   // Verde lima médio (#78CD4E)
+    { value: 0.82, color: [95, 185, 68] },    // Verde (#5FB944)
+    { value: 0.90, color: [75, 165, 58] },    // Verde médio
+    { value: 1.0, color: [55, 140, 50] },     // Verde escuro
   ],
   pasture: [
-    { value: 0.0, color: [180, 120, 60] },
-    { value: 0.3, color: [210, 180, 100] },
-    { value: 0.5, color: [184, 232, 124] },
-    { value: 0.7, color: [120, 200, 90] },
-    { value: 0.9, color: [80, 170, 80] },
+    { value: 0.0, color: [165, 100, 55] },
+    { value: 0.3, color: [200, 170, 90] },
+    { value: 0.5, color: [165, 225, 95] },
+    { value: 0.7, color: [120, 200, 75] },
+    { value: 0.9, color: [75, 160, 55] },
   ],
 };
 

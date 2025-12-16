@@ -445,7 +445,7 @@ export default function MapView() {
         <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10 flex flex-col items-center gap-1">
           <span className="text-white text-xs font-medium drop-shadow-lg">1.0</span>
           <div className="w-3 h-32 rounded-full overflow-hidden shadow-lg" style={{
-            background: "linear-gradient(to bottom, #46AA50, #64C864, #8CDC78, #B8E87C, #C8FA78, #FFEB50, #DCB446, #B4783C)"
+            background: "linear-gradient(to bottom, #378C37, #5FB944, #78CD4E, #91DA58, #A5E15F, #C3DC5F, #E6DC5A, #A56437)"
           }} />
           <span className="text-white text-xs font-medium drop-shadow-lg">0.0</span>
         </div>
