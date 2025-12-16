@@ -107,10 +107,10 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
 
 // Função para obter cor do ponto baseado no valor NDVI (como OneSoil)
 function getNdviPointColor(ndvi: number): string {
-  if (ndvi >= 0.7) return "#22c55e";    // Verde escuro - Excelente
-  if (ndvi >= 0.5) return "#84cc16";    // Verde lima - Bom
-  if (ndvi >= 0.3) return "#eab308";    // Amarelo - Moderado  
-  return "#ef4444";                      // Vermelho - Baixo
+  if (ndvi >= 0.7) return "#22c55e";    // Verde escuro - Excelente (≥0.7)
+  if (ndvi >= 0.5) return "#84cc16";    // Verde lima - Bom (0.5-0.7)
+  if (ndvi >= 0.3) return "#f59e0b";    // Laranja - Moderado (0.3-0.5)
+  return "#ef4444";                      // Vermelho - Baixo (<0.3)
 }
 
 // Gráfico NDVI estilo OneSoil - com cores por valor
@@ -210,10 +210,13 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
       {/* Área preenchida cinza claro */}
       <path d={areaD} fill="url(#ndviAreaFillGray)" />
       
-      {/* Linha conectando os pontos - gradiente baseado nos valores */}
+      {/* Linha conectando os pontos - amarelo/laranja como OneSoil */}
       {points.map((p, i) => {
         if (i === 0) return null;
         const prev = points[i - 1];
+        // Cor do segmento baseada na média dos valores
+        const avgNdvi = (prev.ndvi + p.ndvi) / 2;
+        const segmentColor = getNdviPointColor(avgNdvi);
         return (
           <line
             key={`line-${i}`}
@@ -221,8 +224,8 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
             y1={prev.y}
             x2={p.x}
             y2={p.y}
-            stroke={p.color}
-            strokeWidth="2"
+            stroke={segmentColor}
+            strokeWidth="2.5"
             strokeLinecap="round"
           />
         );
@@ -246,6 +249,21 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
       <g transform={`translate(${width - 50}, ${padding.top})`}>
         <text x="0" y="0" fontSize="10" fill="#22c55e" fontWeight="bold">Bom</text>
         <text x="0" y="70" fontSize="10" fill="#ef4444" fontWeight="bold">Baixo</text>
+      </g>
+      
+      {/* Legenda inferior igual OneSoil */}
+      <g transform={`translate(${padding.left}, ${height - 5})`}>
+        <circle cx="0" cy="0" r="4" fill="#22c55e" />
+        <text x="8" y="3" fontSize="9" fill="#6b7280">Excelente (≥0.7)</text>
+        
+        <circle cx="100" cy="0" r="4" fill="#84cc16" />
+        <text x="108" y="3" fontSize="9" fill="#6b7280">Bom (0.5-0.7)</text>
+        
+        <circle cx="195" cy="0" r="4" fill="#f59e0b" />
+        <text x="203" y="3" fontSize="9" fill="#6b7280">Moderado (0.3-0.5)</text>
+        
+        <circle cx="310" cy="0" r="4" fill="#ef4444" />
+        <text x="318" y="3" fontSize="9" fill="#6b7280">Baixo (&lt;0.3)</text>
       </g>
     </svg>
   );
