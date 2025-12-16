@@ -1,7 +1,30 @@
 {
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist/public",
+  "framework": null,
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/api/trpc/:path*",
+      "destination": "/api/trpc/[[...trpc]]"
+    },
+    {
+      "source": "/api/oauth/:path*",
+      "destination": "/api/oauth/[...path]"
+    },
+    {
+      "source": "/api/ndvi-image/:path*",
+      "destination": "/api/ndvi-image/[fieldId]"
+    },
+    {
+      "source": "/api/ndvi-tiles/:path*",
+      "destination": "/api/ndvi-tiles/[...params]"
+    },
+    {
+      "source": "/api/copernicus-ndvi/:path*",
+      "destination": "/api/copernicus-ndvi/[fieldId]"
+    },
+    {
+      "source": "/((?!api|assets|icons|manifest.json|sw.js|offline.html).*)",
       "destination": "/index.html"
     }
   ],
