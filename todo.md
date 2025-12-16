@@ -249,3 +249,13 @@
 ## Bugs Reportados
 
 - [x] Erro 404 na rota /fields no Vercel (falta configuração SPA routing)
+
+
+## Versão 3.4 - Gráfico NDVI Estilo OneSoil (Concluído)
+
+- [x] Criar gráfico NDVI com área preenchida em gradiente dinâmico
+- [x] Cores baseadas no valor NDVI (verde → amarelo → laranja)
+- [x] Eixo X com meses do ano
+- [x] Valor atual destacado à direita
+- [x] Botão de download do gráfico
+- [x] Integrar na página FieldDetailPro

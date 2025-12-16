@@ -1,0 +1,288 @@
+import { useMemo, useRef, useCallback } from "react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+  ReferenceLine,
+} from "recharts";
+import { format, parseISO, differenceInDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Leaf, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import html2canvas from "html2canvas";
+
+interface NdviDataPoint {
+  date: string; // formato "yyyy-MM-dd"
+  ndvi: number;
+}
+
+interface NdviChartOneSoilProps {
+  data: NdviDataPoint[];
+  currentValue?: number;
+  lastUpdateDate?: string;
+  height?: number;
+  showDownload?: boolean;
+  title?: string;
+}
+
+// Função para obter cor baseada no valor NDVI
+function getNdviColor(value: number): string {
+  if (value >= 0.7) return "#22c55e"; // Verde forte
+  if (value >= 0.5) return "#84cc16"; // Verde limão
+  if (value >= 0.4) return "#eab308"; // Amarelo
+  if (value >= 0.3) return "#f97316"; // Laranja
+  return "#ef4444"; // Vermelho
+}
+
+// Tooltip customizado
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+
+  const value = payload[0].value;
+  const date = label;
+
+  return (
+    <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-3 min-w-[140px]">
+      <p className="text-xs text-gray-500 mb-1">
+        {format(parseISO(date), "dd MMM yyyy", { locale: ptBR })}
+      </p>
+      <div className="flex items-center gap-2">
+        <div
+          className="w-3 h-3 rounded-full"
+          style={{ backgroundColor: getNdviColor(value) }}
+        />
+        <span className="text-lg font-semibold">{value.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+export function NdviChartOneSoil({
+  data,
+  currentValue,
+  lastUpdateDate,
+  height = 200,
+  showDownload = true,
+  title = "Índice NDVI",
+}: NdviChartOneSoilProps) {
+  const chartRef = useRef<HTMLDivElement>(null);
+
+  // Processar dados para o gráfico
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+
+    // Ordenar por data
+    const sorted = [...data].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    return sorted.map((point) => ({
+      ...point,
+      // Adicionar mês formatado para o eixo X
+      month: format(parseISO(point.date), "MMM", { locale: ptBR }),
+      color: getNdviColor(point.ndvi),
+    }));
+  }, [data]);
+
+  // Calcular valor atual e dias desde última atualização
+  const displayValue = useMemo(() => {
+    if (currentValue !== undefined) return currentValue;
+    if (chartData.length > 0) return chartData[chartData.length - 1].ndvi;
+    return 0;
+  }, [currentValue, chartData]);
+
+  const daysSinceUpdate = useMemo(() => {
+    if (lastUpdateDate) {
+      return differenceInDays(new Date(), parseISO(lastUpdateDate));
+    }
+    if (chartData.length > 0) {
+      return differenceInDays(
+        new Date(),
+        parseISO(chartData[chartData.length - 1].date)
+      );
+    }
+    return 0;
+  }, [lastUpdateDate, chartData]);
+
+  // Função para download do gráfico
+  const handleDownload = useCallback(async () => {
+    if (!chartRef.current) return;
+
+    try {
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      });
+      const link = document.createElement("a");
+      link.download = `ndvi-chart-${format(new Date(), "yyyy-MM-dd")}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (error) {
+      console.error("Erro ao exportar gráfico:", error);
+    }
+  }, []);
+
+  // Criar gradiente único baseado nos dados
+  const gradientId = useMemo(() => `ndviGradient-${Math.random().toString(36).substr(2, 9)}`, []);
+
+  // Calcular stops do gradiente baseado nos valores NDVI
+  const gradientStops = useMemo(() => {
+    if (chartData.length === 0) return [];
+
+    // Criar stops baseados nos valores reais
+    const stops: { offset: string; color: string }[] = [];
+    const totalPoints = chartData.length;
+
+    chartData.forEach((point, index) => {
+      const offset = (index / (totalPoints - 1)) * 100;
+      stops.push({
+        offset: `${offset}%`,
+        color: getNdviColor(point.ndvi),
+      });
+    });
+
+    return stops;
+  }, [chartData]);
+
+  if (chartData.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center bg-gray-50 rounded-lg"
+        style={{ height }}
+      >
+        <p className="text-gray-400 text-sm">Sem dados de NDVI disponíveis</p>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={chartRef} className="bg-white rounded-xl p-4">
+      {/* Header com título e botão de download */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-gray-700">{title}</h3>
+        {showDownload && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-gray-400 hover:text-gray-600"
+            onClick={handleDownload}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Container do gráfico com valor à direita */}
+      <div className="flex items-start gap-6">
+        {/* Gráfico */}
+        <div className="flex-1" style={{ height }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={chartData}
+              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+            >
+              {/* Definição do gradiente */}
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                  {gradientStops.map((stop, index) => (
+                    <stop
+                      key={index}
+                      offset={stop.offset}
+                      stopColor={stop.color}
+                      stopOpacity={0.8}
+                    />
+                  ))}
+                </linearGradient>
+                <linearGradient id={`${gradientId}-fill`} x1="0" y1="0" x2="1" y2="0">
+                  {gradientStops.map((stop, index) => (
+                    <stop
+                      key={index}
+                      offset={stop.offset}
+                      stopColor={stop.color}
+                      stopOpacity={0.3}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
+
+              {/* Linhas de referência horizontais */}
+              <ReferenceLine
+                y={0.5}
+                stroke="#e5e7eb"
+                strokeDasharray="3 3"
+              />
+              <ReferenceLine
+                y={1}
+                stroke="#e5e7eb"
+                strokeDasharray="3 3"
+              />
+
+              {/* Eixo X com meses */}
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 11, fill: "#9ca3af" }}
+                tickFormatter={(value) =>
+                  format(parseISO(value), "MMM", { locale: ptBR })
+                }
+                interval="preserveStartEnd"
+                minTickGap={30}
+              />
+
+              {/* Eixo Y de 0 a 1 */}
+              <YAxis
+                domain={[0, 1]}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 11, fill: "#9ca3af" }}
+                ticks={[0, 0.5, 1]}
+                tickFormatter={(value) => value.toFixed(1)}
+              />
+
+              {/* Tooltip */}
+              <Tooltip content={<CustomTooltip />} />
+
+              {/* Área preenchida com gradiente */}
+              <Area
+                type="monotone"
+                dataKey="ndvi"
+                stroke={`url(#${gradientId})`}
+                strokeWidth={2.5}
+                fill={`url(#${gradientId}-fill)`}
+                dot={false}
+                activeDot={{
+                  r: 6,
+                  stroke: "#fff",
+                  strokeWidth: 2,
+                  fill: getNdviColor(displayValue),
+                }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Valor atual à direita */}
+        <div className="min-w-[140px] text-right">
+          <div className="flex items-center justify-end gap-2 mb-1">
+            <Leaf
+              className="h-5 w-5"
+              style={{ color: getNdviColor(displayValue) }}
+            />
+            <span className="text-3xl font-bold text-gray-900">
+              {displayValue.toFixed(2)}
+            </span>
+          </div>
+          <p className="text-xs text-gray-400">
+            Última atualização há {daysSinceUpdate} dias
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default NdviChartOneSoil;

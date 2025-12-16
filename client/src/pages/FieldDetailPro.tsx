@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   NdviChart as NdviChartComponent,
+  NdviChartOneSoil,
   NdviColorScale,
   PrecipitationChart as PrecipitationChartComponent,
   ThermalSumChart,
@@ -755,21 +756,15 @@ export default function FieldDetailPro() {
 
         {/* Charts - Estilo OneSoil */}
         <div className="space-y-4">
-          {/* NDVI Chart */}
-          <div className="bg-white rounded-xl shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Leaf className="h-5 w-5 text-green-500" />
-                <span className="text-sm font-medium text-gray-700">Índice NDVI</span>
-              </div>
-              <button className="p-1 hover:bg-gray-100 rounded">
-                <Download className="h-4 w-4 text-gray-400" />
-              </button>
-            </div>
-            <NdviChartComponent 
+          {/* NDVI Chart - Estilo OneSoil */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <NdviChartOneSoil
               data={ndviChartData.map(d => ({ date: format(d.date, "yyyy-MM-dd"), ndvi: d.ndvi }))}
               currentValue={parseFloat(currentNdviValue)}
-              height={180}
+              lastUpdateDate={ndviChartData.length > 0 ? format(ndviChartData[ndviChartData.length - 1].date, "yyyy-MM-dd") : undefined}
+              height={200}
+              showDownload={true}
+              title="Índice NDVI"
             />
           </div>
 
