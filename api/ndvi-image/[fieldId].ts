@@ -84,16 +84,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).send("No NDVI image available");
     }
 
-    // Fazer proxy da imagem com paleta de contraste (gradiente vermelho→amarelo→verde)
-    // Paleta 3 = Contrast palette #1 (mais parecido com OneSoil)
-    // Paleta 4 = Contrast palette #2
+    // Fazer proxy da imagem com paleta estilo OneSoil (gradiente vermelho→amarelo→verde)
+    // Paleta 1 = Verde-vermelho padrão
+    // Paleta 2 = Verde-amarelo-vermelho (MAIS PARECIDO COM ONESOIL)
+    // Paleta 3 = Azul-vermelho (alta saturação)
+    // Paleta 4 = Verde-marrom (variação natural)
     let imageUrl = image.image.ndvi.replace("http://", "https://");
     
-    // Adicionar parâmetro de paleta para ter gradiente de cores
+    // Usar paleta 2 que é mais parecida com OneSoil
     if (imageUrl.includes("?")) {
-      imageUrl += "&paletteid=3";
+      imageUrl += "&paletteid=2";
     } else {
-      imageUrl += "?paletteid=3";
+      imageUrl += "?paletteid=2";
     }
     console.log(`[NDVI Proxy] Buscando imagem: ${imageUrl.substring(0, 80)}...`);
 

@@ -208,19 +208,21 @@ export function useNdviOverlay() {
 }
 
 /**
- * Retorna cor baseada no valor NDVI
+ * Retorna cor baseada no valor NDVI - Estilo OneSoil
+ * Gradiente: Vermelho (estresse) → Amarelo (moderado) → Verde (saudável)
  */
 function getNdviColor(ndvi: number): string {
-  if (ndvi < 0) return '#8B4513'; // Marrom (solo/água)
-  if (ndvi < 0.1) return '#D2691E'; // Marrom claro
-  if (ndvi < 0.2) return '#CD853F'; // Peru
-  if (ndvi < 0.3) return '#DAA520'; // Goldenrod
-  if (ndvi < 0.4) return '#FFD700'; // Amarelo
-  if (ndvi < 0.5) return '#ADFF2F'; // Verde-amarelo
-  if (ndvi < 0.6) return '#7CFC00'; // Verde claro
-  if (ndvi < 0.7) return '#32CD32'; // Verde lima
-  if (ndvi < 0.8) return '#228B22'; // Verde floresta
-  return '#006400'; // Verde escuro
+  // OneSoil style palette
+  if (ndvi < 0) return '#A52A2A'; // Marrom (solo exposto/água)
+  if (ndvi < 0.1) return '#D32F2F'; // Vermelho escuro (vegetação morta)
+  if (ndvi < 0.2) return '#E53935'; // Vermelho (estresse severo)
+  if (ndvi < 0.3) return '#FF5722'; // Laranja-vermelho (estresse)
+  if (ndvi < 0.4) return '#FF9800'; // Laranja (vegetação fraca)
+  if (ndvi < 0.5) return '#FFC107'; // Amarelo (vegetação moderada)
+  if (ndvi < 0.6) return '#CDDC39'; // Amarelo-verde (vegetação boa)
+  if (ndvi < 0.7) return '#8BC34A'; // Verde claro (vegetação saudável)
+  if (ndvi < 0.8) return '#4CAF50'; // Verde (vegetação muito saudável)
+  return '#2E7D32'; // Verde escuro (vegetação densa)
 }
 
 /**

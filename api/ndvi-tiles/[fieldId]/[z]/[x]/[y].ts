@@ -88,8 +88,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).send("No NDVI tile available");
     }
 
-    // Construir URL do tile
-    // Template: https://api.agromonitoring.com/agro/1.0/image/tile/{tileServer}/{z}/{x}/{y}?polyid={polygonId}&appid={apiKey}&paletteid=3
+    // Construir URL do tile com paleta estilo OneSoil
+    // Paleta 2 = Verde-amarelo-vermelho (MAIS PARECIDO COM ONESOIL)
     let tileUrl = image.tile.ndvi.replace("http://", "https://");
     
     // O tile template do agromonitoring tem formato: 
@@ -100,9 +100,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .replace("{x}", tileX)
       .replace("{y}", tileY);
     
-    // Adicionar paleta de contraste se não tiver
+    // Usar paleta 2 que é mais parecida com OneSoil
     if (!tileUrl.includes("paletteid")) {
-      tileUrl += tileUrl.includes("?") ? "&paletteid=3" : "?paletteid=3";
+      tileUrl += tileUrl.includes("?") ? "&paletteid=2" : "?paletteid=2";
     }
     
     console.log(`[NDVI Tiles] Buscando tile: ${tileUrl.substring(0, 80)}...`);

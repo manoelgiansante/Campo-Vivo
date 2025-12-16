@@ -107,14 +107,16 @@ export default function MapView() {
     }
   }, [mapInstance]);
 
-  // Função para obter cor NDVI
+  // Função para obter cor NDVI - Estilo OneSoil
   const getNdviColor = (value: number): string => {
-    if (value < 0.2) return "#EF4444"; // Vermelho
-    if (value < 0.4) return "#F97316"; // Laranja
-    if (value < 0.5) return "#EAB308"; // Amarelo
-    if (value < 0.6) return "#84CC16"; // Verde-amarelo
-    if (value < 0.7) return "#22C55E"; // Verde
-    return "#15803D"; // Verde escuro
+    if (value < 0.2) return "#E53935"; // Vermelho (estresse)
+    if (value < 0.3) return "#FF5722"; // Laranja-vermelho
+    if (value < 0.4) return "#FF9800"; // Laranja
+    if (value < 0.5) return "#FFC107"; // Amarelo
+    if (value < 0.6) return "#CDDC39"; // Amarelo-verde
+    if (value < 0.7) return "#8BC34A"; // Verde claro
+    if (value < 0.8) return "#4CAF50"; // Verde
+    return "#2E7D32"; // Verde escuro
   };
 
   // Função para carregar overlay NDVI de um campo específico

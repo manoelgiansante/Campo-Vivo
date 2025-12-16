@@ -228,11 +228,16 @@ export default function FieldDetailNew() {
           ndviLoaded = true;
         }
 
-        // Base fill para percepção de área (semi-transparente)
+        // Base fill para percepção de área - cores estilo OneSoil
         const currentNdvi = field.currentNdvi ? field.currentNdvi / 100 : 0.5;
-        const fillColor = currentNdvi >= 0.6 ? "#22C55E" :
-                         currentNdvi >= 0.4 ? "#EAB308" :
-                         currentNdvi >= 0.2 ? "#F97316" : "#EF4444";
+        // Cores OneSoil: Vermelho (ruim) → Laranja → Amarelo → Verde (saudável)
+        const fillColor = currentNdvi >= 0.7 ? "#2E7D32" : // Verde escuro
+                         currentNdvi >= 0.6 ? "#4CAF50" : // Verde
+                         currentNdvi >= 0.5 ? "#8BC34A" : // Verde claro
+                         currentNdvi >= 0.4 ? "#CDDC39" : // Amarelo-verde
+                         currentNdvi >= 0.3 ? "#FFC107" : // Amarelo
+                         currentNdvi >= 0.2 ? "#FF9800" : // Laranja
+                         "#E53935"; // Vermelho
 
         mapInstance.addLayer({
           id: fillLayerId,
@@ -240,7 +245,7 @@ export default function FieldDetailNew() {
           source: sourceId,
           paint: {
             "fill-color": fillColor,
-            "fill-opacity": ndviLoaded ? 0.15 : 0.4,
+            "fill-opacity": ndviLoaded ? 0.1 : 0.5,
           },
         });
 
@@ -530,11 +535,14 @@ function FieldDetailSkeleton() {
   );
 }
 
-// Helper function to get NDVI color
+// Helper function to get NDVI color - Estilo OneSoil
 function getNdviColor(ndvi: number): string {
-  if (ndvi < 0.2) return "#EF4444"; // Red
-  if (ndvi < 0.4) return "#F97316"; // Orange
-  if (ndvi < 0.6) return "#EAB308"; // Yellow
-  if (ndvi < 0.8) return "#84CC16"; // Light green
-  return "#22C55E"; // Green
+  if (ndvi < 0.2) return "#E53935"; // Vermelho (estresse)
+  if (ndvi < 0.3) return "#FF5722"; // Laranja-vermelho
+  if (ndvi < 0.4) return "#FF9800"; // Laranja
+  if (ndvi < 0.5) return "#FFC107"; // Amarelo
+  if (ndvi < 0.6) return "#CDDC39"; // Amarelo-verde
+  if (ndvi < 0.7) return "#8BC34A"; // Verde claro
+  if (ndvi < 0.8) return "#4CAF50"; // Verde
+  return "#2E7D32"; // Verde escuro
 }
