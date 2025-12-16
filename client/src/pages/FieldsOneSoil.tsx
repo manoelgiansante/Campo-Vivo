@@ -5,6 +5,7 @@ import { clipImageToPolygon, generateClippedNdviGradient } from "@/utils/clipIma
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AddCropDialog } from "@/components/AddCropDialog";
 
 import {
   ChevronLeft,
@@ -168,6 +169,7 @@ export default function FieldsOneSoil() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [ndviMapInstance, setNdviMapInstance] = useState<mapboxgl.Map | null>(null);
   const [satMapInstance, setSatMapInstance] = useState<mapboxgl.Map | null>(null);
+  const [showAddCropDialog, setShowAddCropDialog] = useState(false);
   const { setMap } = useMapbox();
   const { removeAllOverlays, calculateBoundsFromPolygon } = useNdviOverlay();
 
@@ -178,6 +180,10 @@ export default function FieldsOneSoil() {
   );
   const { data: ndviHistory } = trpc.ndvi.history.useQuery(
     { fieldId: selectedFieldId!, days: 365 },
+    { enabled: !!selectedFieldId }
+  );
+  const { data: fieldCrops } = trpc.crops.listByField.useQuery(
+    { fieldId: selectedFieldId! },
     { enabled: !!selectedFieldId }
   );
 
@@ -581,7 +587,9 @@ export default function FieldsOneSoil() {
                 <h1 className="text-2xl font-semibold text-gray-900">{selectedField.name}</h1>
                 <p className="text-sm text-gray-500 mt-1">
                   {selectedField.areaHectares ? `${(selectedField.areaHectares / 100).toFixed(1)} ha` : "Área não definida"}
-                  , Sem culturas selecionadas
+                  {fieldCrops && fieldCrops.length > 0 
+                    ? `, ${fieldCrops[0].cropType}${fieldCrops[0].variety ? ` (${fieldCrops[0].variety})` : ''}`
+                    : ", Sem culturas selecionadas"}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -633,7 +641,12 @@ export default function FieldsOneSoil() {
             {/* Quick Actions + Weather */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="gap-2"
+                  onClick={() => setShowAddCropDialog(true)}
+                >
                   <Leaf className="h-4 w-4" />
                   Adicionar cultura
                 </Button>
@@ -759,6 +772,16 @@ export default function FieldsOneSoil() {
             <p className="text-gray-500">Selecione um campo para ver os detalhes</p>
           </div>
         </div>
+      )}
+      
+      {/* Dialog para adicionar cultura */}
+      {selectedField && (
+        <AddCropDialog
+          open={showAddCropDialog}
+          onOpenChange={setShowAddCropDialog}
+          fieldId={selectedField.id}
+          fieldName={selectedField.name}
+        />
       )}
     </div>
   );

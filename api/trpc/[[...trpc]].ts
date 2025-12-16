@@ -75,8 +75,29 @@ const notifications = pgTable("notifications", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// Crops (Culturas)
+const crops = pgTable("crops", {
+  id: serial("id").primaryKey(),
+  fieldId: integer("fieldId").notNull(),
+  userId: integer("userId").notNull(),
+  cropType: varchar("cropType", { length: 100 }).notNull(), // soja, milho, trigo, etc.
+  variety: varchar("variety", { length: 100 }),
+  plantingDate: timestamp("plantingDate"),
+  expectedHarvestDate: timestamp("expectedHarvestDate"),
+  actualHarvestDate: timestamp("actualHarvestDate"),
+  status: varchar("status", { length: 50 }).default("planned"), // planned, planted, growing, harvested, failed
+  areaHectares: integer("areaHectares"),
+  expectedYield: integer("expectedYield"), // kg/hectare esperado
+  actualYield: integer("actualYield"), // kg/hectare real
+  notes: text("notes"),
+  season: varchar("season", { length: 20 }), // 2024/2025
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 type User = typeof users.$inferSelect;
 type Field = typeof fields.$inferSelect;
+type Crop = typeof crops.$inferSelect;
 
 // ==================== DATABASE ====================
 let client: ReturnType<typeof postgres> | null = null;
@@ -94,6 +115,33 @@ async function getDb() {
       client = postgres(dbUrl);
       db = drizzle(client);
       console.log("[DB] Database connected successfully");
+      
+      // Auto-create crops table if it doesn't exist
+      try {
+        await client`
+          CREATE TABLE IF NOT EXISTS "crops" (
+            "id" SERIAL PRIMARY KEY,
+            "fieldId" INTEGER NOT NULL,
+            "userId" INTEGER NOT NULL,
+            "cropType" VARCHAR(100) NOT NULL,
+            "variety" VARCHAR(100),
+            "plantingDate" TIMESTAMP,
+            "expectedHarvestDate" TIMESTAMP,
+            "actualHarvestDate" TIMESTAMP,
+            "status" VARCHAR(50) DEFAULT 'planned',
+            "areaHectares" INTEGER,
+            "expectedYield" INTEGER,
+            "actualYield" INTEGER,
+            "notes" TEXT,
+            "season" VARCHAR(20),
+            "createdAt" TIMESTAMP DEFAULT NOW() NOT NULL,
+            "updatedAt" TIMESTAMP DEFAULT NOW() NOT NULL
+          )
+        `;
+        console.log("[DB] Crops table ensured");
+      } catch (e) {
+        console.log("[DB] Crops table check:", e);
+      }
     } catch (err) {
       console.error("[DB] Failed to connect to database:", err);
       throw err;
@@ -558,6 +606,123 @@ const appRouter = t.router({
           message: "Funcionalidade de integração com Agromonitoring será implementada em breve",
           linkedCount: 0 
         };
+      }),
+  }),
+  
+  crops: t.router({
+    // Listar culturas de um campo
+    listByField: protectedProcedure
+      .input(z.object({ fieldId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        // Verificar se o campo pertence ao usuário
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!field) throw new Error("Campo não encontrado");
+        
+        const result = await database
+          .select()
+          .from(crops)
+          .where(eq(crops.fieldId, input.fieldId))
+          .orderBy(desc(crops.createdAt));
+        
+        return result;
+      }),
+    
+    // Criar nova cultura
+    create: protectedProcedure
+      .input(z.object({
+        fieldId: z.number(),
+        cropType: z.string(),
+        variety: z.string().optional(),
+        plantingDate: z.string().optional(), // ISO date string
+        expectedHarvestDate: z.string().optional(),
+        status: z.enum(["planned", "planted", "growing", "harvested", "failed"]).default("planned"),
+        areaHectares: z.number().optional(),
+        expectedYield: z.number().optional(),
+        notes: z.string().optional(),
+        season: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        // Verificar se o campo pertence ao usuário
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!field) throw new Error("Campo não encontrado");
+        
+        const [newCrop] = await database.insert(crops).values({
+          fieldId: input.fieldId,
+          userId: ctx.user.id,
+          cropType: input.cropType,
+          variety: input.variety,
+          plantingDate: input.plantingDate ? new Date(input.plantingDate) : null,
+          expectedHarvestDate: input.expectedHarvestDate ? new Date(input.expectedHarvestDate) : null,
+          status: input.status,
+          areaHectares: input.areaHectares,
+          expectedYield: input.expectedYield,
+          notes: input.notes,
+          season: input.season || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`,
+        }).returning();
+        
+        return newCrop;
+      }),
+    
+    // Atualizar cultura
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        cropType: z.string().optional(),
+        variety: z.string().optional(),
+        plantingDate: z.string().optional(),
+        expectedHarvestDate: z.string().optional(),
+        actualHarvestDate: z.string().optional(),
+        status: z.enum(["planned", "planted", "growing", "harvested", "failed"]).optional(),
+        areaHectares: z.number().optional(),
+        expectedYield: z.number().optional(),
+        actualYield: z.number().optional(),
+        notes: z.string().optional(),
+        season: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        const { id, ...updateData } = input;
+        
+        // Converter datas se presentes
+        const processedData: Record<string, any> = { ...updateData, updatedAt: new Date() };
+        if (input.plantingDate) processedData.plantingDate = new Date(input.plantingDate);
+        if (input.expectedHarvestDate) processedData.expectedHarvestDate = new Date(input.expectedHarvestDate);
+        if (input.actualHarvestDate) processedData.actualHarvestDate = new Date(input.actualHarvestDate);
+        
+        await database
+          .update(crops)
+          .set(processedData)
+          .where(and(eq(crops.id, id), eq(crops.userId, ctx.user.id)));
+        
+        return { success: true };
+      }),
+    
+    // Deletar cultura
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await getDb();
+        
+        await database
+          .delete(crops)
+          .where(and(eq(crops.id, input.id), eq(crops.userId, ctx.user.id)));
+        
+        return { success: true };
       }),
   }),
   
