@@ -38,6 +38,7 @@ import {
   Bell,
   HelpCircle,
   LogOut,
+  Crown,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { format, subDays, startOfYear, differenceInDays } from "date-fns";
@@ -141,287 +142,654 @@ function FieldThumbnail({
   );
 }
 
-// Gráfico NDVI anual estilo OneSoil
+// Gráfico NDVI profissional - SÓ DADOS REAIS (sem simulação)
 function NdviYearChart({ 
   data, 
-  height = 120,
+  height = 200,
   currentNdvi
 }: { 
   data: { date: Date; ndvi: number }[]; 
   height?: number;
   currentNdvi?: number;
 }) {
-  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; ndvi: number; date: Date; index: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   
+  // SÓ usa dados reais - se não tiver, mostra mensagem
   const chartData = useMemo(() => {
-    if (data.length > 0) return data;
-    // Dados simulados se não houver histórico real
-    const now = new Date();
-    return months.map((_, i) => {
-      const date = new Date(now.getFullYear(), i, 15);
-      const baseNdvi = 0.4 + Math.sin((i + 3) * 0.5) * 0.25;
-      return { date, ndvi: Math.max(0.2, Math.min(0.9, baseNdvi + (Math.random() - 0.5) * 0.1)) };
-    });
+    if (!data || data.length === 0) return [];
+    // Ordena por data
+    return [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [data]);
 
-  const width = 400;
-  const padding = { top: 15, right: 15, bottom: 25, left: 35 };
+  // Se não há dados reais, mostra mensagem
+  if (chartData.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-40 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+        <Leaf className="h-8 w-8 text-slate-300 mb-2" />
+        <p className="text-sm text-slate-500 font-medium">Sem dados de NDVI</p>
+        <p className="text-xs text-slate-400">Aguardando imagens de satélite</p>
+      </div>
+    );
+  }
+
+  const width = 600;
+  const padding = { top: 30, right: 30, bottom: 50, left: 55 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
+  // Escala Y de 0 a 1
   const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - (v * chartHeight);
 
   const points = chartData.map((d, i) => ({ 
     x: xScale(i), 
     y: yScale(d.ndvi),
-    ndvi: d.ndvi 
+    ndvi: d.ndvi,
+    date: d.date,
+    index: i
   }));
 
   // Criar path suave com curvas bezier
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const cpx = (prev.x + curr.x) / 2;
-    pathD += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
-  }
+  const createSmoothPath = (pts: typeof points) => {
+    if (pts.length < 2) return `M ${pts[0].x} ${pts[0].y}`;
+    
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      
+      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    
+    return path;
+  };
 
-  // Path para área preenchida
-  const areaPath = pathD + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+  const linePath = createSmoothPath(points);
+  const areaPath = linePath + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
 
-  const lastPoint = points[points.length - 1];
+  // Mouse tracking
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * width;
+    
+    let closestPoint = points[0];
+    let minDist = Math.abs(x - points[0].x);
+    
+    for (const point of points) {
+      const dist = Math.abs(x - point.x);
+      if (dist < minDist) {
+        minDist = dist;
+        closestPoint = point;
+      }
+    }
+    
+    if (minDist < 40) {
+      setHoveredPoint(closestPoint);
+    } else {
+      setHoveredPoint(null);
+    }
+  }, [points, width]);
+
+  // Gerar labels de eixo X baseado nos dados reais
+  const xLabels = useMemo(() => {
+    if (chartData.length <= 6) {
+      return chartData.map((d, i) => ({
+        x: xScale(i),
+        label: format(new Date(d.date), "dd/MM", { locale: ptBR })
+      }));
+    }
+    // Se muitos pontos, mostrar apenas alguns
+    const step = Math.ceil(chartData.length / 6);
+    return chartData
+      .filter((_, i) => i % step === 0 || i === chartData.length - 1)
+      .map((d, idx, arr) => {
+        const originalIndex = chartData.findIndex(cd => cd === d);
+        return {
+          x: xScale(originalIndex),
+          label: format(new Date(d.date), "dd/MM", { locale: ptBR })
+        };
+      });
+  }, [chartData, xScale]);
+
+  // Y-axis ticks
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+
+  // Cor do NDVI baseada no valor
+  const getNdviGradientColor = (ndvi: number) => {
+    if (ndvi >= 0.7) return { main: "#22c55e", light: "#86efac" };
+    if (ndvi >= 0.5) return { main: "#84cc16", light: "#bef264" };
+    if (ndvi >= 0.3) return { main: "#eab308", light: "#fde047" };
+    return { main: "#ef4444", light: "#fca5a5" };
+  };
+
+  const lastNdvi = chartData[chartData.length - 1]?.ndvi || 0.5;
+  const colors = getNdviGradientColor(lastNdvi);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-      <defs>
-        <linearGradient id="ndvi-area-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
+    <div className="relative bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+      <svg 
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`} 
+        className="w-full h-auto cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredPoint(null)}
+      >
+        <defs>
+          {/* Gradiente de área */}
+          <linearGradient id="ndvi-area-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={colors.main} stopOpacity="0.35" />
+            <stop offset="50%" stopColor={colors.main} stopOpacity="0.1" />
+            <stop offset="100%" stopColor={colors.main} stopOpacity="0" />
+          </linearGradient>
+          
+          {/* Gradiente de linha */}
+          <linearGradient id="ndvi-line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={colors.light} />
+            <stop offset="50%" stopColor={colors.main} />
+            <stop offset="100%" stopColor={colors.main} />
+          </linearGradient>
 
-      {/* Grid lines */}
-      {[0.25, 0.5, 0.75, 1].map(v => (
-        <g key={v}>
+          {/* Sombra */}
+          <filter id="point-shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor={colors.main} floodOpacity="0.3"/>
+          </filter>
+        </defs>
+
+        {/* Fundo com grid */}
+        <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} fill="#f8fafc" rx="8"/>
+
+        {/* Grid horizontal */}
+        {yTicks.map(v => (
+          <g key={v}>
+            <line
+              x1={padding.left}
+              y1={yScale(v)}
+              x2={width - padding.right}
+              y2={yScale(v)}
+              stroke={v === 0.5 ? "#cbd5e1" : "#e2e8f0"}
+              strokeWidth={v === 0.5 ? "1" : "0.5"}
+              strokeDasharray={v === 0.5 ? "" : "4 4"}
+            />
+            <text 
+              x={padding.left - 12} 
+              y={yScale(v)} 
+              fontSize="12" 
+              fill="#64748b" 
+              textAnchor="end" 
+              dominantBaseline="middle"
+              fontWeight="500"
+            >
+              {v.toFixed(2)}
+            </text>
+          </g>
+        ))}
+
+        {/* Linha vertical no hover */}
+        {hoveredPoint && (
           <line
-            x1={padding.left}
-            y1={yScale(v)}
-            x2={width - padding.right}
-            y2={yScale(v)}
-            stroke="#f0f0f0"
-            strokeWidth="1"
+            x1={hoveredPoint.x}
+            y1={padding.top}
+            x2={hoveredPoint.x}
+            y2={padding.top + chartHeight}
+            stroke={colors.main}
+            strokeWidth="1.5"
+            strokeDasharray="6 4"
+            opacity="0.7"
           />
-          <text 
-            x={padding.left - 8} 
-            y={yScale(v)} 
-            fontSize="10" 
-            fill="#9ca3af" 
-            textAnchor="end" 
-            dominantBaseline="middle"
+        )}
+
+        {/* Área preenchida */}
+        <path d={areaPath} fill="url(#ndvi-area-grad)" />
+
+        {/* Linha principal com glow */}
+        <path 
+          d={linePath} 
+          fill="none" 
+          stroke={colors.main}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.15"
+        />
+        <path 
+          d={linePath} 
+          fill="none" 
+          stroke="url(#ndvi-line-grad)" 
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Pontos de dados */}
+        {points.map((point, i) => (
+          <circle
+            key={i}
+            cx={point.x}
+            cy={point.y}
+            r={hoveredPoint?.index === i ? 0 : 5}
+            fill="white"
+            stroke={colors.main}
+            strokeWidth="2.5"
+            opacity={hoveredPoint?.index === i ? 0 : 1}
+          />
+        ))}
+
+        {/* Ponto destacado no hover */}
+        {hoveredPoint && (
+          <g filter="url(#point-shadow)">
+            <circle
+              cx={hoveredPoint.x}
+              cy={hoveredPoint.y}
+              r="10"
+              fill="white"
+              stroke={colors.main}
+              strokeWidth="3"
+            />
+            <circle
+              cx={hoveredPoint.x}
+              cy={hoveredPoint.y}
+              r="5"
+              fill={colors.main}
+            />
+          </g>
+        )}
+
+        {/* Labels do eixo X */}
+        {xLabels.map((label, i) => (
+          <text
+            key={i}
+            x={label.x}
+            y={height - 15}
+            fontSize="11"
+            fill="#64748b"
+            textAnchor="middle"
+            fontWeight="500"
           >
-            {v.toFixed(1)}
+            {label.label}
           </text>
-        </g>
-      ))}
+        ))}
 
-      {/* Area fill */}
-      <path d={areaPath} fill="url(#ndvi-area-gradient)" />
-
-      {/* Line */}
-      <path 
-        d={pathD} 
-        fill="none" 
-        stroke="#22c55e" 
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* Current point marker */}
-      <circle
-        cx={lastPoint.x}
-        cy={lastPoint.y}
-        r="6"
-        fill="#22c55e"
-        stroke="white"
-        strokeWidth="2"
-      />
-
-      {/* X-axis labels */}
-      {months.map((m, i) => (
+        {/* Título do eixo Y */}
         <text
-          key={m}
-          x={padding.left + (i / 11) * chartWidth}
-          y={height - 5}
-          fontSize="10"
-          fill="#9ca3af"
+          x={15}
+          y={height / 2}
+          fontSize="11"
+          fill="#94a3b8"
           textAnchor="middle"
+          transform={`rotate(-90, 15, ${height / 2})`}
         >
-          {m}
+          NDVI
         </text>
-      ))}
-    </svg>
+      </svg>
+
+      {/* Tooltip flutuante */}
+      {hoveredPoint && (
+        <div 
+          className="absolute pointer-events-none z-20"
+          style={{ 
+            left: `${(hoveredPoint.x / width) * 100}%`,
+            top: `${((hoveredPoint.y - 20) / height) * 100}%`,
+            transform: 'translate(-50%, -100%)'
+          }}
+        >
+          <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-sm whitespace-nowrap backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: colors.main }}
+              />
+              <span className="font-bold text-lg">{hoveredPoint.ndvi.toFixed(2)}</span>
+            </div>
+            <div className="text-slate-400 text-xs">
+              {format(new Date(hoveredPoint.date), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+            </div>
+          </div>
+          <div 
+            className="w-0 h-0 mx-auto border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px]" 
+            style={{ borderTopColor: '#0f172a' }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
-// Gráfico de precipitação acumulada
+// Gráfico de precipitação acumulada PROFISSIONAL com tooltip
 function PrecipitationChart({ 
   dates, 
   values,
-  height = 100 
+  height = 120 
 }: { 
   dates: string[]; 
   values: number[];
   height?: number;
 }) {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; date: string; index: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  
   const maxValue = Math.max(...values, 200);
 
-  const width = 400;
-  const padding = { top: 15, right: 15, bottom: 25, left: 40 };
+  const width = 500;
+  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
   // Agrupar por mês
-  const monthlyData = months.map((_, monthIndex) => {
-    const monthValues = values.filter((_, i) => {
-      if (!dates[i]) return false;
-      const date = new Date(dates[i]);
-      return date.getMonth() === monthIndex;
+  const chartData = useMemo(() => {
+    return months.map((_, monthIndex) => {
+      const monthValues = values.filter((_, i) => {
+        if (!dates[i]) return false;
+        const date = new Date(dates[i]);
+        return date.getMonth() === monthIndex;
+      });
+      return {
+        value: monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0,
+        date: `${months[monthIndex]}/2025`
+      };
     });
-    return monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0;
-  });
+  }, [dates, values]);
 
-  const xScale = (i: number) => padding.left + (i / 11) * chartWidth;
+  const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - ((v / maxValue) * chartHeight);
 
-  const points = monthlyData.map((v, i) => ({ x: xScale(i), y: yScale(v) }));
+  const points = chartData.map((d, i) => ({ 
+    x: xScale(i), 
+    y: yScale(d.value),
+    value: d.value,
+    date: d.date,
+    index: i
+  }));
 
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const cpx = (prev.x + curr.x) / 2;
-    pathD += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
-  }
+  // Smooth curve
+  const createSmoothPath = (pts: typeof points) => {
+    if (pts.length < 2) return '';
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    return path;
+  };
 
-  const areaPath = pathD + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+  const linePath = createSmoothPath(points);
+  const areaPath = linePath + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * width;
+    let closestPoint = points[0];
+    let minDist = Math.abs(x - points[0].x);
+    for (const point of points) {
+      const dist = Math.abs(x - point.x);
+      if (dist < minDist) { minDist = dist; closestPoint = point; }
+    }
+    if (minDist < 30) setHoveredPoint(closestPoint);
+    else setHoveredPoint(null);
+  }, [points, width]);
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-      <defs>
-        <linearGradient id="precip-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
+    <div className="relative">
+      <svg 
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`} 
+        className="w-full h-auto cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredPoint(null)}
+      >
+        <defs>
+          <linearGradient id="precip-gradient-pro" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.4" />
+            <stop offset="50%" stopColor="#3b82f6" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+          </linearGradient>
+          <linearGradient id="precip-line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#93c5fd" />
+            <stop offset="50%" stopColor="#3b82f6" />
+            <stop offset="100%" stopColor="#2563eb" />
+          </linearGradient>
+        </defs>
 
-      {/* Grid */}
-      {[0.25, 0.5, 0.75, 1].map(v => (
-        <line
-          key={v}
-          x1={padding.left}
-          y1={yScale(v * maxValue)}
-          x2={width - padding.right}
-          y2={yScale(v * maxValue)}
-          stroke="#f0f0f0"
-          strokeWidth="1"
-        />
-      ))}
+        <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} fill="#fafafa" rx="4"/>
 
-      <path d={areaPath} fill="url(#precip-gradient)" />
-      <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
+        {yTicks.map(v => (
+          <g key={v}>
+            <line x1={padding.left} y1={yScale(v * maxValue)} x2={width - padding.right} y2={yScale(v * maxValue)} 
+              stroke={v === 0.5 ? "#e5e7eb" : "#f3f4f6"} strokeWidth="1" strokeDasharray={v === 0.5 ? "none" : "4 2"}/>
+            <text x={padding.left - 8} y={yScale(v * maxValue)} fontSize="10" fill="#6b7280" textAnchor="end" dominantBaseline="middle">
+              {Math.round(v * maxValue)}
+            </text>
+          </g>
+        ))}
 
-      {months.map((m, i) => (
-        <text key={m} x={xScale(i)} y={height - 5} fontSize="10" fill="#9ca3af" textAnchor="middle">
-          {m}
-        </text>
-      ))}
+        {hoveredPoint && (
+          <line x1={hoveredPoint.x} y1={padding.top} x2={hoveredPoint.x} y2={padding.top + chartHeight}
+            stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 2" opacity="0.6"/>
+        )}
 
-      <text x={padding.left - 8} y={padding.top} fontSize="10" fill="#9ca3af" textAnchor="end">
-        {Math.round(maxValue)}
-      </text>
-      <text x={padding.left - 8} y={padding.top + chartHeight} fontSize="10" fill="#9ca3af" textAnchor="end">
-        0
-      </text>
-    </svg>
+        <path d={areaPath} fill="url(#precip-gradient-pro)" />
+        <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" opacity="0.2"/>
+        <path d={linePath} fill="none" stroke="url(#precip-line-gradient)" strokeWidth="2.5" strokeLinecap="round"/>
+
+        {points.map((point, i) => (
+          <circle key={i} cx={point.x} cy={point.y} r={hoveredPoint?.index === i ? 0 : 2.5}
+            fill="#3b82f6" stroke="white" strokeWidth="1.5" opacity={hoveredPoint?.index === i ? 0 : 0.8}/>
+        ))}
+
+        {hoveredPoint && (
+          <g>
+            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="7" fill="white" stroke="#3b82f6" strokeWidth="2.5"/>
+            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="3" fill="#3b82f6"/>
+          </g>
+        )}
+
+        {months.map((m, i) => (
+          <text key={m} x={padding.left + (i / 11) * chartWidth} y={height - 8} fontSize="10" fill="#6b7280" textAnchor="middle">{m}</text>
+        ))}
+      </svg>
+
+      {hoveredPoint && (
+        <div className="absolute pointer-events-none z-10" style={{ 
+          left: `${(hoveredPoint.x / width) * 100}%`, top: `${((hoveredPoint.y - 15) / height) * 100}%`,
+          transform: 'translate(-50%, -100%)'
+        }}>
+          <div className="bg-gray-800 text-white px-3 py-2 rounded-lg shadow-lg text-sm whitespace-nowrap">
+            <div className="font-bold text-blue-400">{Math.round(hoveredPoint.value)} mm</div>
+            <div className="text-gray-300 text-xs">{hoveredPoint.date}</div>
+          </div>
+          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-gray-800 mx-auto" />
+        </div>
+      )}
+    </div>
   );
 }
 
-// Gráfico de soma térmica
+// Gráfico de soma térmica PROFISSIONAL com tooltip
 function ThermalSumChart({ 
   dates, 
   values,
-  height = 100 
+  height = 120 
 }: { 
   dates: string[]; 
   values: number[];
   height?: number;
 }) {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; date: string; index: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  
   const maxValue = Math.max(...values, 2000);
 
-  const width = 400;
-  const padding = { top: 15, right: 15, bottom: 25, left: 45 };
+  const width = 500;
+  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const monthlyData = months.map((_, monthIndex) => {
-    const monthValues = values.filter((_, i) => {
-      if (!dates[i]) return false;
-      const date = new Date(dates[i]);
-      return date.getMonth() === monthIndex;
-    });
-    return monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0;
-  });
+  // Agrupar por mês ou usar dados diretamente
+  const chartData = useMemo(() => {
+    if (values.length <= 12) {
+      return months.map((_, monthIndex) => {
+        const monthValues = values.filter((_, i) => {
+          if (!dates[i]) return false;
+          const date = new Date(dates[i]);
+          return date.getMonth() === monthIndex;
+        });
+        return {
+          value: monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0,
+          date: `${months[monthIndex]}/2025`
+        };
+      });
+    }
+    // Amostrar dados se houver muitos
+    const step = Math.ceil(values.length / 12);
+    return values.filter((_, i) => i % step === 0).map((v, i) => ({
+      value: v,
+      date: dates[i * step] || ''
+    }));
+  }, [dates, values]);
 
-  const xScale = (i: number) => padding.left + (i / 11) * chartWidth;
+  const xScale = (i: number) => padding.left + (i / Math.max(chartData.length - 1, 1)) * chartWidth;
   const yScale = (v: number) => padding.top + chartHeight - ((v / maxValue) * chartHeight);
 
-  const points = monthlyData.map((v, i) => ({ x: xScale(i), y: yScale(v) }));
+  const points = chartData.map((d, i) => ({ 
+    x: xScale(i), 
+    y: yScale(d.value),
+    value: d.value,
+    date: d.date,
+    index: i
+  }));
 
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    pathD += ` L ${points[i].x} ${points[i].y}`;
-  }
+  // Smooth curve
+  const createSmoothPath = (pts: typeof points) => {
+    if (pts.length < 2) return '';
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    return path;
+  };
 
-  const areaPath = pathD + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+  const linePath = createSmoothPath(points);
+  const areaPath = linePath + ` L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * width;
+    let closestPoint = points[0];
+    let minDist = Math.abs(x - points[0].x);
+    for (const point of points) {
+      const dist = Math.abs(x - point.x);
+      if (dist < minDist) { minDist = dist; closestPoint = point; }
+    }
+    if (minDist < 30) setHoveredPoint(closestPoint);
+    else setHoveredPoint(null);
+  }, [points, width]);
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-      <defs>
-        <linearGradient id="thermal-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#f97316" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#f97316" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
+    <div className="relative">
+      <svg 
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`} 
+        className="w-full h-auto cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredPoint(null)}
+      >
+        <defs>
+          <linearGradient id="thermal-gradient-pro" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#fb923c" stopOpacity="0.4" />
+            <stop offset="50%" stopColor="#f97316" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#f97316" stopOpacity="0.02" />
+          </linearGradient>
+          <linearGradient id="thermal-line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#fdba74" />
+            <stop offset="50%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#ea580c" />
+          </linearGradient>
+        </defs>
 
-      {[0.25, 0.5, 0.75, 1].map(v => (
-        <line
-          key={v}
-          x1={padding.left}
-          y1={yScale(v * maxValue)}
-          x2={width - padding.right}
-          y2={yScale(v * maxValue)}
-          stroke="#f0f0f0"
-          strokeWidth="1"
-        />
-      ))}
+        <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} fill="#fafafa" rx="4"/>
 
-      <path d={areaPath} fill="url(#thermal-gradient)" />
-      <path d={pathD} fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" />
+        {yTicks.map(v => (
+          <g key={v}>
+            <line x1={padding.left} y1={yScale(v * maxValue)} x2={width - padding.right} y2={yScale(v * maxValue)} 
+              stroke={v === 0.5 ? "#e5e7eb" : "#f3f4f6"} strokeWidth="1" strokeDasharray={v === 0.5 ? "none" : "4 2"}/>
+            <text x={padding.left - 8} y={yScale(v * maxValue)} fontSize="10" fill="#6b7280" textAnchor="end" dominantBaseline="middle">
+              {Math.round(v * maxValue)}
+            </text>
+          </g>
+        ))}
 
-      {months.map((m, i) => (
-        <text key={m} x={xScale(i)} y={height - 5} fontSize="10" fill="#9ca3af" textAnchor="middle">
-          {m}
-        </text>
-      ))}
+        {hoveredPoint && (
+          <line x1={hoveredPoint.x} y1={padding.top} x2={hoveredPoint.x} y2={padding.top + chartHeight}
+            stroke="#f97316" strokeWidth="1" strokeDasharray="4 2" opacity="0.6"/>
+        )}
 
-      <text x={padding.left - 8} y={padding.top} fontSize="10" fill="#9ca3af" textAnchor="end">
-        {Math.round(maxValue)}
-      </text>
-    </svg>
+        <path d={areaPath} fill="url(#thermal-gradient-pro)" />
+        <path d={linePath} fill="none" stroke="#f97316" strokeWidth="4" strokeLinecap="round" opacity="0.2"/>
+        <path d={linePath} fill="none" stroke="url(#thermal-line-gradient)" strokeWidth="2.5" strokeLinecap="round"/>
+
+        {points.map((point, i) => (
+          <circle key={i} cx={point.x} cy={point.y} r={hoveredPoint?.index === i ? 0 : 2.5}
+            fill="#f97316" stroke="white" strokeWidth="1.5" opacity={hoveredPoint?.index === i ? 0 : 0.8}/>
+        ))}
+
+        {hoveredPoint && (
+          <g>
+            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="7" fill="white" stroke="#f97316" strokeWidth="2.5"/>
+            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="3" fill="#f97316"/>
+          </g>
+        )}
+
+        {months.map((m, i) => (
+          <text key={m} x={padding.left + (i / 11) * chartWidth} y={height - 8} fontSize="10" fill="#6b7280" textAnchor="middle">{m}</text>
+        ))}
+      </svg>
+
+      {hoveredPoint && (
+        <div className="absolute pointer-events-none z-10" style={{ 
+          left: `${(hoveredPoint.x / width) * 100}%`, top: `${((hoveredPoint.y - 15) / height) * 100}%`,
+          transform: 'translate(-50%, -100%)'
+        }}>
+          <div className="bg-gray-800 text-white px-3 py-2 rounded-lg shadow-lg text-sm whitespace-nowrap">
+            <div className="font-bold text-orange-400">+{Math.round(hoveredPoint.value)}°</div>
+            <div className="text-gray-300 text-xs">{hoveredPoint.date}</div>
+          </div>
+          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-gray-800 mx-auto" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -446,9 +814,7 @@ function NdviScale() {
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
-  const [selectedFields, setSelectedFields] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<"status" | "data" | "notes">("status");
   const [ndviMapInstance, setNdviMapInstance] = useState<mapboxgl.Map | null>(null);
   const [satMapInstance, setSatMapInstance] = useState<mapboxgl.Map | null>(null);
@@ -469,7 +835,11 @@ export default function Dashboard() {
     { enabled: !!selectedFieldId }
   );
   const { data: historicalWeather } = trpc.weather.getHistorical.useQuery(
-    { fieldId: selectedFieldId!, days: 365 },
+    { 
+      fieldId: selectedFieldId!, 
+      startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0]
+    },
     { enabled: !!selectedFieldId }
   );
   const { data: notes } = trpc.notes.listByField.useQuery(
@@ -495,23 +865,18 @@ export default function Dashboard() {
     return fields.reduce((sum: number, f: any) => sum + (f.areaHectares || 0), 0) / 100;
   }, [fields]);
 
+  // SÓ DADOS REAIS - sem simulação
   const ndviChartData = useMemo(() => {
-    if (ndviHistory?.length) {
-      return ndviHistory.map((n: any) => ({
-        date: new Date(n.captureDate || n.date),
-        ndvi: n.ndviAverage ? n.ndviAverage / 100 : (n.ndvi || 0.5)
-      }));
-    }
-    // Dados simulados
-    return Array.from({ length: 12 }, (_, i) => {
-      const date = new Date(2025, i, 15);
-      return { date, ndvi: 0.4 + Math.sin((i + 3) * 0.5) * 0.2 };
-    });
+    if (!ndviHistory?.length) return [];
+    return ndviHistory.map((n: any) => ({
+      date: new Date(n.captureDate || n.date),
+      ndvi: n.ndviAverage ? n.ndviAverage / 100 : (n.ndvi || 0.5)
+    }));
   }, [ndviHistory]);
 
   const currentNdviValue = selectedField?.currentNdvi 
     ? (selectedField.currentNdvi / 100).toFixed(2) 
-    : "0.65";
+    : "--";
 
   const fieldCenter = useMemo(() => {
     if (!selectedField?.boundaries) return [-49.5, -20.8] as [number, number];
@@ -720,556 +1085,562 @@ export default function Dashboard() {
     setSatMapInstance(map);
   }, []);
 
-  const toggleFieldSelection = (fieldId: number) => {
-    const newSelected = new Set(selectedFields);
-    if (newSelected.has(fieldId)) {
-      newSelected.delete(fieldId);
-    } else {
-      newSelected.add(fieldId);
-    }
-    setSelectedFields(newSelected);
-  };
+  // Estado da navegação de abas no estilo mobile
+  const [activeNavTab, setActiveNavTab] = useState<"fields" | "map" | "charts" | "notes" | "settings">("fields");
 
   return (
-    <div className="h-screen flex bg-[#fafafa] overflow-hidden">
-      {/* ===== SIDEBAR ICONS ===== */}
-      <div className="w-14 bg-[#1e293b] flex flex-col items-center py-4 shrink-0">
-        {/* Logo */}
-        <div className="w-9 h-9 bg-gradient-to-br from-green-400 to-green-600 rounded-xl flex items-center justify-center mb-6 shadow-lg">
-          <Leaf className="h-5 w-5 text-white" />
+    <div className="h-screen flex flex-col bg-[#fafafa] overflow-hidden">
+      {/* ===== HEADER TOP BAR ===== */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0 safe-area-top">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-green-400 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
+            <Leaf className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Campo Vivo</h1>
+            <p className="text-xs text-gray-500">Safra 2025</p>
+          </div>
         </div>
-        
-        {/* Main Navigation */}
-        <div className="flex-1 flex flex-col items-center gap-1">
+        <div className="flex items-center gap-2">
           <button 
-            className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center text-green-400"
-            title="Dashboard"
+            className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-amber-900 hover:from-amber-300 hover:to-yellow-400 transition-all shadow-lg shadow-amber-500/20"
+            onClick={() => setLocation("/safra")}
           >
-            <Home className="h-5 w-5" />
+            <Crown className="h-4 w-4" />
           </button>
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Mapa"
-            onClick={() => setLocation("/map")}
-          >
-            <Map className="h-5 w-5" />
-          </button>
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Camadas"
-          >
-            <Layers className="h-5 w-5" />
-          </button>
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Relatórios"
-          >
-            <BarChart3 className="h-5 w-5" />
-          </button>
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Notas"
-            onClick={() => setLocation("/notes")}
-          >
-            <FileText className="h-5 w-5" />
-          </button>
-          
-          {/* PRO Button */}
-          <button 
-            className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white hover:from-amber-400 hover:to-orange-400 transition-all mt-2 shadow-lg shadow-orange-500/20"
-            title="CampoVivo PRO"
-            onClick={() => setLocation("/pro")}
-          >
-            <span className="text-[10px] font-bold">PRO</span>
-          </button>
-        </div>
-
-        {/* Bottom Navigation */}
-        <div className="flex flex-col items-center gap-1">
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Ajuda"
-          >
-            <HelpCircle className="h-5 w-5" />
-          </button>
-          <button 
-            className="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            title="Configurações"
-            onClick={() => setLocation("/profile")}
-          >
-            <Settings className="h-5 w-5" />
+          <button className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-500">
+            <Bell className="h-5 w-5" />
           </button>
         </div>
       </div>
 
-      {/* ===== FIELDS LIST SIDEBAR ===== */}
-      <div className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-72'}`}>
-        {/* Header */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-900">Meus talhões</h2>
-              <span className="text-xs text-gray-500">Proprietário</span>
-            </div>
-            <button 
-              onClick={() => setSidebarCollapsed(true)}
-              className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Season */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <button className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900">
-            <Calendar className="h-4 w-4 text-green-600" />
-            <span>Safra 2025</span>
-            <ChevronDown className="h-3 w-3 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Buscar talhão..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 text-sm bg-gray-50 border-gray-200"
-            />
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="px-4 py-2 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between text-xs">
-          <span className="text-gray-500">{filteredFields.length} talhões</span>
-          <span className="text-gray-700 font-medium">{totalArea.toFixed(1)} ha total</span>
-        </div>
-
-        {/* Fields List */}
-        <div className="flex-1 overflow-y-auto">
-          {fieldsLoading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="w-12 h-12 rounded-lg" />
-                  <div className="flex-1">
-                    <Skeleton className="h-4 w-28 mb-1.5" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-1">
-              {filteredFields.map((field: any) => (
-                <div
-                  key={field.id}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer border-l-3 transition-colors ${
-                    selectedFieldId === field.id 
-                      ? "bg-green-50 border-l-green-500" 
-                      : "border-l-transparent hover:bg-gray-50"
-                  }`}
-                  onClick={() => setSelectedFieldId(field.id)}
-                >
-                  <FieldThumbnail 
-                    boundaries={field.boundaries} 
-                    ndviValue={field.currentNdvi ? field.currentNdvi / 100 : 0.5} 
-                    size={48} 
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{field.name}</p>
-                    <p className="text-xs text-gray-500">{formatHectares(field.areaHectares)}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span 
-                      className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{ 
-                        backgroundColor: getNdviColor(field.currentNdvi ? field.currentNdvi / 100 : 0.5) + '20',
-                        color: getNdviColor(field.currentNdvi ? field.currentNdvi / 100 : 0.5)
-                      }}
-                    >
-                      {field.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : '0.50'}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFieldSelection(field.id);
-                      }}
-                      className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                        selectedFields.has(field.id)
-                          ? "bg-green-500 border-green-500 text-white"
-                          : "border-gray-300 hover:border-green-400"
-                      }`}
-                    >
-                      {selectedFields.has(field.id) && <Check className="h-3 w-3" />}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Add Button */}
-        <div className="p-4 border-t border-gray-200">
-          <Button 
-            onClick={() => setLocation("/fields/new")}
-            className="w-full bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar talhão
-          </Button>
-        </div>
-      </div>
-
-      {/* Collapsed sidebar toggle */}
-      {sidebarCollapsed && (
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className="absolute left-14 top-1/2 -translate-y-1/2 z-20 w-6 h-12 bg-white border border-gray-200 rounded-r-lg flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      )}
-
-      {/* ===== MAIN CONTENT ===== */}
-      {selectedFieldId && selectedField ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{selectedField.name}</h1>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  {formatHectares(selectedField.areaHectares)}
-                  {selectedField.crop && ` • ${selectedField.crop}`}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Exportar
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="gap-2"
-                  onClick={() => setLocation(`/fields/${selectedFieldId}/edit`)}
-                >
-                  <Edit className="h-4 w-4" />
-                  Editar
-                </Button>
-                <button 
-                  onClick={() => setSelectedFieldId(null)}
-                  className="p-2 hover:bg-gray-100 rounded-lg text-gray-400"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex items-center gap-1 mt-4 border-b border-gray-100 -mb-4">
-              {[
-                { id: "status", label: "Status" },
-                { id: "data", label: "Dados" },
-                { id: "notes", label: "Notas" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? "text-green-600 border-green-500"
-                      : "text-gray-500 border-transparent hover:text-gray-700"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {activeTab === "status" && (
-              <div className="space-y-6">
-                {/* Weather + Quick Actions */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Button variant="outline" size="sm" className="gap-2">
-                      <Leaf className="h-4 w-4 text-green-600" />
-                      Adicionar cultura
-                    </Button>
-                    <Button variant="outline" size="sm" className="gap-2">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      Data de semeadura
-                    </Button>
-                  </div>
-                  
-                  {/* Weather Widget */}
-                  <div className="flex items-center gap-6 bg-gradient-to-r from-blue-50 to-sky-50 px-5 py-3 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <Sun className="h-6 w-6 text-yellow-500" />
-                      <span className="text-xl font-bold text-gray-900">
-                        {weather?.current?.temperature != null 
-                          ? `${Math.round(weather.current.temperature)}°` 
-                          : '--°'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-600 text-sm">
-                      <Droplets className="h-4 w-4 text-blue-500" />
-                      <span>{weather?.current?.precipitation ?? 0} mm</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-600 text-sm">
-                      <Wind className="h-4 w-4 text-gray-400" />
-                      <span>{weather?.current?.windSpeed?.toFixed(0) ?? '--'} km/h</span>
-                    </div>
+      {/* ===== MAIN CONTENT AREA ===== */}
+      <div className="flex-1 overflow-hidden">
+        {activeNavTab === "fields" && (
+          <div className="h-full flex flex-col">
+            {/* Se não tiver campo selecionado, mostra lista de campos */}
+            {!selectedFieldId ? (
+              <div className="h-full bg-white flex flex-col">
+                {/* Search */}
+                <div className="p-4 border-b border-gray-100">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Buscar talhão..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-10 text-sm bg-gray-50 border-gray-200 rounded-xl"
+                    />
                   </div>
                 </div>
 
-                {/* Maps Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* NDVI Map */}
-                  <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-lg">
-                    <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-white">NDVI</span>
-                        <span className="text-xs text-gray-400">
-                          {format(new Date(), "dd/MMM/yyyy", { locale: ptBR })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button className="p-1.5 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white">
-                          <ChevronLeft className="h-4 w-4" />
-                        </button>
-                        <button className="p-1.5 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white">
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                        <button className="p-1.5 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white ml-1">
-                          <Maximize2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="relative h-72">
-                      <MapboxMap
-                        onMapReady={handleNdviMapReady}
-                        className="w-full h-full"
-                        initialCenter={fieldCenter}
-                        initialZoom={15}
-                        style="satellite"
-                      />
-                      {/* NDVI Scale */}
-                      <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                        <NdviScale />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Satellite Map */}
-                  <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-lg">
-                    <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-white">Satélite</span>
-                        <span className="text-xs text-gray-400">
-                          {format(new Date(), "dd/MMM/yyyy", { locale: ptBR })}
-                        </span>
-                      </div>
-                      <button className="p-1.5 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white">
-                        <Maximize2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="h-72">
-                      <MapboxMap
-                        onMapReady={handleSatMapReady}
-                        className="w-full h-full"
-                        initialCenter={fieldCenter}
-                        initialZoom={15}
-                        style="satellite"
-                      />
-                    </div>
-                  </div>
+                {/* Stats */}
+                <div className="px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-100 flex items-center justify-between">
+                  <span className="text-sm text-gray-600">{filteredFields.length} talhões</span>
+                  <span className="text-sm text-green-700 font-semibold">{totalArea.toFixed(1)} ha</span>
                 </div>
 
-                {/* NDVI Chart Card */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Índice NDVI</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">Evolução ao longo do ano</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center gap-2">
-                        <Leaf className="h-5 w-5 text-green-500" />
-                        <span className="text-3xl font-bold text-gray-900">{currentNdviValue}</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">Última leitura</p>
-                    </div>
-                  </div>
-                  <NdviYearChart 
-                    data={ndviChartData} 
-                    height={140}
-                    currentNdvi={selectedField?.currentNdvi ? selectedField.currentNdvi / 100 : 0.65}
-                  />
-                </div>
-
-                {/* Weather Charts */}
-                {historicalWeather && (
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Precipitation */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">Precipitação</h3>
-                          <p className="text-xs text-gray-500 mt-0.5">Acumulada no período</p>
+                {/* Fields List - Full Width */}
+                <div className="flex-1 overflow-y-auto">
+                  {fieldsLoading ? (
+                    <div className="p-4 space-y-3">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                          <Skeleton className="w-14 h-14 rounded-xl" />
+                          <div className="flex-1">
+                            <Skeleton className="h-4 w-28 mb-2" />
+                            <Skeleton className="h-3 w-20" />
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="text-2xl font-bold text-blue-600">
-                            {historicalWeather.totalPrecipitation} mm
-                          </span>
-                        </div>
-                      </div>
-                      <PrecipitationChart 
-                        dates={historicalWeather.dates || []} 
-                        values={historicalWeather.accumulatedPrecipitation || []}
-                        height={100}
-                      />
+                      ))}
                     </div>
-
-                    {/* Thermal Sum */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">Soma Térmica</h3>
-                          <p className="text-xs text-gray-500 mt-0.5">Graus-dia (base 10°C)</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-2xl font-bold text-orange-600">
-                            +{historicalWeather.totalThermalSum}°
-                          </span>
-                        </div>
-                      </div>
-                      <ThermalSumChart 
-                        dates={historicalWeather.dates || []} 
-                        values={historicalWeather.thermalSum || []}
-                        height={100}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === "data" && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Informações do Talhão</h3>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-sm text-gray-500">Nome</p>
-                      <p className="text-gray-900 font-medium">{selectedField.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Área</p>
-                      <p className="text-gray-900 font-medium">{formatHectares(selectedField.areaHectares)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Cultura</p>
-                      <p className="text-gray-900 font-medium">{selectedField.crop || "Não definida"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">NDVI Atual</p>
-                      <p className="text-gray-900 font-medium">{currentNdviValue}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* NDVI History Table */}
-                <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="font-semibold text-gray-900">Histórico NDVI</h3>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {ndviChartData.slice(0, 10).map((item, index) => (
-                      <div key={index} className="px-6 py-3 flex items-center justify-between">
-                        <span className="text-sm text-gray-600">
-                          {format(item.date, "dd/MM/yyyy", { locale: ptBR })}
-                        </span>
-                        <span 
-                          className="text-sm font-medium px-3 py-1 rounded-full"
-                          style={{ 
-                            backgroundColor: getNdviColor(item.ndvi) + '20',
-                            color: getNdviColor(item.ndvi)
-                          }}
+                  ) : (
+                    <div className="p-3 space-y-2">
+                      {filteredFields.map((field: any) => (
+                        <div
+                          key={field.id}
+                          className="flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-all bg-white border border-gray-100 hover:border-green-300 hover:shadow-md active:scale-[0.99]"
+                          onClick={() => setSelectedFieldId(field.id)}
                         >
-                          {item.ndvi.toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                          <FieldThumbnail 
+                            boundaries={field.boundaries} 
+                            ndviValue={field.currentNdvi ? field.currentNdvi / 100 : 0.5} 
+                            size={56} 
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{field.name}</p>
+                            <p className="text-sm text-gray-500">{formatHectares(field.areaHectares)}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span 
+                              className="text-sm font-bold px-2.5 py-1 rounded-lg"
+                              style={{ 
+                                backgroundColor: getNdviColor(field.currentNdvi ? field.currentNdvi / 100 : 0.5) + '20',
+                                color: getNdviColor(field.currentNdvi ? field.currentNdvi / 100 : 0.5)
+                              }}
+                            >
+                              {field.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : '--'}
+                            </span>
+                            <span className="text-[10px] text-gray-400">NDVI</span>
+                          </div>
+                          <ChevronRight className="h-5 w-5 text-gray-300" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
 
-            {activeTab === "notes" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900">Notas de campo</h3>
+                {/* Add Button */}
+                <div className="p-4 border-t border-gray-100">
                   <Button 
-                    size="sm" 
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                    onClick={() => setLocation(`/notes?fieldId=${selectedFieldId}`)}
+                    onClick={() => setLocation("/fields/new")}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white gap-2 h-12 rounded-xl text-base font-medium"
                   >
-                    <Plus className="h-4 w-4" />
-                    Nova nota
+                    <Plus className="h-5 w-5" />
+                    Novo talhão
                   </Button>
                 </div>
+              </div>
+            ) : (
+              /* Campo selecionado - mostra detalhes em tela cheia */
+              <div className="h-full flex flex-col overflow-hidden bg-gray-50">
+                {/* Header com botão voltar */}
+                <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+                  <button 
+                    onClick={() => setSelectedFieldId(null)}
+                    className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <div className="flex-1">
+                    <h2 className="font-semibold text-gray-900">{selectedField?.name}</h2>
+                    <p className="text-xs text-gray-500">{formatHectares(selectedField?.areaHectares)}</p>
+                  </div>
+                  <button 
+                    onClick={() => setLocation(`/fields/${selectedFieldId}/edit`)}
+                    className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                  >
+                    <Edit className="h-5 w-5" />
+                  </button>
+                  <button 
+                    className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                  >
+                    <Download className="h-5 w-5" />
+                  </button>
+                </div>
 
-                {notes?.length ? (
-                  <div className="space-y-3">
-                    {notes.map((note: any) => (
-                      <div key={note.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                        <div className="flex items-start justify-between">
+                {/* Tabs */}
+                <div className="bg-white border-b border-gray-200 px-4">
+                  <div className="flex gap-1">
+                    {[
+                      { id: "status", label: "Visão Geral", icon: Home },
+                      { id: "data", label: "Dados", icon: BarChart3 },
+                      { id: "notes", label: "Notas", icon: FileText },
+                    ].map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
+                          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                            activeTab === tab.id
+                              ? "text-green-600 border-green-500"
+                              : "text-gray-500 border-transparent hover:text-gray-700"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {activeTab === "status" && selectedField && (
+                    <div className="space-y-4">
+                      {/* Weather Card */}
+                      <div className="bg-gradient-to-br from-blue-500 to-sky-600 rounded-2xl p-5 text-white shadow-lg">
+                        <div className="flex items-center justify-between mb-4">
                           <div>
-                            <p className="text-sm text-gray-900">{note.content}</p>
-                            <p className="text-xs text-gray-400 mt-2">
-                              {format(new Date(note.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            <p className="text-white/80 text-sm">Clima Atual</p>
+                            <p className="text-3xl font-bold">
+                              {weather?.current?.temperature != null 
+                                ? `${Math.round(weather.current.temperature)}°C` 
+                                : '--°C'}
                             </p>
                           </div>
-                          {note.type && (
-                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                              {note.type}
-                            </span>
-                          )}
+                          <Sun className="h-12 w-12 text-yellow-300" />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="bg-white/20 rounded-xl p-3 text-center">
+                            <Droplets className="h-5 w-5 mx-auto mb-1 text-blue-200" />
+                            <p className="text-lg font-semibold">{weather?.current?.precipitation ?? 0} mm</p>
+                            <p className="text-xs text-white/70">Chuva</p>
+                          </div>
+                          <div className="bg-white/20 rounded-xl p-3 text-center">
+                            <Wind className="h-5 w-5 mx-auto mb-1 text-blue-200" />
+                            <p className="text-lg font-semibold">{weather?.current?.windSpeed?.toFixed(0) ?? '--'}</p>
+                            <p className="text-xs text-white/70">km/h</p>
+                          </div>
+                          <div className="bg-white/20 rounded-xl p-3 text-center">
+                            <Cloud className="h-5 w-5 mx-auto mb-1 text-blue-200" />
+                            <p className="text-lg font-semibold">{weather?.current?.humidity ?? '--'}%</p>
+                            <p className="text-xs text-white/70">Umidade</p>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 bg-gray-50 rounded-xl">
-                    <StickyNote className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">Nenhuma nota registrada</p>
-                    <p className="text-sm text-gray-400 mt-1">Adicione observações sobre este talhão</p>
-                  </div>
-                )}
+
+                      {/* NDVI Card */}
+                      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                              <Leaf className="h-5 w-5 text-green-600" />
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-gray-900">Índice NDVI</h3>
+                              <p className="text-xs text-gray-500">Saúde da vegetação</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-green-600">{currentNdviValue}</p>
+                            <p className="text-xs text-gray-400">Atual</p>
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <NdviYearChart 
+                            data={ndviChartData} 
+                            height={160}
+                            currentNdvi={selectedField?.currentNdvi ? selectedField.currentNdvi / 100 : undefined}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Maps Grid */}
+                      <div className="grid grid-cols-1 gap-4">
+                        {/* NDVI Map */}
+                        <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-lg">
+                          <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800">
+                            <div className="flex items-center gap-2">
+                              <Leaf className="h-4 w-4 text-green-400" />
+                              <span className="text-sm font-medium text-white">Mapa NDVI</span>
+                            </div>
+                            <span className="text-xs text-gray-400">
+                              {format(new Date(), "dd/MMM", { locale: ptBR })}
+                            </span>
+                          </div>
+                          <div className="relative h-56">
+                            <MapboxMap
+                              onMapReady={handleNdviMapReady}
+                              className="w-full h-full"
+                              initialCenter={fieldCenter}
+                              initialZoom={15}
+                              style="satellite"
+                            />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                              <NdviScale />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Satellite Map */}
+                        <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-lg">
+                          <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800">
+                            <div className="flex items-center gap-2">
+                              <Layers className="h-4 w-4 text-blue-400" />
+                              <span className="text-sm font-medium text-white">Satélite</span>
+                            </div>
+                            <span className="text-xs text-gray-400">
+                              {format(new Date(), "dd/MMM", { locale: ptBR })}
+                            </span>
+                          </div>
+                          <div className="h-56">
+                            <MapboxMap
+                              onMapReady={handleSatMapReady}
+                              className="w-full h-full"
+                              initialCenter={fieldCenter}
+                              initialZoom={15}
+                              style="satellite"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Weather Charts */}
+                      {historicalWeather && (
+                        <div className="space-y-4">
+                          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Droplets className="h-5 w-5 text-blue-500" />
+                                <h3 className="font-semibold text-gray-900">Precipitação</h3>
+                              </div>
+                              <span className="text-xl font-bold text-blue-600">
+                                {historicalWeather.totalPrecipitation} mm
+                              </span>
+                            </div>
+                            <PrecipitationChart 
+                              dates={historicalWeather.dates || []} 
+                              values={historicalWeather.accumulatedPrecipitation || []}
+                              height={100}
+                            />
+                          </div>
+
+                          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Thermometer className="h-5 w-5 text-orange-500" />
+                                <h3 className="font-semibold text-gray-900">Soma Térmica</h3>
+                              </div>
+                              <span className="text-xl font-bold text-orange-600">
+                                +{historicalWeather.totalThermalSum}°
+                              </span>
+                            </div>
+                            <ThermalSumChart 
+                              dates={historicalWeather.dates || []} 
+                              values={historicalWeather.thermalSum || []}
+                              height={100}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "data" && selectedField && (
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                        <h3 className="font-semibold text-gray-900 mb-4">Informações do Talhão</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-sm text-gray-500 mb-1">Nome</p>
+                            <p className="font-medium text-gray-900">{selectedField.name}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-sm text-gray-500 mb-1">Área</p>
+                            <p className="font-medium text-gray-900">{formatHectares(selectedField.areaHectares)}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-sm text-gray-500 mb-1">Cultura</p>
+                            <p className="font-medium text-gray-900">{(selectedField as any).crop || "Não definida"}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-sm text-gray-500 mb-1">NDVI Atual</p>
+                            <p className="font-medium text-green-600">{currentNdviValue}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* NDVI History */}
+                      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100">
+                          <h3 className="font-semibold text-gray-900">Histórico NDVI</h3>
+                        </div>
+                        {ndviChartData.length > 0 ? (
+                          <div className="divide-y divide-gray-100">
+                            {ndviChartData.slice(0, 10).map((item, index) => (
+                              <div key={index} className="px-5 py-3 flex items-center justify-between">
+                                <span className="text-sm text-gray-600">
+                                  {format(item.date, "dd/MM/yyyy", { locale: ptBR })}
+                                </span>
+                                <span 
+                                  className="text-sm font-medium px-3 py-1 rounded-full"
+                                  style={{ 
+                                    backgroundColor: getNdviColor(item.ndvi) + '20',
+                                    color: getNdviColor(item.ndvi)
+                                  }}
+                                >
+                                  {item.ndvi.toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center">
+                            <Leaf className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                            <p className="text-gray-500">Sem dados históricos</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === "notes" && (
+                    <div className="space-y-4">
+                      <Button 
+                        className="w-full bg-green-600 hover:bg-green-700 gap-2 h-12 rounded-xl"
+                        onClick={() => setLocation(`/notes?fieldId=${selectedFieldId}`)}
+                      >
+                        <Plus className="h-5 w-5" />
+                        Nova nota
+                      </Button>
+
+                      {notes?.length ? (
+                        <div className="space-y-3">
+                          {notes.map((note: any) => (
+                            <div key={note.id} className="bg-white rounded-xl border border-gray-200 p-4">
+                              <p className="text-gray-900">{note.content}</p>
+                              <div className="flex items-center justify-between mt-3">
+                                <p className="text-xs text-gray-400">
+                                  {format(new Date(note.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                                </p>
+                                {note.type && (
+                                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                                    {note.type}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                          <StickyNote className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-500 font-medium">Nenhuma nota</p>
+                          <p className="text-sm text-gray-400 mt-1">Adicione observações sobre este talhão</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center bg-gray-100">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Map className="h-10 w-10 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">Selecione um talhão</h3>
-            <p className="text-gray-500 text-sm">Escolha um talhão na lista para ver os detalhes</p>
+        )}
+
+        {activeNavTab === "map" && (
+          <div className="h-full relative">
+            <MapboxMap
+              onMapReady={(map) => setMap(map)}
+              className="w-full h-full"
+              initialCenter={fieldCenter}
+              initialZoom={14}
+              style="satellite"
+            />
           </div>
+        )}
+
+        {activeNavTab === "charts" && (
+          <div className="h-full overflow-y-auto p-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Relatórios</h2>
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-gray-900 mb-4">Resumo Geral</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-green-50 rounded-xl p-4 text-center">
+                    <p className="text-3xl font-bold text-green-600">{fields?.length || 0}</p>
+                    <p className="text-sm text-gray-600">Talhões</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <p className="text-3xl font-bold text-blue-600">{totalArea.toFixed(1)}</p>
+                    <p className="text-sm text-gray-600">Hectares</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeNavTab === "notes" && (
+          <div className="h-full overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Notas de Campo</h2>
+              <Button 
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 gap-2 rounded-xl"
+                onClick={() => setLocation("/notes")}
+              >
+                <Plus className="h-4 w-4" />
+                Nova
+              </Button>
+            </div>
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+              <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">Selecione um talhão para ver as notas</p>
+            </div>
+          </div>
+        )}
+
+        {activeNavTab === "settings" && (
+          <div className="h-full overflow-y-auto p-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Configurações</h2>
+            <div className="space-y-3">
+              <button 
+                onClick={() => setLocation("/profile")}
+                className="w-full bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <Users className="h-5 w-5 text-gray-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-gray-900">Perfil</p>
+                  <p className="text-sm text-gray-500">Configurações da conta</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </button>
+              
+              <button 
+                onClick={() => setLocation("/safra")}
+                className="w-full bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-200 p-4 flex items-center gap-4 hover:from-amber-100 hover:to-yellow-100 transition-colors"
+              >
+                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                  <Crown className="h-5 w-5 text-amber-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-amber-900">Plano Safra</p>
+                  <p className="text-sm text-amber-700">Recursos premium</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-amber-400" />
+              </button>
+              
+              <button className="w-full bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
+                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <HelpCircle className="h-5 w-5 text-gray-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-gray-900">Ajuda</p>
+                  <p className="text-sm text-gray-500">Central de suporte</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== BOTTOM NAVIGATION BAR ===== */}
+      <div className="bg-white border-t border-gray-200 px-2 py-2 shrink-0 safe-area-bottom">
+        <div className="flex items-center justify-around max-w-lg mx-auto">
+          {[
+            { id: "fields", label: "Talhões", icon: Layers },
+            { id: "map", label: "Mapa", icon: Map },
+            { id: "charts", label: "Relatórios", icon: BarChart3 },
+            { id: "notes", label: "Notas", icon: FileText },
+            { id: "settings", label: "Mais", icon: Menu },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeNavTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveNavTab(item.id as any)}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                  isActive 
+                    ? "bg-green-100 text-green-600" 
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <Icon className={`h-5 w-5 ${isActive ? "text-green-600" : ""}`} />
+                <span className={`text-[10px] font-medium ${isActive ? "text-green-600" : ""}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
     </div>
   );
 }

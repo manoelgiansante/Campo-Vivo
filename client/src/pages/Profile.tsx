@@ -222,8 +222,8 @@ export default function Profile() {
           <div className="flex items-center gap-4">
             <div className="relative">
               <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center overflow-hidden">
-                {user?.image ? (
-                  <img src={user.image} alt={user.name || ''} className="w-full h-full object-cover" />
+                {(user as any)?.image ? (
+                  <img src={(user as any).image} alt={user?.name || ''} className="w-full h-full object-cover" />
                 ) : (
                   <User className="h-10 w-10 text-white/70" />
                 )}

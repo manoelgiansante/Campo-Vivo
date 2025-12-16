@@ -65,13 +65,10 @@ export async function sendPushToUser(
   userId: number,
   payload: PushPayload
 ): Promise<SendResult> {
-  const subscriptions = await db.getPushSubscriptionsByUserId(userId);
-  
-  if (!subscriptions || subscriptions.length === 0) {
-    return { success: false, sent: 0, failed: 0, errors: ['Nenhuma subscription encontrada'] };
-  }
-  
-  return sendPushToSubscriptions(subscriptions, payload);
+  // Push subscriptions ainda não implementadas no db
+  // TODO: Implementar db.getPushSubscriptionsByUserId
+  console.warn('[PushNotifications] getPushSubscriptionsByUserId not implemented');
+  return { success: false, sent: 0, failed: 0, errors: ['Push subscriptions not implemented'] };
 }
 
 /**
@@ -272,8 +269,10 @@ export async function sendSystemUpdate(
 export async function broadcastNotification(
   payload: PushPayload
 ): Promise<SendResult> {
-  const allSubscriptions = await db.getAllPushSubscriptions();
-  return sendPushToSubscriptions(allSubscriptions, payload);
+  // Push subscriptions ainda não implementadas no db
+  // TODO: Implementar db.getAllPushSubscriptions
+  console.warn('[PushNotifications] getAllPushSubscriptions not implemented');
+  return { success: false, sent: 0, failed: 0, errors: ['Push subscriptions not implemented'] };
 }
 
 export default {

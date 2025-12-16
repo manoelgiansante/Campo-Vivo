@@ -67,8 +67,10 @@ export default function FieldDetailNew() {
   );
 
   // Buscar dados históricos de clima (último ano)
+  const endDate = new Date().toISOString().split('T')[0];
+  const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   const { data: historicalWeather } = trpc.weather.getHistorical.useQuery(
-    { fieldId, days: 365 },
+    { fieldId, startDate, endDate },
     { enabled: !!fieldId }
   );
 
@@ -611,7 +613,7 @@ export default function FieldDetailNew() {
                   {historicalWeather.totalPrecipitation} mm
                 </div>
                 <div className="text-xs text-gray-500">
-                  Período de {historicalWeather.daysCount} dias
+                  Período de {historicalWeather.dates?.length || 365} dias
                 </div>
               </div>
             </div>
@@ -676,11 +678,15 @@ function getNdviColor(ndvi: number): string {
 }
 
 // Simple NDVI Chart Component
-function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number }> }) {
+function NdviChart({ data }: { data: Array<Record<string, unknown>> }) {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   
   // Gerar dados simulados se não houver dados reais
-  const chartData = data.length > 0 ? data : Array.from({ length: 12 }, (_, i) => ({
+  const chartData = data.length > 0 ? data.map(d => ({
+    value: (d.ndviAverage as number) ? (d.ndviAverage as number) / 100 : 
+           (d.ndvi as number) ? (d.ndvi as number) : 
+           (d.value as number) ? (d.value as number) : 0.5
+  })) : Array.from({ length: 12 }, (_, i) => ({
     month: months[i],
     value: 0.4 + Math.random() * 0.4,
   }));
@@ -699,7 +705,7 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
         <path
           d={`M 0 100 ${chartData.map((d, i) => {
             const x = (i / (chartData.length - 1)) * 400;
-            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            const y = 100 - ((d.value || 0.5) * 100);
             return `L ${x} ${y}`;
           }).join(' ')} L 400 100 Z`}
           fill="url(#ndviGradient)"
@@ -709,7 +715,7 @@ function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value
         <path
           d={`M ${chartData.map((d, i) => {
             const x = (i / (chartData.length - 1)) * 400;
-            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            const y = 100 - ((d.value || 0.5) * 100);
             return `${i === 0 ? '' : 'L '}${x} ${y}`;
           }).join(' ')}`}
           fill="none"

@@ -235,15 +235,14 @@ export const agronomistRouter = router({
           
           const fieldCrops = await db.getCropsByFieldId(input.fieldId);
           const activeCrop = fieldCrops.find((c) => c.status === 'growing' || c.status === 'planted');
-          const farm = field.farmId ? await db.getFarmById(field.farmId) : null;
           
           fieldContext = {
             fieldName: field.name,
             areaHectares: (field.areaHectares || 0) / 100,
             currentCrop: activeCrop?.cropType,
             currentNdvi: 0.72,
-            city: farm?.city || undefined,
-            state: farm?.state || undefined,
+            city: field.city || undefined,
+            state: field.state || undefined,
             weather,
           };
         }
