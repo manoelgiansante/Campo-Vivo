@@ -28,6 +28,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
+import { clipImageToPolygon } from "@/utils/clipImageToPolygon";
 
 type MapLayer = "satellite" | "crop" | "vegetation";
 type NdviType = "basic" | "contrasted" | "average" | "heterogenity";
@@ -175,23 +176,17 @@ export default function MapView() {
         try {
           const proxyUrl = `/api/ndvi-image/${field.id}`;
           
-          // Tentar pré-carregar a imagem para verificar se está acessível
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-              console.log(`[MapView] NDVI image loaded for field ${field.id}: ${img.width}x${img.height}`);
-              resolve();
-            };
-            img.onerror = () => reject(new Error("Failed to load NDVI image"));
-            img.src = proxyUrl + `?t=${Date.now()}`;
-          });
+          // Carregar e recortar a imagem NDVI para seguir o contorno do polígono (estilo OneSoil)
+          const clippedImageUrl = await clipImageToPolygon(
+            proxyUrl,
+            coordinates,
+            { minLng, maxLng, minLat, maxLat }
+          );
 
-          // Adicionar source da imagem NDVI (deixar o Mapbox fazer o stretch)
+          // Adicionar source da imagem NDVI recortada
           map.addSource(ndviImageSourceId, {
             type: "image",
-            url: proxyUrl,
+            url: clippedImageUrl,
             coordinates: [
               [minLng, maxLat], // top-left
               [maxLng, maxLat], // top-right

@@ -12,6 +12,8 @@ export async function clipImageToPolygon(
     img.crossOrigin = "anonymous";
     
     img.onload = () => {
+      console.log(`[clipImageToPolygon] Image loaded: ${img.width}x${img.height}`);
+      
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       
@@ -20,9 +22,19 @@ export async function clipImageToPolygon(
         return;
       }
       
-      // Usar dimensões maiores para melhor qualidade
-      const width = Math.max(img.width, 512);
-      const height = Math.max(img.height, 512);
+      // Usar dimensões maiores para melhor qualidade (mínimo 256px)
+      const targetSize = 256;
+      const aspectRatio = img.width / img.height;
+      let width: number, height: number;
+      
+      if (aspectRatio >= 1) {
+        width = Math.max(img.width * 8, targetSize); // Aumentar resolução 8x
+        height = width / aspectRatio;
+      } else {
+        height = Math.max(img.height * 8, targetSize);
+        width = height * aspectRatio;
+      }
+      
       canvas.width = width;
       canvas.height = height;
       
@@ -47,19 +59,23 @@ export async function clipImageToPolygon(
       // Usar o polígono como máscara de recorte
       ctx.clip();
       
-      // Desenhar a imagem dentro da máscara
+      // Desenhar a imagem dentro da máscara com interpolação de alta qualidade
+      ctx.imageSmoothingEnabled = false; // Desabilitar smoothing para ver os pixels reais
       ctx.drawImage(img, 0, 0, width, height);
       
       // Converter para data URL
       try {
         const dataUrl = canvas.toDataURL("image/png");
+        console.log(`[clipImageToPolygon] Generated clipped image: ${width}x${height}`);
         resolve(dataUrl);
       } catch (e) {
+        console.error("[clipImageToPolygon] Failed to generate dataURL:", e);
         reject(e);
       }
     };
     
-    img.onerror = () => {
+    img.onerror = (e) => {
+      console.error("[clipImageToPolygon] Failed to load image:", e);
       reject(new Error("Failed to load image"));
     };
     
