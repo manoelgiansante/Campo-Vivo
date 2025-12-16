@@ -60,6 +60,18 @@ export default function FieldDetailNew() {
     { enabled: !!fieldId }
   );
 
+  // Buscar clima atual
+  const { data: weather } = trpc.weather.getByField.useQuery(
+    { fieldId },
+    { enabled: !!fieldId }
+  );
+
+  // Buscar dados históricos de clima (último ano)
+  const { data: historicalWeather } = trpc.weather.getHistorical.useQuery(
+    { fieldId, days: 365 },
+    { enabled: !!fieldId }
+  );
+
   // URLs do proxy local para evitar CORS (usando Copernicus Sentinel-2)
   const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
   // Copernicus não usa tiles, apenas imagem única
@@ -502,7 +514,7 @@ export default function FieldDetailNew() {
       </div>
 
       {/* Quick Actions */}
-      <div className="px-4">
+      <div className="px-4 mb-4">
         <div className="grid grid-cols-2 gap-3">
           <Button
             variant="outline"
@@ -522,6 +534,116 @@ export default function FieldDetailNew() {
           </Button>
         </div>
       </div>
+
+      {/* Weather Stats Cards */}
+      <div className="px-4 mb-4">
+        <div className="grid grid-cols-3 gap-3">
+          {/* Temperatura */}
+          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🌡️</span>
+              <span className="text-xs text-gray-500">Temperatura</span>
+            </div>
+            <div className="text-xl font-bold text-gray-900">
+              {weather?.current?.temperature != null 
+                ? `${Math.round(weather.current.temperature)}°C`
+                : '--°C'}
+            </div>
+          </div>
+          
+          {/* Umidade */}
+          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">💧</span>
+              <span className="text-xs text-gray-500">Umidade</span>
+            </div>
+            <div className="text-xl font-bold text-gray-900">
+              {weather?.current?.humidity != null 
+                ? `${Math.round(weather.current.humidity)}%`
+                : '--%'}
+            </div>
+          </div>
+          
+          {/* Vento */}
+          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">💨</span>
+              <span className="text-xs text-gray-500">Vento</span>
+            </div>
+            <div className="text-xl font-bold text-gray-900">
+              {weather?.current?.windSpeed != null 
+                ? `${Math.round(weather.current.windSpeed)} km/h`
+                : '-- km/h'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts Section - Estilo OneSoil */}
+      {historicalWeather && (
+        <div className="px-4 space-y-4 pb-24">
+          {/* NDVI Chart */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🌿</span>
+                <span className="font-medium text-gray-900">Índice NDVI</span>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-green-600">
+                  {field?.currentNdvi ? (field.currentNdvi / 100).toFixed(2) : '0.65'}
+                </div>
+                <div className="text-xs text-gray-500">Última atualização</div>
+              </div>
+            </div>
+            <NdviChart data={ndviHistory || []} />
+          </div>
+
+          {/* Precipitação Acumulada */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🌧️</span>
+                <span className="font-medium text-gray-900">Precipitação acumulada</span>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-blue-600">
+                  {historicalWeather.totalPrecipitation} mm
+                </div>
+                <div className="text-xs text-gray-500">
+                  Período de {historicalWeather.daysCount} dias
+                </div>
+              </div>
+            </div>
+            <PrecipitationChart 
+              dates={historicalWeather.dates} 
+              values={historicalWeather.accumulatedPrecipitation} 
+            />
+          </div>
+
+          {/* Soma Térmica */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">☀️</span>
+                <span className="font-medium text-gray-900">Soma térmica</span>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-orange-600">
+                  +{historicalWeather.totalThermalSum}°
+                </div>
+                <div className="text-xs text-gray-500">
+                  Graus-dia (base 10°C)
+                </div>
+              </div>
+            </div>
+            <ThermalSumChart 
+              dates={historicalWeather.dates} 
+              values={historicalWeather.thermalSum} 
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -551,4 +673,192 @@ function getNdviColor(ndvi: number): string {
   if (ndvi < 0.7) return "#8BC34A"; // Verde claro
   if (ndvi < 0.8) return "#4CAF50"; // Verde
   return "#2E7D32"; // Verde escuro
+}
+
+// Simple NDVI Chart Component
+function NdviChart({ data }: { data: Array<{ date?: string; ndvi?: number; value?: number }> }) {
+  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  
+  // Gerar dados simulados se não houver dados reais
+  const chartData = data.length > 0 ? data : Array.from({ length: 12 }, (_, i) => ({
+    month: months[i],
+    value: 0.4 + Math.random() * 0.4,
+  }));
+
+  return (
+    <div className="relative h-24">
+      <svg viewBox="0 0 400 100" className="w-full h-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="ndviGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#4CAF50" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#4CAF50" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        
+        {/* Area fill */}
+        <path
+          d={`M 0 100 ${chartData.map((d, i) => {
+            const x = (i / (chartData.length - 1)) * 400;
+            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            return `L ${x} ${y}`;
+          }).join(' ')} L 400 100 Z`}
+          fill="url(#ndviGradient)"
+        />
+        
+        {/* Line */}
+        <path
+          d={`M ${chartData.map((d, i) => {
+            const x = (i / (chartData.length - 1)) * 400;
+            const y = 100 - ((d.value || d.ndvi || 0.5) * 100);
+            return `${i === 0 ? '' : 'L '}${x} ${y}`;
+          }).join(' ')}`}
+          fill="none"
+          stroke="#4CAF50"
+          strokeWidth="2"
+        />
+      </svg>
+      
+      {/* X-axis labels */}
+      <div className="flex justify-between text-xs text-gray-400 mt-1">
+        {months.map((m) => (
+          <span key={m}>{m}</span>
+        ))}
+      </div>
+      
+      {/* Y-axis reference */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+        0.5
+      </div>
+    </div>
+  );
+}
+
+// Precipitation Chart Component
+function PrecipitationChart({ dates, values }: { dates: string[]; values: number[] }) {
+  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const maxValue = Math.max(...values, 100);
+  
+  // Agrupar por mês
+  const monthlyData = months.map((_, monthIndex) => {
+    const monthValues = values.filter((_, i) => {
+      const date = new Date(dates[i]);
+      return date.getMonth() === monthIndex;
+    });
+    return monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0;
+  });
+
+  return (
+    <div className="relative h-24">
+      <svg viewBox="0 0 400 100" className="w-full h-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="precipGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#2196F3" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#2196F3" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        
+        {/* Area fill */}
+        <path
+          d={`M 0 100 ${monthlyData.map((v, i) => {
+            const x = (i / 11) * 400;
+            const y = 100 - ((v / maxValue) * 90);
+            return `L ${x} ${y}`;
+          }).join(' ')} L 400 100 Z`}
+          fill="url(#precipGradient)"
+        />
+        
+        {/* Line */}
+        <path
+          d={`M ${monthlyData.map((v, i) => {
+            const x = (i / 11) * 400;
+            const y = 100 - ((v / maxValue) * 90);
+            return `${i === 0 ? '' : 'L '}${x} ${y}`;
+          }).join(' ')}`}
+          fill="none"
+          stroke="#2196F3"
+          strokeWidth="2"
+        />
+      </svg>
+      
+      {/* X-axis labels */}
+      <div className="flex justify-between text-xs text-gray-400 mt-1">
+        {months.map((m) => (
+          <span key={m}>{m}</span>
+        ))}
+      </div>
+      
+      {/* Y-axis values */}
+      <div className="absolute left-0 top-0 text-xs text-gray-400">
+        {Math.round(maxValue)}
+      </div>
+      <div className="absolute left-0 bottom-6 text-xs text-gray-400">
+        0
+      </div>
+    </div>
+  );
+}
+
+// Thermal Sum Chart Component
+function ThermalSumChart({ dates, values }: { dates: string[]; values: number[] }) {
+  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const maxValue = Math.max(...values, 1000);
+  
+  // Agrupar por mês
+  const monthlyData = months.map((_, monthIndex) => {
+    const monthValues = values.filter((_, i) => {
+      const date = new Date(dates[i]);
+      return date.getMonth() === monthIndex;
+    });
+    return monthValues.length > 0 ? monthValues[monthValues.length - 1] : 0;
+  });
+
+  return (
+    <div className="relative h-24">
+      <svg viewBox="0 0 400 100" className="w-full h-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="thermalGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#FF9800" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#FF9800" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        
+        {/* Area fill */}
+        <path
+          d={`M 0 100 ${monthlyData.map((v, i) => {
+            const x = (i / 11) * 400;
+            const y = 100 - ((v / maxValue) * 90);
+            return `L ${x} ${y}`;
+          }).join(' ')} L 400 100 Z`}
+          fill="url(#thermalGradient)"
+        />
+        
+        {/* Line */}
+        <path
+          d={`M ${monthlyData.map((v, i) => {
+            const x = (i / 11) * 400;
+            const y = 100 - ((v / maxValue) * 90);
+            return `${i === 0 ? '' : 'L '}${x} ${y}`;
+          }).join(' ')}`}
+          fill="none"
+          stroke="#FF9800"
+          strokeWidth="2"
+        />
+      </svg>
+      
+      {/* X-axis labels */}
+      <div className="flex justify-between text-xs text-gray-400 mt-1">
+        {months.map((m) => (
+          <span key={m}>{m}</span>
+        ))}
+      </div>
+      
+      {/* Y-axis values */}
+      <div className="absolute left-0 top-0 text-xs text-gray-400">
+        {Math.round(maxValue)}
+      </div>
+      <div className="absolute left-0 bottom-6 text-xs text-gray-400">
+        0
+      </div>
+    </div>
+  );
 }

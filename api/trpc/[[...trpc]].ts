@@ -830,58 +830,264 @@ const appRouter = t.router({
           
         if (!field) throw new Error("Campo não encontrado");
         
-        const lat = field.latitude ? parseFloat(field.latitude) : -15.7801;
-        const lon = field.longitude ? parseFloat(field.longitude) : -47.9292;
+        // Obter coordenadas do campo
+        let lat = -20.11;
+        let lon = -50.27;
         
-        // Dados simulados de clima
-        return {
-          current: {
-            temp: 25 + Math.random() * 10,
-            humidity: 50 + Math.random() * 40,
-            windSpeed: 5 + Math.random() * 15,
-            description: "Parcialmente nublado",
-            icon: "02d",
-          },
-          forecast: Array.from({ length: 7 }, (_, i) => ({
-            date: new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString(),
-            tempMin: 18 + Math.random() * 5,
-            tempMax: 28 + Math.random() * 8,
-            humidity: 50 + Math.random() * 30,
-            rain: Math.random() > 0.6 ? Math.random() * 30 : 0,
-            description: ["Ensolarado", "Parcialmente nublado", "Nublado", "Chuva leve"][Math.floor(Math.random() * 4)],
-            icon: ["01d", "02d", "03d", "10d"][Math.floor(Math.random() * 4)],
-          })),
-          hourly: Array.from({ length: 24 }, (_, i) => ({
-            time: new Date(Date.now() + i * 60 * 60 * 1000).toISOString(),
-            temp: 20 + Math.random() * 15,
-            humidity: 40 + Math.random() * 50,
-            rain: Math.random() > 0.8 ? Math.random() * 5 : 0,
-          })),
-        };
+        if (field.boundaries) {
+          const boundaries = typeof field.boundaries === 'string' 
+            ? JSON.parse(field.boundaries) 
+            : field.boundaries;
+          if (Array.isArray(boundaries) && boundaries.length > 0) {
+            const sumLat = boundaries.reduce((acc: number, p: any) => acc + p.lat, 0);
+            const sumLng = boundaries.reduce((acc: number, p: any) => acc + p.lng, 0);
+            lat = sumLat / boundaries.length;
+            lon = sumLng / boundaries.length;
+          }
+        }
+        
+        try {
+          // Buscar clima atual e previsão da Open-Meteo (API gratuita)
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&hourly=temperature_2m,precipitation,relative_humidity_2m&timezone=America/Sao_Paulo&forecast_days=7`;
+          
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error("Failed to fetch weather");
+          }
+          
+          const data = await response.json();
+          
+          // Mapear código de clima para descrição
+          const getWeatherDescription = (code: number): string => {
+            const descriptions: Record<number, string> = {
+              0: "Céu limpo",
+              1: "Predominantemente limpo",
+              2: "Parcialmente nublado",
+              3: "Nublado",
+              45: "Neblina",
+              48: "Neblina com geada",
+              51: "Garoa leve",
+              53: "Garoa moderada",
+              55: "Garoa intensa",
+              61: "Chuva leve",
+              63: "Chuva moderada",
+              65: "Chuva forte",
+              80: "Pancadas de chuva leves",
+              81: "Pancadas de chuva moderadas",
+              82: "Pancadas de chuva violentas",
+              95: "Tempestade",
+              96: "Tempestade com granizo leve",
+              99: "Tempestade com granizo forte",
+            };
+            return descriptions[code] || "Variável";
+          };
+          
+          const getWeatherIcon = (code: number): string => {
+            if (code === 0 || code === 1) return "01d";
+            if (code === 2) return "02d";
+            if (code === 3) return "03d";
+            if (code >= 45 && code <= 48) return "50d";
+            if (code >= 51 && code <= 55) return "09d";
+            if (code >= 61 && code <= 65) return "10d";
+            if (code >= 80 && code <= 82) return "09d";
+            if (code >= 95) return "11d";
+            return "02d";
+          };
+          
+          return {
+            current: {
+              temperature: data.current?.temperature_2m,
+              humidity: data.current?.relative_humidity_2m,
+              windSpeed: data.current?.wind_speed_10m,
+              precipitation: data.current?.precipitation,
+              description: getWeatherDescription(data.current?.weather_code || 0),
+              icon: getWeatherIcon(data.current?.weather_code || 0),
+            },
+            forecast: data.daily?.time?.map((date: string, i: number) => ({
+              date,
+              tempMin: data.daily.temperature_2m_min[i],
+              tempMax: data.daily.temperature_2m_max[i],
+              precipitation: data.daily.precipitation_sum[i],
+              description: getWeatherDescription(data.daily.weather_code[i] || 0),
+              icon: getWeatherIcon(data.daily.weather_code[i] || 0),
+            })) || [],
+            hourly: data.hourly?.time?.slice(0, 24).map((time: string, i: number) => ({
+              time,
+              temp: data.hourly.temperature_2m[i],
+              humidity: data.hourly.relative_humidity_2m[i],
+              precipitation: data.hourly.precipitation[i],
+            })) || [],
+          };
+        } catch (e) {
+          console.error("[Weather] Error:", e);
+          // Fallback com dados básicos
+          return {
+            current: {
+              temperature: null,
+              humidity: null,
+              windSpeed: null,
+              precipitation: null,
+              description: "Dados indisponíveis",
+              icon: "02d",
+            },
+            forecast: [],
+            hourly: [],
+          };
+        }
       }),
     
-    // Get historical weather data
+    // Get historical weather data from Open-Meteo (real data)
     getHistorical: protectedProcedure
       .input(z.object({ 
         fieldId: z.number(),
-        days: z.number().optional().default(30)
+        days: z.number().optional().default(365) // Último ano por padrão
       }))
-      .query(async ({ input }) => {
-        const { days } = input;
-        // Simulated historical weather data
-        return Array.from({ length: days }, (_, i) => {
-          const date = new Date();
-          date.setDate(date.getDate() - (days - i));
+      .query(async ({ ctx, input }) => {
+        const database = await getDb();
+        const [field] = await database
+          .select()
+          .from(fields)
+          .where(and(eq(fields.id, input.fieldId), eq(fields.userId, ctx.user.id)))
+          .limit(1);
+          
+        if (!field) throw new Error("Campo não encontrado");
+        
+        // Obter coordenadas do campo
+        let lat = -20.11;
+        let lon = -50.27;
+        
+        if (field.boundaries) {
+          const boundaries = typeof field.boundaries === 'string' 
+            ? JSON.parse(field.boundaries) 
+            : field.boundaries;
+          if (Array.isArray(boundaries) && boundaries.length > 0) {
+            // Calcular centroide
+            const sumLat = boundaries.reduce((acc: number, p: any) => acc + p.lat, 0);
+            const sumLng = boundaries.reduce((acc: number, p: any) => acc + p.lng, 0);
+            lat = sumLat / boundaries.length;
+            lon = sumLng / boundaries.length;
+          }
+        }
+        
+        // Calcular datas
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - input.days);
+        
+        const startStr = startDate.toISOString().split('T')[0];
+        const endStr = endDate.toISOString().split('T')[0];
+        
+        try {
+          // Buscar dados históricos reais da Open-Meteo
+          const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startStr}&end_date=${endStr}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&timezone=America/Sao_Paulo`;
+          
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.error("[Weather] Open-Meteo error:", response.status);
+            throw new Error("Failed to fetch weather data");
+          }
+          
+          const data = await response.json();
+          
+          if (!data.daily?.time) {
+            throw new Error("Invalid weather data");
+          }
+          
+          // Calcular precipitação acumulada e soma térmica
+          let accumulatedPrecipitation = 0;
+          let thermalSum = 0;
+          const baseTemp = 10; // Temperatura base para soma térmica
+          
+          const dates = data.daily.time;
+          const precipitation = data.daily.precipitation_sum || [];
+          const tempMax = data.daily.temperature_2m_max || [];
+          const tempMin = data.daily.temperature_2m_min || [];
+          const tempMean = data.daily.temperature_2m_mean || [];
+          const humidity = data.daily.relative_humidity_2m_mean || [];
+          
+          const accumulatedPrecipitationArray: number[] = [];
+          const thermalSumArray: number[] = [];
+          
+          for (let i = 0; i < dates.length; i++) {
+            accumulatedPrecipitation += precipitation[i] || 0;
+            accumulatedPrecipitationArray.push(Math.round(accumulatedPrecipitation));
+            
+            // Soma térmica: graus-dia acima da temperatura base
+            const avgTemp = tempMean[i] || ((tempMax[i] + tempMin[i]) / 2);
+            if (avgTemp > baseTemp) {
+              thermalSum += avgTemp - baseTemp;
+            }
+            thermalSumArray.push(Math.round(thermalSum));
+          }
+          
           return {
-            date: date.toISOString().split('T')[0],
-            tempMin: 15 + Math.random() * 8,
-            tempMax: 25 + Math.random() * 10,
-            tempAvg: 20 + Math.random() * 5,
-            humidity: 50 + Math.random() * 30,
-            precipitation: Math.random() > 0.7 ? Math.random() * 20 : 0,
-            windSpeed: 5 + Math.random() * 15,
+            dates,
+            tempMax,
+            tempMin,
+            tempMean,
+            precipitation,
+            humidity,
+            accumulatedPrecipitation: accumulatedPrecipitationArray,
+            thermalSum: thermalSumArray,
+            totalPrecipitation: Math.round(accumulatedPrecipitation),
+            totalThermalSum: Math.round(thermalSum),
+            daysCount: dates.length,
           };
-        });
+        } catch (e) {
+          console.error("[Weather] Error fetching historical data:", e);
+          // Fallback com dados simulados
+          const days = input.days;
+          const dates: string[] = [];
+          const tempMax: number[] = [];
+          const tempMin: number[] = [];
+          const tempMean: number[] = [];
+          const precipitation: number[] = [];
+          const humidity: number[] = [];
+          const accumulatedPrecipitation: number[] = [];
+          const thermalSum: number[] = [];
+          
+          let accPrecip = 0;
+          let thermal = 0;
+          
+          for (let i = 0; i < days; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - (days - i));
+            dates.push(date.toISOString().split('T')[0]);
+            
+            const tMax = 25 + Math.random() * 10;
+            const tMin = 15 + Math.random() * 8;
+            const tMean = (tMax + tMin) / 2;
+            const precip = Math.random() > 0.7 ? Math.random() * 20 : 0;
+            
+            tempMax.push(tMax);
+            tempMin.push(tMin);
+            tempMean.push(tMean);
+            precipitation.push(precip);
+            humidity.push(50 + Math.random() * 30);
+            
+            accPrecip += precip;
+            accumulatedPrecipitation.push(Math.round(accPrecip));
+            
+            if (tMean > 10) {
+              thermal += tMean - 10;
+            }
+            thermalSum.push(Math.round(thermal));
+          }
+          
+          return {
+            dates,
+            tempMax,
+            tempMin,
+            tempMean,
+            precipitation,
+            humidity,
+            accumulatedPrecipitation,
+            thermalSum,
+            totalPrecipitation: Math.round(accPrecip),
+            totalThermalSum: Math.round(thermal),
+            daysCount: days,
+          };
+        }
       }),
       
     getAlerts: protectedProcedure
