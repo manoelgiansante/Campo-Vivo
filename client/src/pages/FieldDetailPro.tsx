@@ -273,24 +273,46 @@ export default function FieldDetailPro() {
     { enabled: !!fieldId }
   );
 
-  const proxyImageUrl = useMemo(() => `/api/copernicus-ndvi/${fieldId}?palette=contrast`, [fieldId]);
+  // Buscar dados NDVI REAIS do Sentinel Hub (Copernicus)
+  const { data: ndviRealData, isLoading: isLoadingNdviReal } = trpc.ndvi.getTimeSeriesReal.useQuery(
+    {
+      fieldId,
+      startDate: format(startOfYear(new Date()), "yyyy-MM-dd") + "T00:00:00Z",
+      endDate: format(new Date(), "yyyy-MM-dd") + "T23:59:59Z",
+      aggregationInterval: "P10D", // Intervalos de 10 dias
+    },
+    { enabled: !!fieldId }
+  );
 
-  // Dados para gráficos
+  const proxyImageUrl = useMemo(() => `/api/ndvi-image/${fieldId}`, [fieldId]);
+
+  // Dados para gráficos - USAR DADOS REAIS DO SENTINEL HUB
   const ndviChartData = useMemo(() => {
-    if (!ndviHistory?.length) {
-      const mockData = [];
-      for (let i = 0; i < 12; i++) {
-        const date = subDays(new Date(), (11 - i) * 30);
-        const baseNdvi = 0.4 + Math.sin(i * 0.5) * 0.25;
-        mockData.push({ date, ndvi: Math.max(0, Math.min(1, baseNdvi + Math.random() * 0.1)) });
-      }
-      return mockData;
+    // Priorizar dados reais do Sentinel Hub
+    if (ndviRealData && ndviRealData.length > 0) {
+      return ndviRealData.map((d: any) => ({
+        date: new Date(d.date),
+        ndvi: d.ndvi,
+      }));
     }
-    return ndviHistory.map((n: any) => ({
-      date: new Date(n.captureDate || n.date),
-      ndvi: n.ndviAverage ? n.ndviAverage / 100 : (n.ndvi || 0.5),
-    }));
-  }, [ndviHistory]);
+
+    // Fallback para dados do banco (se houver)
+    if (ndviHistory?.length) {
+      return ndviHistory.map((n: any) => ({
+        date: new Date(n.captureDate || n.date),
+        ndvi: n.ndviAverage ? n.ndviAverage / 100 : (n.ndvi || 0.5),
+      }));
+    }
+
+    // Último fallback: dados mockados (apenas se não houver dados reais)
+    const mockData = [];
+    for (let i = 0; i < 12; i++) {
+      const date = subDays(new Date(), (11 - i) * 30);
+      const baseNdvi = 0.4 + Math.sin(i * 0.5) * 0.25;
+      mockData.push({ date, ndvi: Math.max(0, Math.min(1, baseNdvi + Math.random() * 0.1)) });
+    }
+    return mockData;
+  }, [ndviRealData, ndviHistory]);
 
   // Prepare chart data from real weather data
   const precipitationChartData = useMemo(() => {

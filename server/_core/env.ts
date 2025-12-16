@@ -8,4 +8,6 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   agromonitoringApiKey: process.env.AGROMONITORING_API_KEY ?? "",
+  COPERNICUS_CLIENT_ID: process.env.COPERNICUS_CLIENT_ID ?? "",
+  COPERNICUS_CLIENT_SECRET: process.env.COPERNICUS_CLIENT_SECRET ?? "",
 };

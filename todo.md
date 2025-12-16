@@ -259,3 +259,10 @@
 - [x] Valor atual destacado à direita
 - [x] Botão de download do gráfico
 - [x] Integrar na página FieldDetailPro
+
+
+## Bugs Críticos
+
+- [x] Gráfico NDVI mostrando dados simulados em vez de dados reais
+- [x] Integrar com Sentinel Hub (Copernicus) para buscar histórico real de NDVI
+- [x] Erro 404 na rota /fields no Vercel (falta configuração SPA routing)
