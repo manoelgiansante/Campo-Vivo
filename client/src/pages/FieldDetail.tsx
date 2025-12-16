@@ -243,7 +243,7 @@ export default function FieldDetail() {
               <h1 className="text-xl font-bold text-gray-900">{field.name}</h1>
               <p className="text-gray-500 text-sm mt-1">
                 {field.areaHectares ? `${(field.areaHectares / 100).toFixed(1)} hectares` : 'Área não definida'}
-                {(field as any).crop && ` • ${(field as any).crop}`}
+                {field.crop && ` • ${field.crop}`}
               </p>
             </div>
             <div className={`${health.light} rounded-xl px-3 py-2 text-center`}>
@@ -416,18 +416,18 @@ export default function FieldDetail() {
                   </div>
                   <div className="flex-1 ml-4">
                     <div className="flex items-center gap-2 mb-2">
-                      {(field as any).ndviTrend && (field as any).ndviTrend > 0 ? (
+                      {field.ndviTrend && field.ndviTrend > 0 ? (
                         <TrendingUp className="h-5 w-5 text-green-500" />
                       ) : (
                         <TrendingDown className="h-5 w-5 text-red-500" />
                       )}
                       <span className="text-sm text-gray-600">
-                        {(field as any).ndviTrend && (field as any).ndviTrend > 0 ? 'Melhorando' : 'Em declínio'}
+                        {field.ndviTrend && field.ndviTrend > 0 ? 'Melhorando' : 'Em declínio'}
                       </span>
                     </div>
                     <p className="text-sm text-gray-500">
-                      Última atualização: {(field as any).lastNdviUpdate 
-                        ? new Date((field as any).lastNdviUpdate).toLocaleDateString('pt-BR')
+                      Última atualização: {field.lastNdviUpdate 
+                        ? new Date(field.lastNdviUpdate).toLocaleDateString('pt-BR')
                         : 'Não disponível'
                       }
                     </p>

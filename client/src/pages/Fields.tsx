@@ -274,7 +274,7 @@ export default function Fields() {
                         
                         <p className="text-sm text-gray-500 mt-0.5">
                           {field.areaHectares ? `${field.areaHectares} ha` : 'Área não definida'}
-                          {(field as any).crop && ` • ${(field as any).crop}`}
+                          {field.crop && ` • ${field.crop}`}
                         </p>
 
                         {/* Health Bar */}
@@ -295,7 +295,16 @@ export default function Fields() {
                       </div>
                     </div>
 
-                    {/* Trend indicator - removed as ndviTrend not in schema */}
+                    {/* Trend indicator */}
+                    {field.ndviTrend && (
+                      <div className="absolute top-3 right-10 flex items-center gap-0.5">
+                        {field.ndviTrend > 0 ? (
+                          <TrendingUp className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <TrendingDown className="h-3 w-3 text-red-500" />
+                        )}
+                      </div>
+                    )}
                   </button>
 
                   {/* Actions Menu */}

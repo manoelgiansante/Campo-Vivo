@@ -48,7 +48,7 @@ export default function Home() {
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
-    fields.forEach((field) => {
+    fields.forEach((field: Field) => {
       if (!field.boundaries) return;
       
       try {
@@ -284,7 +284,7 @@ export default function Home() {
 
             {/* Fields List Preview */}
             <div className="space-y-2">
-              {fields?.slice(0, 3).map((field) => (
+              {fields?.slice(0, 3).map((field: Field) => (
                 <button
                   key={field.id}
                   onClick={() => setLocation(`/fields/${field.id}`)}
