@@ -665,13 +665,13 @@ export default function FieldsOneSoil() {
                     initialZoom={15}
                     style="satellite"
                   />
-                  {/* NDVI Scale - Cores OneSoil */}
+                  {/* NDVI Scale - Cores OneSoil (verde vibrante) */}
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
                     <span className="text-[10px] text-white font-medium mb-1">1.0</span>
                     <div 
                       className="w-3 h-28 rounded-sm"
                       style={{
-                        background: 'linear-gradient(to bottom, #378C37 0%, #5FB944 20%, #78CD4E 35%, #91DA58 50%, #A5E15F 65%, #C3DC5F 80%, #E6DC5A 90%, #A56437 100%)'
+                        background: 'linear-gradient(to bottom, #287826 0%, #3C9630 15%, #4BA534 25%, #5AAF3C 35%, #6EBE44 45%, #82C84B 55%, #9BD05F 65%, #C8DC60 75%, #B9966B 90%, #8B5A2B 100%)'
                       }}
                     />
                     <span className="text-[10px] text-white font-medium mt-1">0.0</span>
