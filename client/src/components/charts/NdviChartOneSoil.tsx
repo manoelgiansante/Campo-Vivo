@@ -1,7 +1,8 @@
 import { useMemo, useRef, useCallback } from "react";
 import {
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   ResponsiveContainer,
@@ -28,35 +29,66 @@ interface NdviChartOneSoilProps {
   title?: string;
 }
 
+// Cores NDVI seguindo exatamente o OneSoil
+const NDVI_COLORS = {
+  excellent: "#22c55e", // Verde escuro (≥0.7)
+  good: "#84cc16",      // Verde lima (0.5-0.7) - VERDE LIMÃO
+  moderate: "#eab308",  // Amarelo (0.3-0.5)
+  low: "#f97316",       // Laranja (0.2-0.3)
+  veryLow: "#ef4444",   // Vermelho (<0.2)
+};
+
 // Função para obter cor baseada no valor NDVI
 function getNdviColor(value: number): string {
-  if (value >= 0.7) return "#22c55e"; // Verde forte
-  if (value >= 0.5) return "#84cc16"; // Verde limão
-  if (value >= 0.4) return "#eab308"; // Amarelo
-  if (value >= 0.3) return "#f97316"; // Laranja
-  return "#ef4444"; // Vermelho
+  if (value >= 0.7) return NDVI_COLORS.excellent;
+  if (value >= 0.5) return NDVI_COLORS.good;      // 0.6 cai aqui -> verde lima
+  if (value >= 0.3) return NDVI_COLORS.moderate;
+  if (value >= 0.2) return NDVI_COLORS.low;
+  return NDVI_COLORS.veryLow;
 }
 
-// Tooltip customizado
+// Tooltip customizado com cor dinâmica
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload || !payload.length) return null;
 
   const value = payload[0].value;
   const date = label;
+  const color = getNdviColor(value);
 
   return (
-    <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-3 min-w-[140px]">
-      <p className="text-xs text-gray-500 mb-1">
+    <div className="bg-gray-900 text-white rounded-lg shadow-xl p-3 min-w-[140px]">
+      <p className="text-xs text-gray-300 mb-1">
         {format(parseISO(date), "dd MMM yyyy", { locale: ptBR })}
       </p>
       <div className="flex items-center gap-2">
         <div
           className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: getNdviColor(value) }}
+          style={{ backgroundColor: color }}
         />
-        <span className="text-lg font-semibold">{value.toFixed(2)}</span>
+        <span className="text-xl font-bold">{value.toFixed(2)}</span>
+        <span className="text-xs text-gray-400">NDVI</span>
       </div>
     </div>
+  );
+}
+
+// Dot customizado com cor baseada no valor do ponto
+function CustomDot(props: any) {
+  const { cx, cy, payload, index, totalPoints } = props;
+  if (!payload || cx === undefined || cy === undefined) return null;
+  
+  const color = getNdviColor(payload.ndvi);
+  const isLast = index === totalPoints - 1;
+  
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={isLast ? 7 : 4}
+      fill="white"
+      stroke={color}
+      strokeWidth={isLast ? 3 : 2}
+    />
   );
 }
 
@@ -132,20 +164,21 @@ export function NdviChartOneSoil({
   const gradientStops = useMemo(() => {
     if (chartData.length === 0) return [];
 
-    // Criar stops baseados nos valores reais
-    const stops: { offset: string; color: string }[] = [];
-    const totalPoints = chartData.length;
-
-    chartData.forEach((point, index) => {
-      const offset = (index / (totalPoints - 1)) * 100;
-      stops.push({
-        offset: `${offset}%`,
+    // Criar stops baseados nos valores reais com porcentagens
+    return chartData.map((point, index) => {
+      const percentage = chartData.length > 1 
+        ? (index / (chartData.length - 1)) * 100 
+        : 50;
+      return {
+        offset: `${percentage}%`,
         color: getNdviColor(point.ndvi),
-      });
+      };
     });
-
-    return stops;
   }, [chartData]);
+
+  // Log para debug
+  console.log("NDVI Chart Data:", chartData.map(p => ({ date: p.date, ndvi: p.ndvi, color: getNdviColor(p.ndvi) })));
+  console.log("Gradient Stops:", gradientStops);
 
   if (chartData.length === 0) {
     return (
@@ -180,45 +213,41 @@ export function NdviChartOneSoil({
         {/* Gráfico */}
         <div className="flex-1" style={{ height }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
+            <ComposedChart
               data={chartData}
               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
             >
-              {/* Definição do gradiente */}
+              {/* Definição dos gradientes */}
               <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                {/* Gradiente horizontal para a linha */}
+                <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
                   {gradientStops.map((stop, index) => (
                     <stop
                       key={index}
                       offset={stop.offset}
                       stopColor={stop.color}
-                      stopOpacity={0.8}
+                      stopOpacity={1}
                     />
                   ))}
                 </linearGradient>
-                <linearGradient id={`${gradientId}-fill`} x1="0" y1="0" x2="1" y2="0">
+                {/* Gradiente horizontal para o preenchimento */}
+                <linearGradient id={`${gradientId}-fill`} x1="0%" y1="0%" x2="100%" y2="0%">
                   {gradientStops.map((stop, index) => (
                     <stop
                       key={index}
                       offset={stop.offset}
                       stopColor={stop.color}
-                      stopOpacity={0.3}
+                      stopOpacity={0.25}
                     />
                   ))}
                 </linearGradient>
               </defs>
 
               {/* Linhas de referência horizontais */}
-              <ReferenceLine
-                y={0.5}
-                stroke="#e5e7eb"
-                strokeDasharray="3 3"
-              />
-              <ReferenceLine
-                y={1}
-                stroke="#e5e7eb"
-                strokeDasharray="3 3"
-              />
+              <ReferenceLine y={0.25} stroke="#f3f4f6" strokeDasharray="3 3" />
+              <ReferenceLine y={0.5} stroke="#e5e7eb" strokeDasharray="3 3" />
+              <ReferenceLine y={0.75} stroke="#f3f4f6" strokeDasharray="3 3" />
+              <ReferenceLine y={1} stroke="#e5e7eb" strokeDasharray="3 3" />
 
               {/* Eixo X com meses */}
               <XAxis
@@ -226,9 +255,13 @@ export function NdviChartOneSoil({
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "#9ca3af" }}
-                tickFormatter={(value) =>
-                  format(parseISO(value), "MMM", { locale: ptBR })
-                }
+                tickFormatter={(value) => {
+                  try {
+                    return format(parseISO(value), "MMM", { locale: ptBR });
+                  } catch {
+                    return value;
+                  }
+                }}
                 interval="preserveStartEnd"
                 minTickGap={30}
               />
@@ -239,29 +272,40 @@ export function NdviChartOneSoil({
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "#9ca3af" }}
-                ticks={[0, 0.5, 1]}
-                tickFormatter={(value) => value.toFixed(1)}
+                ticks={[0, 0.25, 0.5, 0.75, 1]}
+                tickFormatter={(value) => value.toFixed(2)}
+                width={40}
               />
 
               {/* Tooltip */}
               <Tooltip content={<CustomTooltip />} />
 
-              {/* Área preenchida com gradiente */}
+              {/* Área preenchida */}
               <Area
                 type="monotone"
                 dataKey="ndvi"
-                stroke={`url(#${gradientId})`}
-                strokeWidth={2.5}
+                stroke="none"
                 fill={`url(#${gradientId}-fill)`}
-                dot={false}
+                fillOpacity={1}
+              />
+
+              {/* Linha com gradiente e dots coloridos */}
+              <Line
+                type="monotone"
+                dataKey="ndvi"
+                stroke={`url(#${gradientId})`}
+                strokeWidth={3}
+                dot={(props: any) => (
+                  <CustomDot {...props} totalPoints={chartData.length} />
+                )}
                 activeDot={{
-                  r: 6,
-                  stroke: "#fff",
-                  strokeWidth: 2,
-                  fill: getNdviColor(displayValue),
+                  r: 8,
+                  fill: "white",
+                  stroke: getNdviColor(displayValue),
+                  strokeWidth: 3,
                 }}
               />
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
 
@@ -279,6 +323,26 @@ export function NdviChartOneSoil({
           <p className="text-xs text-gray-400">
             Última atualização há {daysSinceUpdate} dias
           </p>
+        </div>
+      </div>
+
+      {/* Legenda de cores */}
+      <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NDVI_COLORS.excellent }} />
+          <span className="text-xs text-gray-500">Excelente (≥0.7)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NDVI_COLORS.good }} />
+          <span className="text-xs text-gray-500">Bom (0.5-0.7)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NDVI_COLORS.moderate }} />
+          <span className="text-xs text-gray-500">Moderado (0.3-0.5)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: NDVI_COLORS.low }} />
+          <span className="text-xs text-gray-500">Baixo (&lt;0.3)</span>
         </div>
       </div>
     </div>
