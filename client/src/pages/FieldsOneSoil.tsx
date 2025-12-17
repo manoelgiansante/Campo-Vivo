@@ -107,10 +107,14 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
 
 // Função para obter cor do ponto baseado no valor NDVI (como OneSoil)
 function getNdviPointColor(ndvi: number): string {
-  if (ndvi >= 0.7) return "#22c55e";    // Verde escuro - Excelente (≥0.7)
-  if (ndvi >= 0.5) return "#84cc16";    // Verde lima - Bom (0.5-0.7)
-  if (ndvi >= 0.3) return "#f59e0b";    // Laranja - Moderado (0.3-0.5)
-  return "#ef4444";                      // Vermelho - Baixo (<0.3)
+  // Debug: verificar valores
+  console.log('NDVI value:', ndvi, 'Type:', typeof ndvi);
+  
+  const n = Number(ndvi);
+  if (n >= 0.7) return "#22c55e";    // Verde escuro - Excelente (≥0.7)
+  if (n >= 0.5) return "#84cc16";    // Verde lima - Bom (0.5-0.7)
+  if (n >= 0.3) return "#f59e0b";    // Laranja - Moderado (0.3-0.5)
+  return "#ef4444";                   // Vermelho - Baixo (<0.3)
 }
 
 // Gráfico NDVI estilo OneSoil - com cores por valor
