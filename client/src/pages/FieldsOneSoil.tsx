@@ -105,13 +105,51 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
   );
 }
 
-// Função para obter cor do ponto baseado no valor NDVI (como OneSoil)
-function getNdviPointColor(ndvi: number): string {
-  const n = Number(ndvi) || 0;
-  if (n >= 0.7) return "#22c55e";    // Verde escuro - Excelente (≥0.7)
-  if (n >= 0.5) return "#84cc16";    // Verde lima - Bom (0.5-0.7)
-  if (n >= 0.3) return "#facc15";    // Amarelo - Moderado (0.3-0.5)
-  return "#ef4444";                   // Vermelho - Baixo (<0.3)
+// Função para obter cor baseada no valor NDVI (gradiente contínuo)
+function getNdviColor(ndvi: number): string {
+  const n = Math.max(0, Math.min(1, Number(ndvi) || 0));
+  
+  // Cores do gradiente (de baixo para cima):
+  // 0.0 = marrom (#8B4513)
+  // 0.3 = laranja/marrom (#D2691E)  
+  // 0.5 = amarelo (#FACC15)
+  // 0.7 = verde lima (#84CC16)
+  // 1.0 = verde escuro (#22C55E)
+  
+  if (n <= 0.3) {
+    // Marrom para laranja
+    const t = n / 0.3;
+    return interpolateColor('#8B4513', '#D2691E', t);
+  } else if (n <= 0.5) {
+    // Laranja para amarelo
+    const t = (n - 0.3) / 0.2;
+    return interpolateColor('#D2691E', '#FACC15', t);
+  } else if (n <= 0.7) {
+    // Amarelo para verde lima
+    const t = (n - 0.5) / 0.2;
+    return interpolateColor('#FACC15', '#84CC16', t);
+  } else {
+    // Verde lima para verde escuro
+    const t = (n - 0.7) / 0.3;
+    return interpolateColor('#84CC16', '#22C55E', t);
+  }
+}
+
+// Interpolar entre duas cores hex
+function interpolateColor(color1: string, color2: string, t: number): string {
+  const r1 = parseInt(color1.slice(1, 3), 16);
+  const g1 = parseInt(color1.slice(3, 5), 16);
+  const b1 = parseInt(color1.slice(5, 7), 16);
+  
+  const r2 = parseInt(color2.slice(1, 3), 16);
+  const g2 = parseInt(color2.slice(3, 5), 16);
+  const b2 = parseInt(color2.slice(5, 7), 16);
+  
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
 // Gráfico NDVI estilo OneSoil - com cores por valor
@@ -140,7 +178,7 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
     x: xScale(i), 
     y: yScale(d.ndvi),
     ndvi: d.ndvi,
-    color: getNdviPointColor(d.ndvi),
+    color: getNdviColor(d.ndvi),
     date: d.date,
   }));
   
@@ -211,13 +249,13 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
       {/* Área preenchida cinza claro */}
       <path d={areaD} fill="url(#ndviAreaFillGray)" />
       
-      {/* Linha conectando os pontos - amarelo/laranja como OneSoil */}
+      {/* Linha conectando os pontos - cor gradiente baseada no valor NDVI */}
       {points.map((p, i) => {
         if (i === 0) return null;
         const prev = points[i - 1];
         // Cor do segmento baseada na média dos valores
         const avgNdvi = (prev.ndvi + p.ndvi) / 2;
-        const segmentColor = getNdviPointColor(avgNdvi);
+        const segmentColor = getNdviColor(avgNdvi);
         return (
           <line
             key={`line-${i}`}
@@ -246,13 +284,23 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
         </g>
       ))}
       
-      {/* Legenda de cores (lado direito) */}
-      <g transform={`translate(${width - 50}, ${padding.top})`}>
-        <text x="0" y="0" fontSize="10" fill="#22c55e" fontWeight="bold">Bom</text>
-        <text x="0" y="70" fontSize="10" fill="#ef4444" fontWeight="bold">Baixo</text>
+      {/* Legenda de cores (lado direito) - barra de gradiente */}
+      <g transform={`translate(${width - 45}, ${padding.top})`}>
+        <defs>
+          <linearGradient id="ndviGradientLegend" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor="#8B4513" />
+            <stop offset="30%" stopColor="#D2691E" />
+            <stop offset="50%" stopColor="#FACC15" />
+            <stop offset="70%" stopColor="#84CC16" />
+            <stop offset="100%" stopColor="#22C55E" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="8" height="70" rx="4" fill="url(#ndviGradientLegend)" />
+        <text x="12" y="5" fontSize="9" fill="#22c55e" fontWeight="bold">Bom</text>
+        <text x="12" y="70" fontSize="9" fill="#8B4513" fontWeight="bold">Baixo</text>
       </g>
       
-      {/* Legenda inferior igual OneSoil */}
+      {/* Legenda inferior com gradiente */}
       <g transform={`translate(${padding.left}, ${height - 5})`}>
         <circle cx="0" cy="0" r="4" fill="#22c55e" />
         <text x="8" y="3" fontSize="9" fill="#6b7280">Excelente (≥0.7)</text>
@@ -260,10 +308,10 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
         <circle cx="100" cy="0" r="4" fill="#84cc16" />
         <text x="108" y="3" fontSize="9" fill="#6b7280">Bom (0.5-0.7)</text>
         
-        <circle cx="195" cy="0" r="4" fill="#facc15" />
+        <circle cx="195" cy="0" r="4" fill="#FACC15" />
         <text x="203" y="3" fontSize="9" fill="#6b7280">Moderado (0.3-0.5)</text>
         
-        <circle cx="310" cy="0" r="4" fill="#ef4444" />
+        <circle cx="310" cy="0" r="4" fill="#8B4513" />
         <text x="318" y="3" fontSize="9" fill="#6b7280">Baixo (&lt;0.3)</text>
       </g>
     </svg>
