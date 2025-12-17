@@ -344,6 +344,32 @@ export default function FieldsOneSoil() {
     { enabled: !!selectedFieldId }
   );
 
+  // Calcular centro do campo para buscar clima
+  const fieldCenter = useMemo(() => {
+    if (!selectedField?.boundaries) return [-49.5, -20.8] as [number, number];
+    const bounds = typeof selectedField.boundaries === "string"
+      ? JSON.parse(selectedField.boundaries)
+      : selectedField.boundaries;
+    if (Array.isArray(bounds) && bounds.length > 0) {
+      const lngs = bounds.map((p: any) => p.lng);
+      const lats = bounds.map((p: any) => p.lat);
+      return [
+        (Math.min(...lngs) + Math.max(...lngs)) / 2,
+        (Math.min(...lats) + Math.max(...lats)) / 2,
+      ] as [number, number];
+    }
+    return [-49.5, -20.8] as [number, number];
+  }, [selectedField?.boundaries]);
+
+  // Buscar dados de clima real baseado na localização do campo
+  const { data: weatherData } = trpc.weather.forecast.useQuery(
+    { 
+      lat: fieldCenter[1], 
+      lon: fieldCenter[0] 
+    },
+    { enabled: !!selectedField && fieldCenter[0] !== -49.5 }
+  );
+
   const proxyImageUrl = useMemo(() => 
     selectedFieldId ? `/api/copernicus-ndvi/${selectedFieldId}?palette=onesoil` : null
   , [selectedFieldId]);
@@ -563,23 +589,6 @@ export default function FieldsOneSoil() {
   const handleSatMapReady = useCallback((map: mapboxgl.Map) => {
     setSatMapInstance(map);
   }, []);
-
-  const fieldCenter = selectedField?.boundaries
-    ? (() => {
-        const bounds = typeof selectedField.boundaries === "string"
-          ? JSON.parse(selectedField.boundaries)
-          : selectedField.boundaries;
-        if (Array.isArray(bounds) && bounds.length > 0) {
-          const lngs = bounds.map((p: any) => p.lng);
-          const lats = bounds.map((p: any) => p.lat);
-          return [
-            (Math.min(...lngs) + Math.max(...lngs)) / 2,
-            (Math.min(...lats) + Math.max(...lats)) / 2,
-          ] as [number, number];
-        }
-        return [-49.5, -20.8] as [number, number];
-      })()
-    : [-49.5, -20.8] as [number, number];
 
   const currentNdviValue = selectedField?.currentNdvi 
     ? (selectedField.currentNdvi / 100).toFixed(2) 
@@ -818,13 +827,25 @@ export default function FieldsOneSoil() {
               <div className="flex items-center gap-6 text-sm">
                 <div className="flex items-center gap-2">
                   <Cloud className="h-5 w-5 text-blue-400" />
-                  <span className="font-medium">+34°</span>
+                  <span className="font-medium">
+                    {weatherData?.current?.temperature != null 
+                      ? `${Math.round(weatherData.current.temperature)}°` 
+                      : '--°'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1 text-gray-500">
-                  <span>0 mm</span>
+                  <span>
+                    {weatherData?.current?.precipitation != null 
+                      ? `${weatherData.current.precipitation} mm` 
+                      : '-- mm'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1 text-gray-500">
-                  <span>3 m/s</span>
+                  <span>
+                    {weatherData?.current?.windSpeed != null 
+                      ? `${Math.round(weatherData.current.windSpeed)} m/s` 
+                      : '-- m/s'}
+                  </span>
                 </div>
               </div>
             </div>
