@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddCropDialog } from "@/components/AddCropDialog";
+import { NdviChartOneSoil } from "@/components/charts/NdviChartOneSoil";
 
 import {
   ChevronLeft,
@@ -105,219 +106,6 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
   );
 }
 
-// Função para obter cor baseada no valor NDVI (gradiente contínuo)
-function getNdviColor(ndvi: number): string {
-  const n = Math.max(0, Math.min(1, Number(ndvi) || 0));
-  
-  // Cores do gradiente (de baixo para cima):
-  // 0.0 = marrom (#8B4513)
-  // 0.3 = laranja/marrom (#D2691E)  
-  // 0.5 = amarelo (#FACC15)
-  // 0.7 = verde lima (#84CC16)
-  // 1.0 = verde escuro (#22C55E)
-  
-  if (n <= 0.3) {
-    // Marrom para laranja
-    const t = n / 0.3;
-    return interpolateColor('#8B4513', '#D2691E', t);
-  } else if (n <= 0.5) {
-    // Laranja para amarelo
-    const t = (n - 0.3) / 0.2;
-    return interpolateColor('#D2691E', '#FACC15', t);
-  } else if (n <= 0.7) {
-    // Amarelo para verde lima
-    const t = (n - 0.5) / 0.2;
-    return interpolateColor('#FACC15', '#84CC16', t);
-  } else {
-    // Verde lima para verde escuro
-    const t = (n - 0.7) / 0.3;
-    return interpolateColor('#84CC16', '#22C55E', t);
-  }
-}
-
-// Interpolar entre duas cores hex
-function interpolateColor(color1: string, color2: string, t: number): string {
-  const r1 = parseInt(color1.slice(1, 3), 16);
-  const g1 = parseInt(color1.slice(3, 5), 16);
-  const b1 = parseInt(color1.slice(5, 7), 16);
-  
-  const r2 = parseInt(color2.slice(1, 3), 16);
-  const g2 = parseInt(color2.slice(3, 5), 16);
-  const b2 = parseInt(color2.slice(5, 7), 16);
-  
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
-// Gráfico NDVI estilo OneSoil - com cores por valor
-function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[]; height?: number }) {
-  if (!data.length) {
-    return (
-      <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-        Sem dados de NDVI disponíveis
-      </div>
-    );
-  }
-  
-  const width = 800;
-  const padding = { top: 20, right: 60, bottom: 40, left: 50 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  
-  // Escala Y de 0 a 1 (como OneSoil)
-  const minNdvi = 0;
-  const maxNdvi = 1;
-  
-  const xScale = (i: number) => padding.left + (i / Math.max(data.length - 1, 1)) * chartWidth;
-  const yScale = (v: number) => padding.top + chartHeight - ((Math.max(0, Math.min(1, v)) - minNdvi) / (maxNdvi - minNdvi)) * chartHeight;
-  
-  const points = data.map((d, i) => ({ 
-    x: xScale(i), 
-    y: yScale(d.ndvi),
-    ndvi: d.ndvi,
-    color: getNdviColor(d.ndvi),
-    date: d.date,
-  }));
-  
-  // Criar path da linha
-  let pathD = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    pathD += ` L ${points[i].x} ${points[i].y}`;
-  }
-  
-  // Criar área preenchida cinza claro (como OneSoil)
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${yScale(0)} L ${points[0].x} ${yScale(0)} Z`;
-  
-  // Linhas de grade Y
-  const yGridLines = [1, 0.8, 0.5, 0.4];
-  
-  // Meses para eixo X
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-  
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        {/* Gradiente para área preenchida - cinza claro como OneSoil */}
-        <linearGradient id="ndviAreaFillGray" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#d1d5db" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#d1d5db" stopOpacity="0.1" />
-        </linearGradient>
-      </defs>
-      
-      {/* Linhas de grade horizontais pontilhadas */}
-      {yGridLines.map(v => (
-        <g key={v}>
-          <line
-            x1={padding.left}
-            y1={yScale(v)}
-            x2={width - padding.right}
-            y2={yScale(v)}
-            stroke="#e5e7eb"
-            strokeWidth="1"
-            strokeDasharray="4 4"
-          />
-          <text 
-            x={padding.left - 10} 
-            y={yScale(v)} 
-            fontSize="11" 
-            fill="#9ca3af" 
-            textAnchor="end" 
-            dominantBaseline="middle"
-          >
-            {v.toFixed(1)}
-          </text>
-        </g>
-      ))}
-      
-      {/* Labels do eixo X (meses) */}
-      {months.map((month, i) => (
-        <text
-          key={month}
-          x={padding.left + (i / 11) * chartWidth}
-          y={height - 10}
-          fontSize="10"
-          fill="#9ca3af"
-          textAnchor="middle"
-        >
-          {month}
-        </text>
-      ))}
-      
-      {/* Área preenchida cinza claro */}
-      <path d={areaD} fill="url(#ndviAreaFillGray)" />
-      
-      {/* Linha conectando os pontos - cor gradiente baseada no valor NDVI */}
-      {points.map((p, i) => {
-        if (i === 0) return null;
-        const prev = points[i - 1];
-        // Cor do segmento baseada na média dos valores
-        const avgNdvi = (prev.ndvi + p.ndvi) / 2;
-        const segmentColor = getNdviColor(avgNdvi);
-        return (
-          <line
-            key={`line-${i}`}
-            x1={prev.x}
-            y1={prev.y}
-            x2={p.x}
-            y2={p.y}
-            stroke={segmentColor}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-        );
-      })}
-      
-      {/* Pontos circulares coloridos por valor NDVI */}
-      {points.map((p, i) => (
-        <g key={i}>
-          <circle
-            cx={p.x}
-            cy={p.y}
-            r={i === points.length - 1 ? 8 : 5}
-            fill="white"
-            stroke={p.color}
-            strokeWidth={i === points.length - 1 ? 3 : 2}
-          />
-        </g>
-      ))}
-      
-      {/* Legenda de cores (lado direito) - barra de gradiente */}
-      <g transform={`translate(${width - 45}, ${padding.top})`}>
-        <defs>
-          <linearGradient id="ndviGradientLegend" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor="#8B4513" />
-            <stop offset="30%" stopColor="#D2691E" />
-            <stop offset="50%" stopColor="#FACC15" />
-            <stop offset="70%" stopColor="#84CC16" />
-            <stop offset="100%" stopColor="#22C55E" />
-          </linearGradient>
-        </defs>
-        <rect x="0" y="0" width="8" height="70" rx="4" fill="url(#ndviGradientLegend)" />
-        <text x="12" y="5" fontSize="9" fill="#22c55e" fontWeight="bold">Bom</text>
-        <text x="12" y="70" fontSize="9" fill="#8B4513" fontWeight="bold">Baixo</text>
-      </g>
-      
-      {/* Legenda inferior com gradiente */}
-      <g transform={`translate(${padding.left}, ${height - 5})`}>
-        <circle cx="0" cy="0" r="4" fill="#22c55e" />
-        <text x="8" y="3" fontSize="9" fill="#6b7280">Excelente (≥0.7)</text>
-        
-        <circle cx="100" cy="0" r="4" fill="#84cc16" />
-        <text x="108" y="3" fontSize="9" fill="#6b7280">Bom (0.5-0.7)</text>
-        
-        <circle cx="195" cy="0" r="4" fill="#FACC15" />
-        <text x="203" y="3" fontSize="9" fill="#6b7280">Moderado (0.3-0.5)</text>
-        
-        <circle cx="310" cy="0" r="4" fill="#8B4513" />
-        <text x="318" y="3" fontSize="9" fill="#6b7280">Baixo (&lt;0.3)</text>
-      </g>
-    </svg>
-  );
-}
-
 export default function FieldsOneSoil() {
   
   const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
@@ -387,16 +175,17 @@ export default function FieldsOneSoil() {
     return fields.reduce((sum: number, f: any) => sum + (f.areaHectares || 0), 0) / 100;
   }, [fields]);
 
+  // Dados formatados para o gráfico NDVI (NdviChartOneSoil espera {date: string, ndvi: number})
   const ndviChartData = useMemo(() => {
     // Usar dados reais do Copernicus se disponíveis
     if (ndviHistory && ndviHistory.length > 0) {
       return ndviHistory
         .filter((d: any) => d.ndvi != null && d.ndvi > 0)
         .map((d: any) => ({
-          date: new Date(d.date),
+          date: typeof d.date === 'string' ? d.date : new Date(d.date).toISOString().split('T')[0],
           ndvi: d.ndvi || d.value || 0
         }))
-        .sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
+        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }
     // Retornar array vazio se não houver dados
     return [];
@@ -923,26 +712,16 @@ export default function FieldsOneSoil() {
               </Button>
             </div>
 
-            {/* NDVI Chart */}
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <NdviChart data={ndviChartData} height={100} />
-                </div>
-                <div className="ml-6 text-right min-w-[140px]">
-                  <div className="flex items-center justify-end gap-2 mb-2">
-                    <span className="text-sm text-gray-500">Índice NDVI</span>
-                    <button className="p-1 hover:bg-gray-100 rounded">
-                      <Download className="h-4 w-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Leaf className="h-5 w-5 text-green-500" />
-                    <span className="text-3xl font-semibold">{currentNdviValue}</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">Última atualização há 22 dias</p>
-                </div>
-              </div>
+            {/* NDVI Chart - usando componente Recharts com gradiente dinâmico */}
+            <div className="bg-white border border-gray-200 rounded-xl">
+              <NdviChartOneSoil 
+                data={ndviChartData} 
+                currentValue={parseFloat(currentNdviValue) || 0}
+                lastUpdateDate={ndviChartData.length > 0 ? ndviChartData[ndviChartData.length - 1].date : undefined}
+                height={180}
+                showDownload={true}
+                title="Índice NDVI"
+              />
             </div>
           </div>
         </div>
