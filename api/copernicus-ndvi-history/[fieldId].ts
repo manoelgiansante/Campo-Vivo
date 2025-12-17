@@ -253,8 +253,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const stats = item.outputs?.ndvi?.bands?.B0?.stats;
         const interval = item.interval;
         
-        // Usar média como valor principal (como OneSoil faz)
-        const ndviValue = stats?.mean ?? stats?.percentiles?.p50 ?? 0;
+        // Usar percentil 75 como valor principal (valores mais altos, como OneSoil)
+        // Isso representa a vegetação mais saudável do campo
+        const ndviValue = stats?.percentiles?.p75 ?? stats?.mean ?? stats?.percentiles?.p50 ?? 0;
         
         // Estimar cobertura de nuvens baseado em pixels sem dados
         const sampleCount = stats?.sampleCount || 1;
