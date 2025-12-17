@@ -107,13 +107,10 @@ function FieldThumbnail({ boundaries, ndviValue, size = 48 }: { boundaries: any;
 
 // Função para obter cor do ponto baseado no valor NDVI (como OneSoil)
 function getNdviPointColor(ndvi: number): string {
-  // Debug: verificar valores
-  console.log('NDVI value:', ndvi, 'Type:', typeof ndvi);
-  
-  const n = Number(ndvi);
+  const n = Number(ndvi) || 0;
   if (n >= 0.7) return "#22c55e";    // Verde escuro - Excelente (≥0.7)
   if (n >= 0.5) return "#84cc16";    // Verde lima - Bom (0.5-0.7)
-  if (n >= 0.3) return "#f59e0b";    // Laranja - Moderado (0.3-0.5)
+  if (n >= 0.3) return "#facc15";    // Amarelo - Moderado (0.3-0.5)
   return "#ef4444";                   // Vermelho - Baixo (<0.3)
 }
 
@@ -263,7 +260,7 @@ function NdviChart({ data, height = 140 }: { data: { date: Date; ndvi: number }[
         <circle cx="100" cy="0" r="4" fill="#84cc16" />
         <text x="108" y="3" fontSize="9" fill="#6b7280">Bom (0.5-0.7)</text>
         
-        <circle cx="195" cy="0" r="4" fill="#f59e0b" />
+        <circle cx="195" cy="0" r="4" fill="#facc15" />
         <text x="203" y="3" fontSize="9" fill="#6b7280">Moderado (0.3-0.5)</text>
         
         <circle cx="310" cy="0" r="4" fill="#ef4444" />
